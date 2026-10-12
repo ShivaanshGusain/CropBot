@@ -1,0 +1,16 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Json files 
+india_blocks_map.json
+india_districts_map.json
+india_states_map.json
+india_villages_map.json
