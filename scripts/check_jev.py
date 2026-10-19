@@ -4,10 +4,15 @@ The URL and JSON body are read from the curl command in docs/jev_example.md and
 the body is sent byte for byte, so the request cannot drift from the doc. The
 key comes from BEATAPI_API_KEY in .env and is never printed.
 
+--save writes the reply only if it is HTTP 2xx, valid JSON, and contains
+neither the key nor anything that looks like one; otherwise nothing is written
+and the script exits with an error.
+
 Usage: uv run python scripts/check_jev.py [--save PATH]
 """
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -18,6 +23,23 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE = ROOT / "docs" / "jev_example.md"
+KEY_LIKE = re.compile(r"sk-[A-Za-z0-9_-]{8,}|Bearer\s+\S")
+
+
+def save_problems(status, text, key):
+    """Return the reasons a reply must not be saved; empty means it is safe."""
+    problems = []
+    if not 200 <= status < 300:
+        problems.append("HTTP %d is not a success" % status)
+    try:
+        json.loads(text)
+    except ValueError:
+        problems.append("body is not valid JSON")
+    if key and key in text:
+        problems.append("body contains the BEATAPI_API_KEY value")
+    if KEY_LIKE.search(text):
+        problems.append("body contains a key-like string (sk-... or Bearer ...)")
+    return problems
 
 
 def read_example():
@@ -47,10 +69,14 @@ def main():
         timeout=60,
     )
     print("HTTP", resp.status_code)
-    print(resp.text)
+    print(resp.text.replace(key, "[REDACTED]"))
     if args.save:
+        problems = save_problems(resp.status_code, resp.text, key)
+        if problems:
+            sys.exit("not saved to %s: %s" % (args.save, "; ".join(problems)))
         args.save.parent.mkdir(parents=True, exist_ok=True)
         args.save.write_bytes(resp.content)
+        print("saved to", args.save)
 
 
 if __name__ == "__main__":

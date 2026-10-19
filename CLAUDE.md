@@ -38,7 +38,24 @@ uv run --project extraction python extract.py --all               # original MVP
 
 `requirements.txt` is a leftover; dependencies go in `pyproject.toml` via `uv add`. There is no linter or formatter configured.
 
-`docs/jev_example.md` holds the reference Jev (verifier) request; the key is `BEATAPI_API_KEY` in `.env`. `.env.example` lists the variable names.
+`.env.example` lists the variable names. Two scripts check the connections:
+
+```bash
+uv run python scripts/check_neo4j.py                                          # prints the Neo4j server version
+uv run python scripts/check_jev.py --save docs/jev_response_example.json      # sends docs/jev_example.md, prints the raw reply
+```
+
+`--save` writes the reply only if it is HTTP 2xx, valid JSON, and contains neither the key nor anything key-like. Otherwise the script writes nothing and exits with an error.
+
+### Jev notes
+
+- `docs/jev_example.md` holds the reference request, and `docs/jev_response_example.json` holds a real reply to it. The key is `BEATAPI_API_KEY` in `.env`.
+- `"type": "noul"` is a yes/no question. Its returned value is the probability of "yes", e.g. `{"safe": {"noul": 0.86, "type": "noul"}}`.
+- Every question in one call is evaluated independently against the same `state`, so batching all of a section's claims into one call is valid.
+
+### Neo4j notes
+
+Local development runs Neo4j 2026.09.0 Enterprise. Which edition to deploy is a team decision; the research brief recommends Community. Vector-index quantisation is decided when the indexes are built.
 
 ## Existing code and how it relates to the schema
 

@@ -25,7 +25,7 @@ def main():
         driver.verify_connectivity()
         records, _, _ = driver.execute_query(
             "CALL dbms.components() YIELD name, versions, edition "
-            "RETURN name, versions, edition"
+            "WHERE name = 'Neo4j Kernel' RETURN name, versions, edition"
         )
     for r in records:
         print("%s %s (%s edition)" % (r["name"], ", ".join(r["versions"]), r["edition"]))
