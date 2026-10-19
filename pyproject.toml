@@ -11,5 +11,13 @@ dependencies = [
     "langchain-experimental>=0.4.2",
     "langchain-neo4j>=0.10.0",
     "langchain-ollama>=1.1.0",
+    "neo4j>=6.2.0",
+    "pydantic>=2.13.4",
+    "python-dotenv>=1.2.2",
     "requests>=2.34.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
 ]
