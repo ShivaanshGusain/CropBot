@@ -73,8 +73,10 @@ uv run extract.py --all                           # every included book
 
 ### Adding or changing books
 
-1. Drop the PDF into `BooksData`.
-2. Add an entry to `sources.toml`: id, type, region, season, language, include, and `crop` if the whole book is about one crop.
+New book PDFs are never committed. Each book is recorded in the source registry by its URL and sha256, so anyone can download it and check it is the same file. `BooksData/*.pdf` and `sources/pdfs/` are in `.gitignore`; the PDFs already tracked there stay as they are.
+
+1. Download the PDF into your local `BooksData` folder. Git ignores it.
+2. Add an entry to the source registry (`sources.toml`): `url` and `sha256`, plus id, type, region, season, language, include, and `crop` if the whole book is about one crop.
 3. Run `uv run extract.py --list` to check it, then `uv run extract.py --all --source <id>`.
 
 A PDF without an entry is still processed with default settings and is flagged as "unregistered" by `--list`.

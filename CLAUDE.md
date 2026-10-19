@@ -49,7 +49,9 @@ uv run --project extraction python extract.py --all               # original MVP
 
 **The committed `converted/*.index.json` files are lossy.**
 - They store no bboxes, no OCR confidence and no Docling JSON. Tables are Markdown strings only, and footnotes were dropped. So they cannot supply `SourceSpan.bbox` or `table_ref` (`#/tables/N`).
-- The schema's convert stage needs the lossless DoclingDocument JSON. That is a new conversion; the cache goes under `data/docling/` (gitignored).
+- The schema's convert stage needs the lossless DoclingDocument JSON. That means a new conversion.
+- The full conversion runs on the GX10. Its cache lives in `data/docling/`, keyed by the PDF's sha256. That folder is gitignored, so anyone can regenerate it from the registry.
+- Until then, prototype segmentation on the committed rice text in `converted/tnau_agriculture.index.json`.
 
 **Heading structure is not in the heading levels.**
 - 96–99% of Docling headings come out at level 1, depending on the book. The section hierarchy ("1.8.3.1.Seed rate") is only in the heading text.
@@ -68,13 +70,44 @@ uv run --project extraction python extract.py --all               # original MVP
 - `CROPS` in `extraction/extract.py` is a hand-written alias list. It can seed reviewed crop concepts and labels, but a script must not turn it into concepts.
 
 **PDFs.**
-- 51 PDFs (about 590 MB) are already tracked: `BooksData/`, `sources/pdfs/` and `data/raw/`.
+- 51 PDFs (about 590 MB) are already tracked: `BooksData/`, `sources/pdfs/` and `data/raw/`. Leave them as they are.
+- New PDFs in any of those folders are gitignored.
 - `data/raw/AGRICULTURE.pdf`, `BooksData/AGRICULTURE.pdf` and `sources/pdfs/tnau_agriculture.pdf` are the same file (TNAU Crop Production Guide 2020).
 
 **`Graph_Rag_try.py`** is a discarded prototype. It uses unconstrained `LLMGraphTransformer` on fixed-size chunks with hard-coded Neo4j credentials. It conflicts with the schema, so don't extend it.
 
 **Soil Health Card scrapers** (`state_retrival.py`, `district_retrival.py`, `block_retrival.py`, `village_retrival.py`, `data_scraper.py`, notes in `cheetsheet.txt`):
+- **Do not run or modify them.**
 - They crawl soilhealth4.dac.gov.in.
 - The research brief says to stop them because of the portal's terms of service.
 - Their region IDs are portal-internal, not the LGD codes the schema uses.
 - Live data stays out of the graph anyway (schema design principle 8).
+
+## Pipeline layout
+
+New pipeline code goes in the plain `kg/` package and runs as `uv run python -m kg.<stage>`. There is no build-system section and no `src/` layout.
+
+```
+registry/            one hand-written TOML file per book: url, sha256, state_id, region_scope, authority_tier, edition_year, default_scope, section scopes
+concepts/            hand-curated concept and label files (crops, regions with LGD codes, pests, ingredients); the only way concepts are created
+kg/
+  registry/          load and validate the registry; check each PDF's sha256 against it
+  convert/           Docling → DoclingDocument JSON in data/docling/<sha256>/ (gitignored)
+  segment/           heading tree from the numbering text → one unit per section (heading path, text, tables, pages, scope)
+  tables/            join tables split across pages, rotate variety tables, check header and row counts against the page
+  schema/            Pydantic models mirroring the schema, plus fixed vocabularies (units, basis, condition variables)
+  extract/           one LLM call per unit → facts with raw text and quotes
+  normalize/         units and basis, ranges, linking names to concepts (exact, alias, embedding → proposals for review)
+  validate/          exact quote match, every raw number appears in its quote, vocabularies, banned list, alternative-totals check
+  verify/            Jev claims built from stored fields
+  load/              constraints, MERGE writers, IN_REGION edges, revision rules
+  conflicts/         CONFLICTS_WITH detection
+  eval/              gold set, precision/recall per subtype, the 20 competency questions
+scripts/             one-off checks (e.g. Neo4j and Jev connectivity)
+tests/               mirrors kg/
+data/gold/           hand-annotated sections (committed)
+```
+
+## Pending schema change (v1.2, not yet in the doc)
+
+`SourceSpan` will hold both `pdf_page` (the PDF page, used to locate text) and `printed_page` (the page number printed in the book, used in citations). Docling reports PDF pages. Build to this, but don't edit `docs/schema_v1.1.md`; the schema owner is updating it to v1.2.
