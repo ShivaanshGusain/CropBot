@@ -997,7 +997,7 @@ def emit_all(ids=None):
     for src in SOURCES:
         if ids and src["id"] not in ids:
             continue
-        p = CONV / "%s.index.json" % src["id"]
+        p = CONV / ("%s.index.json" % src["id"])
         if not p.exists():
             log.warning("no index for %s — run --convert --source %s first",
                         src["id"], src["id"])
@@ -1188,10 +1188,10 @@ def convert_source(src, pdf_path, save=True, tag=""):
     log.info("done %s in %.0fs: %d items, %d tables, %d images",
              src["id"], dt, len(items), tbl, img)
     if save:
-        (CONV / "%s.index.json" % src["id"]).write_text(
+        (CONV / ("%s.index.json" % src["id"])).write_text(
             json.dumps(index, ensure_ascii=False, default=str), encoding="utf-8")
         md = render_markdown(items, "images/%s/" % src["id"])
-        (CONV / "%s.md" % src["id"]).write_text(
+        (CONV / ("%s.md" % src["id"])).write_text(
             "---\ntitle: %s\nsource_id: %s\n---\n\n" %
             (yv(src["title"]), src["id"]) + md, encoding="utf-8")
     return index
