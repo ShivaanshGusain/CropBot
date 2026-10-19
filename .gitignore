@@ -14,3 +14,10 @@ india_blocks_map.json
 india_districts_map.json
 india_states_map.json
 india_villages_map.json
+
+# Secrets
+.env
+
+# Raw source PDFs and Docling cache
+data/raw/*.pdf
+data/docling/
