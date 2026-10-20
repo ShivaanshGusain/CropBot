@@ -280,6 +280,10 @@ Then:
 - a repeated header is dropped;
 - otherwise B's first row is data, even if Docling flagged it a header;
 - a "Particulars" row *inside* a table splits it, because Docling sometimes puts the end of one variety table and the start of the next in one table.
+- a row split by the page break leaves B's first row with no first-column cell, or an empty one. It is merged into A's last row cell by cell in the same column, and only when every cell has a same-column cell to continue.
+  - The merged cell keeps the piece in `continued_from`; the merge is logged and written to review as "row continued across page break".
+  - Extraction renders such a row as `[#/tables/A row R + #/tables/B row S]`.
+  - Rice/wheat: 10 merges, among them hispa (`#/tables/56` r4 + `#/tables/57` r0) and WBPH (`#/tables/57` r4 + `#/tables/58` r0). Nine Variety traits are completed by them, e.g. "Seed source: Seed centre, TNAU," becomes "… TNAU, Coimbatore-3".
 
 **Page check, per part, with docling-parse** (the same text layer Docling read):
 - rows must equal the bands between horizontal rulings;

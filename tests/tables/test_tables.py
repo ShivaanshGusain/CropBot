@@ -116,5 +116,20 @@ def test_possible_duplicates_are_reported_never_merged(result):
     assert "variety:cow_w_2" in {v.id for v in result["varieties"]}
 
 
+def test_page_split_rows_are_merged_and_sent_to_review(result):
+    strategies = table(result, "#/tables/55")
+    merged = {(m["part_ref"], m["into"]) for m in strategies.merged_rows}
+    assert merged == {("#/tables/57", "#/tables/56 row 4"), ("#/tables/58", "#/tables/57 row 4")}
+    hispa = next(r for r in strategies.rows if r[0]["text"].startswith("Hispa"))
+    assert hispa[1]["text"].endswith("Malathion 5% DP 25 kg Malathion 50%EC 1150 ml")
+    wbph = next(r for r in strategies.rows if r[0]["text"].startswith("White backed planthopper"))
+    assert wbph[1]["text"].endswith("Imidacloprid 17.8% SL 100-125 ml")
+    assert not any(r[0]["text"].startswith(("Malathion", "Fipronil")) for r in strategies.rows)
+    review = {(r["table_ref"], r["check"]) for r in result["review"]}
+    assert {("#/tables/57", "row continued across page break"),
+            ("#/tables/58", "row continued across page break")} <= review
+    assert variety(result, "variety:adt_r_48").traits.count("Seed source: Seed centre, TNAU, Coimbatore-3") == 1
+
+
 def test_duration_reference_comes_from_the_book(result):
     assert result["duration_reference"]["values"] == {"short": 105, "medium": 135, "long": 150}

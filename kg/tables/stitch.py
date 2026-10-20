@@ -11,6 +11,9 @@ grid widths, or equal merged widths when a label column is split in one part).
   B's first row == A's header             -> repeated header, dropped
   B's first cell == A's first header cell -> a new table
   otherwise                               -> B's first row is data, even if Docling flagged it a header
+A row split by the page break leaves B's first row with no first-column cell (or an empty one).
+That piece is merged into A's last row, cell by cell in the same column; each merged cell keeps
+the piece in `continued_from`, and the merge is logged and sent to review (never silent).
 """
 
 import re
@@ -42,6 +45,7 @@ class Table:
     header_cells: list[dict] = field(default_factory=list)  # the header row's cells (tagged)
     rows: list[list[dict]] = field(default_factory=list)   # data rows; each cell keeps its part ref
     stitch_log: list[str] = field(default_factory=list)
+    merged_rows: list[dict] = field(default_factory=list)  # rows continued across a page break
 
     @property
     def refs(self) -> list[str]:
@@ -126,11 +130,40 @@ def stitch_unit(unit: dict, items_by_ref: dict) -> list[Table]:
             tables.append(_start(unit, part))          # same kind of table, new header
         else:
             prev.parts.append(part)
-            prev.rows += [_tag(r, part) for r in part.rows]
+            rows = [_tag(r, part) for r in part.rows]
+            if rows and _merge_split_row(prev, rows[0], part):
+                rows = rows[1:]
+            prev.rows += rows
             note = "first row was flagged a header, kept as data" if all(
                 c["header"] for c in part.rows[0]) else "continues"
             prev.stitch_log.append("%s: %s" % (part.ref, note))
     return [piece for t in tables for piece in _split_at_inner_headers(t)]
+
+
+def _merge_split_row(prev: Table, row: list[dict], part: Part) -> bool:
+    """Merge a page-split row piece (no first-column cell, or an empty one) into prev's last row.
+    Only when every cell of the piece has a cell in the same column to continue."""
+    if not prev.rows:
+        return False
+    first = next((c for c in row if c["col"] == 0), None)
+    if first is not None and first["text"]:
+        return False
+    target = {c["col"]: c for c in prev.rows[-1]}
+    piece = [c for c in row if c["text"]]
+    if not piece or any(c["col"] not in target for c in piece):
+        return False
+    for c in piece:
+        t = target[c["col"]]
+        t["continued_from"] = t.get("continued_from", []) + [
+            {"part_ref": part.ref, "row": c["row"], "col": c["col"], "text": c["text"]}]
+        t["text"] = ("%s %s" % (t["text"], c["text"])).strip()
+    head = prev.rows[-1][0]
+    prev.merged_rows.append({"into": "%s row %d" % (head["part_ref"], head["row"]), "part_ref": part.ref,
+                             "row": row[0]["row"], "pdf_page": part.pdf_page,
+                             "text": " | ".join(c["text"] for c in piece)})
+    prev.stitch_log.append("%s row %d: row continued across the page break, merged into %s row %d" % (
+        part.ref, row[0]["row"], head["part_ref"], head["row"]))
+    return True
 
 
 def _is_particulars(text: str) -> bool:

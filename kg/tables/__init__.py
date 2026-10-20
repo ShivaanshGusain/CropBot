@@ -42,6 +42,10 @@ def run(entry, docling_dir, units_path, chapters: tuple[str, ...]) -> dict:
     checker = PageChecker(ROOT / entry.file)
     checks, review, checked = [], [], set()
     for t in tables:
+        for m in t.merged_rows:
+            review.append({"chapter": t.chapter, "check": "row continued across page break",
+                           "table_ref": m["part_ref"], "pdf_page": m["pdf_page"],
+                           "detail": "row %d merged into %s: %r" % (m["row"], m["into"], m["text"])})
         for part in t.parts:
             if part.ref in checked:          # a split table shares its part with the table before it
                 continue
@@ -94,9 +98,10 @@ def run(entry, docling_dir, units_path, chapters: tuple[str, ...]) -> dict:
 def table_record(t: Table) -> dict:
     return {"unit_id": t.unit_id, "section_path": t.section_path, "chapter": t.chapter,
             "table_refs": t.refs, "pdf_pages": [p.pdf_page for p in t.parts], "header": t.header,
-            "rows": [[{k: c[k] for k in ("text", "part_ref", "row", "col", "row_span", "col_span")}
+            "rows": [[{k: c[k] for k in ("text", "part_ref", "row", "col", "row_span", "col_span",
+                                         "continued_from") if k in c}
                       for c in row] for row in t.rows],
-            "stitch_log": t.stitch_log,
+            "stitch_log": t.stitch_log, "merged_rows": t.merged_rows,
             "original_cells": {p.ref: p.cells for p in t.parts}}
 
 
@@ -120,6 +125,7 @@ def write(entry, result) -> dict:
         "tables": len(result["tables"]), "parts": sum(len(t.parts) for t in result["tables"]),
         "stitched": [{"table_refs": t.refs, "section_path": t.section_path, "log": t.stitch_log}
                      for t in stitched],
+        "merged_rows": [{**m, "section_path": t.section_path} for t in result["tables"] for m in t.merged_rows],
         "checks": {"parts_ruled": sum(c["ruled"] for c in result["checks"]),
                    "parts_unruled": sum(not c["ruled"] for c in result["checks"])},
         "varieties": Counter(v.duration_group.value if v.duration_group else "none"
@@ -144,6 +150,9 @@ def print_report(r: dict) -> None:
     print("stitched (%d):" % len(r["stitched"]))
     for s in r["stitched"]:
         print("  %s  %s" % (" + ".join(s["table_refs"]), s["section_path"][-60:]))
+    print("rows continued across a page break, merged and sent to review (%d):" % len(r["merged_rows"]))
+    for m in r["merged_rows"]:
+        print("  %s row %d -> %s  %r" % (m["part_ref"], m["row"], m["into"], m["text"][:70]))
     print("page check: %d ruled parts, %d unruled" % (r["checks"]["parts_ruled"], r["checks"]["parts_unruled"]))
     print("Variety records: %d %s" % (len(r["variety_ids"]), dict(r["varieties"])))
     print("review rows: %d" % r["review_rows"])
