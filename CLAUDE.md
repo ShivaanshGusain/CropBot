@@ -153,7 +153,7 @@ data/gold/           hand-annotated sections (committed)
 - **needs_review concepts are loaded,** with `review_status: needs_review`.
 - **Review rule for linking and loading (steps 10 and 13):**
   - Linking may use needs_review concepts, but any fact linked to a needs_review concept must itself be needs_review.
-  - Both seeded crops are needs_review, so every rice and wheat fact stays needs_review until those two rows are approved.
+  - The rice and wheat crop rows are approved; their labels are still needs_review.
   - Fertilizer percentages with `review_status: needs_review` must not be used by the alternatives check until approved. All four seeded fertilizers are needs_review.
 
 ## Pending schema changes (v1.2, not yet in the doc)
