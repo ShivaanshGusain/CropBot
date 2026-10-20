@@ -173,9 +173,12 @@ data/gold/           hand-annotated sections (committed)
   - a LocalSeason needs `state_id`;
   - Season, Purpose and OperationType must equal the schema's closed lists.
 - **needs_review concepts are loaded,** with `review_status: needs_review`.
-- **`concepts/proposed/`** holds drafted rows (pests, active ingredients, organic inputs, fertilizers, labels) for review. They validate against the models (`PROPOSED_FILES`) but are not loaded and not used for linking until they're approved and moved into `concepts/`.
+- **`concepts/proposed/`** is for drafted rows awaiting review. They validate against the models (`PROPOSED_FILES`) but are not loaded and not used for linking until they're approved and moved into `concepts/`.
+- **Step 10 rows** (approved 2026-10-20) are now in `concepts/`, all needs_review: 18 pests, 53 active ingredients, 7 organic inputs and their labels.
   - Active ingredients keep `reg_status: unknown`, which comes only from the CIB&RC list.
-  - Labels marked `REVIEW:` (brand names, book misspellings) need an explicit decision.
+  - `name_en` uses the standard spelling, and the book's spelling is a label (chlorpyriphos, Tricyclozole, bromodialone, ethopenprox). The brand label Bavistin → carbendazim and "clayey soils" → `soil:clay` are approved.
+  - Dicofol has no `use_class`, since there is no acaricide value.
+  - ZnSO4/FeSO4 and their labels are TODO, pending their nutrient percentages from an official source.
 - **Review rule for linking and loading (steps 10 and 13):**
   - Linking may use needs_review concepts, but any fact linked to a needs_review concept must itself be needs_review.
   - The rice and wheat crop rows are approved; their labels are still needs_review.
@@ -454,6 +457,7 @@ Found in step 10; until v1.3, normalisation holds the affected facts with the re
 - No concentration or ratio quantities: "%" with no basis, "0.1 N", "80 µM", "1 part … with 49 parts".
 - ThresholdClause sampling units outside `Basis`: "/25 net sweeps", "/100 earheads", "in 12 passes".
 - `FOR_PURPOSE` needs `{origin}` (text or section); normalisation keeps the origin beside the fact for now.
+- ActiveIngredient `use_class` needs an `acaricide` value (Dicofol, PDF p. 67); until then `use_class` is empty.
 
 Candidate for prompt v3: a flag `scope_from_heading` for applicability taken from a sub-heading rather than the quote. For example, the soil "saline soil condition" comes from the p. 74 sub-heading "Recommendation for planting under saline soil condition", and "Zinc deficient soils" comes the same way. v2 has no flag for this.
 

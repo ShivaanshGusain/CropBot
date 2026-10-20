@@ -176,7 +176,7 @@ class ActiveIngredient(Concept):
     """reg_status comes from the official registration list (CIB&RC), never from books."""
     LABEL = "ActiveIngredient"
     id: ActiveIngredientId
-    use_class: UseClass
+    use_class: UseClass | None = None   # empty when no value fits (acaricide: pending schema v1.3)
     reg_status: RegStatus = RegStatus.UNKNOWN
 
 
@@ -295,6 +295,11 @@ SEED_FILES: dict[str, type] = {
     "nutrients.csv": Nutrient,
     "fertilizers.csv": Fertilizer,
     "crops.csv": Crop,
+    "pests.csv": Pest,
+    "diseases.csv": Disease,
+    "weeds.csv": Weed,
+    "active_ingredients.csv": ActiveIngredient,
+    "organic_inputs.csv": OrganicInput,
     "labels.csv": Label,
 }
 

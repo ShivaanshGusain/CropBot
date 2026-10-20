@@ -1,53 +1,65 @@
-"""concepts/proposed/: drafted seed rows for review. They validate against the concept models but are
-never loaded (kg.load.seed reads only SEED_FILES in concepts/)."""
+"""Seed rows approved in step 10 (pests, active ingredients, organic inputs, labels), and any rows
+still drafted in concepts/proposed/, which validate but are never loaded."""
 
 import csv
 
+import pytest
+
 from kg.load.seed import CONCEPTS_DIR, read_seed
-from kg.schema.concepts import PROPOSED_FILES, ActiveIngredient, Label
+from kg.schema.concepts import PROPOSED_FILES, ActiveIngredient, Label, Pest
 
 PROPOSED = CONCEPTS_DIR / "proposed"
 
 
-def rows(name):
-    with open(PROPOSED / name, encoding="utf-8-sig", newline="") as f:
-        return list(csv.DictReader(f))
+@pytest.fixture(scope="module")
+def seed():
+    return read_seed()
 
 
-def proposed_nodes():
-    nodes, pending = [], []
+def by_id(seed):
+    return {n.id: n for n in seed.nodes if not isinstance(n, Label)}
+
+
+def test_approved_rows_are_seeded_needs_review(seed):
+    nodes = by_id(seed)
+    pests = [n for n in nodes.values() if isinstance(n, Pest)]
+    ais = [n for n in nodes.values() if isinstance(n, ActiveIngredient)]
+    assert len(pests) == 18 and len(ais) == 53
+    assert all(n.review_status.value == "needs_review" for n in pests + ais)
+    assert {"organic_input:fym", "organic_input:azospirillum"} <= set(nodes)
+
+
+def test_active_ingredients_never_take_reg_status_from_the_book(seed):
+    ais = [n for n in by_id(seed).values() if isinstance(n, ActiveIngredient)]
+    assert all(a.reg_status.value == "unknown" and "CIB&RC" in a.source for a in ais)
+    dicofol = by_id(seed)["ai:dicofol"]
+    assert dicofol.use_class is None and "acaricide" in dicofol.source
+
+
+def test_standard_names_with_book_spellings_as_labels(seed):
+    nodes, labels = by_id(seed), {(lb.text, lb.concept_id) for lb in seed.nodes if isinstance(lb, Label)}
+    for ai, name, book in (("ai:chlorpyrifos", "Chlorpyrifos", "chlorpyriphos"),
+                           ("ai:tricyclazole", "Tricyclazole", "Tricyclozole"),
+                           ("ai:bromadiolone", "Bromadiolone", "bromodialone"),
+                           ("ai:etofenprox", "Etofenprox", "ethopenprox")):
+        assert nodes[ai].name_en == name and (book, ai) in labels
+    assert ("Bavistin", "ai:carbendazim") in labels and ("clayey soils", "soil:clay") in labels
+
+
+def test_fertilizers_with_unknown_percentages_and_their_labels_stay_pending(seed):
+    nodes = by_id(seed)
+    assert "fertilizer:znso4" not in nodes and "fertilizer:feso4" not in nodes
+    assert {"fertilizers.csv:6", "fertilizers.csv:7", "labels.csv:11", "labels.csv:12"} <= set(seed.pending)
+
+
+def test_drafts_in_proposed_validate_but_are_not_loaded(seed):
+    seeded = set(by_id(seed))
     for name, model in PROPOSED_FILES.items():
-        for row in rows(name):
-            if any("TODO" in (v or "") for v in row.values()):
-                pending.append((name, row["id"]))
-                continue
-            nodes.append(model.model_validate({k: v for k, v in row.items() if v}))
-    return nodes, pending
-
-
-def test_proposed_rows_validate_and_are_all_needs_review():
-    nodes, pending = proposed_nodes()
-    assert nodes and all(n.review_status.value == "needs_review" for n in nodes)
-    assert pending == [("fertilizers.csv", "fertilizer:znso4"), ("fertilizers.csv", "fertilizer:feso4")]
-
-
-def test_active_ingredients_never_take_reg_status_from_the_book():
-    nodes, _ = proposed_nodes()
-    ais = [n for n in nodes if isinstance(n, ActiveIngredient)]
-    assert len(ais) > 30 and all(a.reg_status.value == "unknown" for a in ais)
-    assert all("CIB&RC" in a.source for a in ais)
-
-
-def test_labels_point_at_proposed_or_seeded_concepts_and_brands_are_marked():
-    nodes, pending = proposed_nodes()
-    known = {n.id for n in nodes if not isinstance(n, Label)} | {i for _, i in pending}
-    known |= {n.id for n in read_seed().nodes if not isinstance(n, Label)}
-    labels = [n for n in nodes if isinstance(n, Label)]
-    assert all(lb.concept_id in known for lb in labels), [lb.concept_id for lb in labels if lb.concept_id not in known]
-    brand = next(lb for lb in labels if lb.text == "Bavistin")
-    assert brand.source.startswith("REVIEW: BRAND NAME")
-
-
-def test_proposed_rows_are_not_loaded():
-    seeded = {n.id for n in read_seed().nodes}
-    assert "pest:brown_planthopper" not in seeded and "ai:carbendazim" not in seeded
+        path = PROPOSED / name
+        if not path.exists():
+            continue
+        with open(path, encoding="utf-8-sig", newline="") as f:
+            for row in csv.DictReader(f):
+                if not any("TODO" in (v or "") for v in row.values()):
+                    node = model.model_validate({k: v for k, v in row.items() if v})
+                    assert getattr(node, "id", None) not in seeded
