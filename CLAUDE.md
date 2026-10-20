@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project rules
 
-- docs/schema_v1.1.md is the source of truth
+- docs/schema_v1.2.md is the source of truth
+  - Schema changes go in a new versioned file in this repo (`docs/schema_v1.3.md`, ...) and are committed.
+  - The Claude Doc is a superseded draft and is never exported again. `docs/schema_v1.1.md` is kept for history.
 - use uv add for dependencies
 - always MERGE on id; nothing is auto-corrected
 - every number keeps its raw text; the LLM never converts units
@@ -16,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-CropBot is a farm-advice bot. This branch builds its Neo4j knowledge graph: every agronomic fact becomes a `Recommendation` node with applicability edges, ordered Steps, runtime Conditions and a `SourceSpan` quote (see `docs/schema_v1.1.md`). The stages are defined in the schema's "Build pipeline" section: register → convert → segment → tables → extract → normalise → validate → verify (Jev) → load. Product context (post-harvest focus, pilot plans) is in `CropBot_Research_Brief.md`.
+CropBot is a farm-advice bot. This branch builds its Neo4j knowledge graph: every agronomic fact becomes a `Recommendation` node with applicability edges, ordered Steps, runtime Conditions and a `SourceSpan` quote (see `docs/schema_v1.2.md`). The stages are defined in the schema's "Build pipeline" section: register → convert → segment → tables → extract → normalise → validate → verify (Jev) → load. Product context (post-harvest focus, pilot plans) is in `CropBot_Research_Brief.md`.
 
 ## Environments and commands
 
@@ -309,27 +311,9 @@ All of these are in review. Re-entering them by hand, or reconverting, is a revi
   - Such facts are needs_review.
 - **Sub-zones with no concept** (old delta, new delta, "Western region") are not mapped. Scope the fact at the state level, put the phrase in `unmapped`, and set it to needs_review.
 
-## Pending schema changes (v1.2, not yet in the doc)
+## Schema v1.2
 
-Build to these, but don't edit `docs/schema_v1.1.md`; the schema owner is updating it to v1.2. They are marked `pending schema v1.2` in `kg/schema/`.
-
-1. **Two page numbers.** `SourceSpan` holds both `pdf_page` (the PDF page, used to locate text) and `printed_page` (the page number printed in the book, used in citations). Docling reports PDF pages.
-2. **Raw text for every number.**
-   - `ThresholdClause` gets a `raw` field.
-   - Each subtype gets a `raw` map from field name to source text, required for every non-null numeric field (for example `DryingSpec.raw["target_moisture_pct_max"] = "12 - 13 %"`).
-   - `APPLIES.raw` covers the whole quantity phrase, including `water_l_per_ha` and `area_cents`.
-3. **Condition-only units.** `mm` (`forecast_rain_mm_24h`) and `degC` (`tmax_c`) are allowed only in Conditions, as `ConditionOnlyUnit`. Dose units stay as listed in the doc.
-4. **Strict bounds.** Every bound has a `<field>_inclusive` flag (default true): each min/max pair, `APPLIES.min`/`max`, `Step.offset_min`/`offset_max`, and `StorageRule.max_moisture_pct`. "Less than 8 %" is stored as `max_moisture_pct: 8, max_moisture_pct_inclusive: false`.
-5. **Hour offsets.** `Step.offset_unit` is `days` (default) or `hours`, so "18 to 24 hrs after sowing" can be stored.
-6. **Editions.** `Source.edition_year` is the integer start year, used for ranking. `edition_label` keeps the edition as written ("2021-22").
-7. **IDs are prefixed and lowercase everywhere** (`season:rabi`, `nutrient:p2o5`). v1.2 fixes the doc's farm context (`"season": "rabi"`) and its uppercase Nutrient IDs. The prefixes the doc doesn't name are the ones in `kg/schema/ids.py`.
-8. **Worked example 2 is wrong.** The book gives short-term seed storage as 8–9 months, not 0–9. Follow the book.
-9. **`default_scope` is a list of rules,** each optionally section-scoped. The Source node stores the approved rules as text; the registry holds each rule's quote, page and section.
-10. **Exclusions.**
-    - A Recommendation can carry `excluded_regions` (`{id, raw}`).
-    - `RegionOrigin` gains `text_exclusion` for the edges code expands from them.
-    - A fact with an exclusion must be needs_review, and an excluded region can't also be in its regions.
-11. **Table cells in provenance.** `SourceSpan` gains `table_row` and `table_col` (the cell inside `table_ref`). Variety numbers (`release_year`, `duration_days_min`/`max`, `avg_yield_kg_ha`) keep their `raw` text, like subtype numbers.
+The eleven changes that were pending here (two page numbers, raw text for every number, condition-only units, strict bounds, hour offsets, editions, prefixed lowercase IDs, the worked-example fix, `default_scope` as a list, exclusions, table cells in provenance) are now in `docs/schema_v1.2.md` (see its "Changes from v1.1").
 
 Decisions on gaps that don't change the doc:
 - `sowing_date`, `variety` and `purpose` are in the condition-variable registry only for their `on_unknown` policy. Applicability to a variety or purpose is always an edge.

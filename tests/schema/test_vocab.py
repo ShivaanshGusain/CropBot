@@ -1,4 +1,4 @@
-"""The vocabularies match the lists written in docs/schema_v1.1.md.
+"""The vocabularies match the lists written in docs/schema_v1.2.md.
 
 If the schema doc changes a list, these tests fail until vocab.py follows.
 """
@@ -9,7 +9,7 @@ from pathlib import Path
 from kg.schema.vocab import (CONDITION_VARIABLES, Anchor, Basis, CautionKind, ConditionOp,
                              OnUnknown, OperationType, Status, Subtype, Unit)
 
-DOC = (Path(__file__).resolve().parents[2] / "docs" / "schema_v1.1.md").read_text(encoding="utf-8")
+DOC = (Path(__file__).resolve().parents[2] / "docs" / "schema_v1.2.md").read_text(encoding="utf-8")
 
 
 def values(enum):

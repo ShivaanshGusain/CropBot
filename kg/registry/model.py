@@ -29,7 +29,7 @@ class Section(Model):
 
 
 class DefaultScopeRule(Model):
-    """A book rule such as "dose basis = per_ha unless stated" (pending schema v1.2: a list)."""
+    """A book rule such as "dose basis = per_ha unless stated" (schema v1.2: a list)."""
     rule: Text
     quote: Text
     pdf_page: PositiveInt

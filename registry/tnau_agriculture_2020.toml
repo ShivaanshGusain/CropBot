@@ -1,5 +1,5 @@
 # Source registry entry: TNAU Crop Production Guide, Agriculture 2020.
-# Fields follow docs/schema_v1.1.md "Source registry" plus pending v1.2 changes
+# Fields follow docs/schema_v1.2.md "Source registry"
 # (edition_label, default_scope as a list of rules). Validate with:
 #   uv run python -m kg.registry
 

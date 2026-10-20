@@ -4,7 +4,7 @@ from pathlib import Path
 from kg.load.constraints import NODE_LABELS, constraint_name, statements
 from kg.schema.concepts import SEED_FILES
 
-DOC = (Path(__file__).resolve().parents[2] / "docs" / "schema_v1.1.md").read_text(encoding="utf-8")
+DOC = (Path(__file__).resolve().parents[2] / "docs" / "schema_v1.2.md").read_text(encoding="utf-8")
 
 
 def test_every_concept_label_in_the_doc_has_a_constraint():

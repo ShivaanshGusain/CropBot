@@ -1,8 +1,8 @@
-"""First-slice Recommendation subtypes (schema v1.1, "Deferred and open decisions").
+"""First-slice Recommendation subtypes (schema v1.2, "Deferred and open decisions").
 
 Each subtype adds only its own fields to the core. Numeric subtype fields are
 listed in NUMERIC_FIELDS so the core can require their raw text. Every bound
-has a `<field>_inclusive` flag (pending schema v1.2, default true): false
+has a `<field>_inclusive` flag (schema v1.2, default true): false
 stores "less than 8 %" or "more than 15 months" exactly.
 """
 

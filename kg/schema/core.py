@@ -1,4 +1,4 @@
-"""Recommendation core, value objects and provenance (docs/schema_v1.1.md).
+"""Recommendation core, value objects and provenance (docs/schema_v1.2.md).
 
 A Recommendation model is a fact document: the node's properties plus its
 outgoing edges as fields (regions, steps, conditions, evidence, ...). The
@@ -132,7 +132,7 @@ class ThresholdClause(Model):
     sampling_unit: Basis | None = None
     stage_id: StageId | None = None
     any_of_group: PositiveInt | None = None   # optional and unused for now
-    raw: Text                                 # pending schema v1.2: source text of the number
+    raw: Text                                 # schema v1.2: source text of the number
     conditions: list[Condition] = []
 
     @model_validator(mode="after")
@@ -149,8 +149,8 @@ class Applies(Model):
     value: float | None = Field(default=None, ge=0)
     min: float | None = Field(default=None, ge=0)
     max: float | None = Field(default=None, ge=0)
-    min_inclusive: bool = True                 # pending schema v1.2: false for "more than"
-    max_inclusive: bool = True                 # pending schema v1.2: false for "less than"
+    min_inclusive: bool = True                 # schema v1.2: false for "more than"
+    max_inclusive: bool = True                 # schema v1.2: false for "less than"
     unit: Unit | None = None
     basis: Basis | None = None
     formulation: str | None = None
@@ -194,9 +194,9 @@ class Step(Model):
     anchor: Anchor | None = None
     offset_min: float | None = None             # relative to anchor; negative = before
     offset_max: float | None = None
-    offset_min_inclusive: bool = True           # pending schema v1.2
-    offset_max_inclusive: bool = True           # pending schema v1.2
-    offset_unit: OffsetUnit = OffsetUnit.DAYS   # pending schema v1.2: days | hours
+    offset_min_inclusive: bool = True           # schema v1.2
+    offset_max_inclusive: bool = True           # schema v1.2
+    offset_unit: OffsetUnit = OffsetUnit.DAYS   # schema v1.2: days | hours
     stage_id: StageId | None = None
     month_start: int | None = Field(default=None, ge=1, le=12)
     month_end: int | None = Field(default=None, ge=1, le=12)
@@ -241,15 +241,15 @@ class SourceSpan(Model):
     """(:Recommendation)-[:EVIDENCED_BY]->(:SourceSpan)-[:IN_SOURCE]->(:Source)."""
     id: SpanId
     source_id: SourceId
-    # pending schema v1.2: v1.1 has a single `page`; v1.2 stores both
+    # schema v1.2: replaces v1.1's single `page`
     pdf_page: PositiveInt                 # PDF page, to locate the text (what Docling reports)
     printed_page: str | None = None       # page label printed in the book, for citations
     bbox: BBox | None = None
     section_path: Text                    # "Rice > 1.8 Main field > 1.8.6 Irrigation management"
     quote: Text                           # exact source text
     table_ref: Annotated[str, StringConstraints(pattern=r"^#/tables/\d+$")] | None = None
-    table_row: int | None = Field(default=None, ge=0)   # pending schema v1.2: cell inside table_ref
-    table_col: int | None = Field(default=None, ge=0)   # pending schema v1.2
+    table_row: int | None = Field(default=None, ge=0)   # schema v1.2: cell inside table_ref
+    table_col: int | None = Field(default=None, ge=0)   # schema v1.2
     extraction_method: ExtractionMethod
 
     @model_validator(mode="after")
@@ -264,14 +264,14 @@ class Source(Model):
     title: Text
     publisher: Text
     edition_year: int | None = None       # start year, used for ranking ("2021-22" -> 2021)
-    edition_label: str | None = None      # pending schema v1.2: the edition as written, e.g. "2021-22"
+    edition_label: str | None = None      # schema v1.2: the edition as written, e.g. "2021-22"
     language: Annotated[str, StringConstraints(pattern=r"^[a-z]{2,3}$")]
     url: Annotated[str, StringConstraints(pattern=r"^https?://\S+$")]
     sha256: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
     state_id: StateId | None = None       # whose book it is; None for national books
     region_scope: list[RegionId] = Field(min_length=1)
     authority_tier: AuthorityTier
-    # pending schema v1.2: a list of approved rules, each optionally section-scoped;
+    # schema v1.2: a list of approved rules, each optionally section-scoped;
     # the registry (registry/*.toml) holds the full rule with its quote and page
     default_scope: list[str] = []
 
@@ -292,7 +292,7 @@ class RegionRef(Model):
 
 
 class ExcludedRegion(Model):
-    """Pending schema v1.2: a region the text excludes ("other than Cauvery Delta").
+    """Schema v1.2: a region the text excludes ("other than Cauvery Delta").
 
     The extractor records it; code (never the LLM) expands it into IN_REGION
     edges to the state's remaining zones, with origin text_exclusion.
@@ -320,13 +320,13 @@ class Recommendation(Model):
     valid_from: date | None = None
     superseded_by: RecId | None = None
     created_at: datetime | None = None
-    # pending schema v1.2: source text for each numeric subtype field
+    # schema v1.2: source text for each numeric subtype field
     raw: dict[str, Text] = {}
 
     # applicability edges; several edges of one kind are alternatives
     crop_ids: list[CropId] = Field(min_length=1)          # FOR_CROP (required)
     regions: list[RegionRef] = Field(min_length=1)        # IN_REGION (required)
-    excluded_regions: list[ExcludedRegion] = []           # pending schema v1.2
+    excluded_regions: list[ExcludedRegion] = []           # schema v1.2
     variety_ids: list[VarietyId] = []                     # FOR_VARIETY
     season_ids: list[SeasonRef] = []                      # IN_SEASON
     system_ids: list[SystemId] = []                       # UNDER_SYSTEM

@@ -1,3 +1,5 @@
+Superseded: this is the v1.1 draft. The current schema is docs/schema_v1.2.md in the CropBot repo (branch kg-pipeline). Don’t edit or export this doc; schema changes are made in the repo.
+
 # CropBot Knowledge Graph Schema (v1.1)
 
 Oct 20, 2026 · @Shivaansh Gusain

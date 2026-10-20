@@ -1,4 +1,4 @@
-"""Fixed vocabularies from docs/schema_v1.1.md.
+"""Fixed vocabularies from docs/schema_v1.2.md.
 
 Every closed list in the schema lives here. Lists the schema leaves open
 (production systems, soil types, nutrients: they end in "...") are concepts,
@@ -27,7 +27,7 @@ class Unit(StrEnum):
 
 
 class ConditionOnlyUnit(StrEnum):
-    """Pending schema v1.2: units used only by condition variables."""
+    """Schema v1.2: units used only by condition variables."""
     MM = "mm"
     DEGC = "degC"
 
@@ -86,7 +86,7 @@ class RegionOrigin(StrEnum):
     TEXT = "text"
     SECTION = "section"
     SOURCE = "source"
-    TEXT_EXCLUSION = "text_exclusion"   # pending schema v1.2: code expanded "other than <region>"
+    TEXT_EXCLUSION = "text_exclusion"   # schema v1.2: code expanded "other than <region>"
 
 
 class Anchor(StrEnum):
@@ -103,7 +103,7 @@ class Anchor(StrEnum):
 
 
 class OffsetUnit(StrEnum):
-    """Pending schema v1.2: unit of Step.offset_min/offset_max."""
+    """Schema v1.2: unit of Step.offset_min/offset_max."""
     DAYS = "days"
     HOURS = "hours"
 

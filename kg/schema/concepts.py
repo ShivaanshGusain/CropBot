@@ -181,7 +181,7 @@ class Variety(Concept):
     avg_yield_kg_ha: float | None = Field(default=None, ge=0)
     grain_type: str | None = None
     traits: list[str] = []
-    raw: dict[str, Text] = {}           # pending schema v1.2
+    raw: dict[str, Text] = {}           # schema v1.2
     cells: dict[str, dict] = {}         # field or trait label -> table cell provenance
     evidence: list[SourceSpan] = Field(min_length=1)
 

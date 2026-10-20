@@ -1,4 +1,4 @@
-"""Pending schema v1.2 additions: strict bounds, hour offsets, edition labels, exclusions."""
+"""Schema v1.2 additions: strict bounds, hour offsets, edition labels, exclusions."""
 
 import copy
 

@@ -1,4 +1,4 @@
-"""Schema v1.1 as Pydantic models. See docs/schema_v1.1.md."""
+"""Schema v1.2 as Pydantic models. See docs/schema_v1.2.md."""
 
 from .core import (Applies, BBox, Condition, ExcludedRegion, Recommendation, RegionRef, Source,
                    SourceSpan, Step, ThresholdClause)
