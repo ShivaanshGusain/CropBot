@@ -31,8 +31,8 @@ VERSIONS = {
     "v3": Version("v3", "object", frozenset({"instruction_en", "seedlings_per_hill"}), frozenset(), True,
                   frozenset(f.value for f in ExtractionFlag)),
 }
-# the default for prepare/report and the runs step 10 reads; v3 becomes latest once its hand-runs exist
-LATEST = "v2"
+# the default for prepare/report and the runs step 10 reads (v3 since its four hand-runs, 2026-10-21)
+LATEST = "v3"
 
 
 def field_names(version: str) -> set[str]:

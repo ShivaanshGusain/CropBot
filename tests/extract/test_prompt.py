@@ -90,12 +90,14 @@ def test_default_scope_rule_is_shown_with_its_quote():
 
 
 def test_cache_key_depends_on_unit_text_model_and_prompt_version():
-    a = ex.build(ENTRY, UNIT, "model-a", TABLES)
-    assert a["version"] == "v2" and a["cache_key"] == ex.build(ENTRY, UNIT, "model-a", TABLES)["cache_key"]
-    assert a["cache_key"] != ex.build(ENTRY, UNIT, "model-b", TABLES)["cache_key"]
+    assert ex.build(ENTRY, UNIT, "model-a", TABLES)["version"] == "v3"           # the latest since 2026-10-21
+    a = ex.build(ENTRY, UNIT, "model-a", TABLES, version="v2")
+    assert a["cache_key"] == ex.build(ENTRY, UNIT, "model-a", TABLES, version="v2")["cache_key"]
+    assert a["cache_key"] != ex.build(ENTRY, UNIT, "model-b", TABLES, version="v2")["cache_key"]
     assert a["cache_key"] != ex.build(ENTRY, UNIT, "model-a", TABLES, version="v1")["cache_key"]
+    assert a["cache_key"] != ex.build(ENTRY, UNIT, "model-a", TABLES, version="v3")["cache_key"]
     changed = {**UNIT, "items": UNIT["items"][:2]}
-    assert a["cache_key"] != ex.build(ENTRY, changed, "model-a", TABLES)["cache_key"]
+    assert a["cache_key"] != ex.build(ENTRY, changed, "model-a", TABLES, version="v2")["cache_key"]
     assert "{{" not in a["prompt"] and "Apply 40 kg of DAP" in a["prompt"]
 
 
@@ -139,7 +141,7 @@ def test_v1_answers_still_check_as_v1(store):
 
 
 def test_v2_answer_with_every_line_accounted_for(store):
-    path, rec = ex.ingest(ENTRY, UNIT, "model-a", v2([V2_GOOD, ETL_FACT, BPH_FACT]))
+    path, rec = ex.ingest(ENTRY, UNIT, "model-a", v2([V2_GOOD, ETL_FACT, BPH_FACT]), version="v2")
     assert rec["ok"] and path.parent.name == "v2", rec["summary"]
     assert rec["coverage"] == {"uncovered": [], "sentences_outside_quotes": []}
     assert rec["summary"]["not_extracted"] == [{"index": 0, "quote": SKIP["quote"], "reason": SKIP["reason"], "ok": True}]
@@ -147,7 +149,7 @@ def test_v2_answer_with_every_line_accounted_for(store):
 
 def test_v2_uncovered_lines_and_partly_quoted_lines(store):
     part = {"quote": "It is cheap.", "reason": "statement"}
-    _, rec = ex.ingest(ENTRY, UNIT, "model-a", v2([V2_GOOD, ETL_FACT], [part]))
+    _, rec = ex.ingest(ENTRY, UNIT, "model-a", v2([V2_GOOD, ETL_FACT], [part]), version="v2")
     cov = rec["coverage"]
     assert not rec["ok"] and [u["ref"] for u in cov["uncovered"]] == ["#/tables/54 row 0 + #/tables/55 row 0"]
     assert cov["sentences_outside_quotes"] == [{"ref": "#/texts/3", "sentence": "DAP is a good source of P."}]
@@ -155,19 +157,19 @@ def test_v2_uncovered_lines_and_partly_quoted_lines(store):
 
 def test_v2_rejects_instruction_en_unknown_flags_and_the_v1_envelope(store):
     with_text = {**V2_GOOD, "steps": [{**STEP, "instruction_en": "Apply DAP."}]}
-    _, rec = ex.ingest(ENTRY, UNIT, "model-a", v2([with_text, ETL_FACT, BPH_FACT]))
+    _, rec = ex.ingest(ENTRY, UNIT, "model-a", v2([with_text, ETL_FACT, BPH_FACT]), version="v2")
     assert rec["summary"]["parse_failures"][0]["errors"] == ["steps.0.instruction_en: not part of prompt v2"]
     flagged = {**V2_GOOD, "extraction_flags": ["guessed"]}
-    _, rec = ex.ingest(ENTRY, UNIT, "model-a", v2([flagged, ETL_FACT, BPH_FACT]), force=True)
+    _, rec = ex.ingest(ENTRY, UNIT, "model-a", v2([flagged, ETL_FACT, BPH_FACT]), force=True, version="v2")
     assert "extraction_flags.0" in rec["summary"]["parse_failures"][0]["errors"][0]
-    _, rec = ex.ingest(ENTRY, UNIT, "model-a", json.dumps([V2_GOOD]), force=True)
+    _, rec = ex.ingest(ENTRY, UNIT, "model-a", json.dumps([V2_GOOD]), force=True, version="v2")
     assert rec["parse_error"].startswith('the answer must be {"facts"')
 
 
 def test_v2_flags_and_a_bad_not_extracted_quote_are_reported(store):
     flagged = {**V2_GOOD, "extraction_flags": ["anchor_from_context"]}
     _, rec = ex.ingest(ENTRY, UNIT, "model-a", v2([flagged, ETL_FACT, BPH_FACT],
-                                                  [SKIP, {"quote": "DAP is cheap", "reason": "x"}]))
+                                                  [SKIP, {"quote": "DAP is cheap", "reason": "x"}]), version="v2")
     s = rec["summary"]
     assert s["extraction_flags"] == [{"index": 0, "flags": ["anchor_from_context"]}]
     assert s["not_extracted_failures"] == [1] and not rec["ok"]
@@ -184,7 +186,7 @@ def test_compare_matches_by_subtype_and_quote_and_ignores_instruction_en(store):
     _, a = ex.ingest(ENTRY, UNIT, "model-a", json.dumps([V1_GOOD, {**ETL_FACT, "steps": []}]), version="v1")
     longer = {**V2_GOOD, "quote": "Apply 40 kg of DAP before the last puddling. DAP is a good source of P.",
               "extraction_flags": ["anchor_from_context"]}
-    _, b = ex.ingest(ENTRY, UNIT, "model-a", v2([longer, BPH_FACT]))
+    _, b = ex.ingest(ENTRY, UNIT, "model-a", v2([longer, BPH_FACT]), version="v2")
     c = ex.compare(a, b)
     assert (c["matched"], len(c["only_from"]), len(c["only_to"])) == (1, 1, 1)
     diff = c["changed"][0]["diff"]
@@ -195,14 +197,14 @@ def test_compare_matches_by_subtype_and_quote_and_ignores_instruction_en(store):
 def test_compare_ignores_fields_a_stored_v1_fact_never_had(store):
     _, a = ex.ingest(ENTRY, UNIT, "model-a", json.dumps([V1_GOOD]), version="v1")
     del a["facts"][0]["fact"]["extraction_flags"]                     # as stored before v2 existed
-    _, b = ex.ingest(ENTRY, UNIT, "model-a", v2([V2_GOOD, ETL_FACT, BPH_FACT]))
+    _, b = ex.ingest(ENTRY, UNIT, "model-a", v2([V2_GOOD, ETL_FACT, BPH_FACT]), version="v2")
     c = ex.compare(a, b)
     assert c["matched"] == 1 and c["unchanged"] == 1 and c["changed"] == []
 
 
 def test_a_new_run_keeps_the_earlier_one(store):
-    path, first = ex.ingest(ENTRY, UNIT, "model-a", v2([V2_GOOD, ETL_FACT, BPH_FACT]))
-    path2, second = ex.ingest(ENTRY, UNIT, "model-b", v2([V2_GOOD, ETL_FACT, BPH_FACT]))   # different cache key
+    path, first = ex.ingest(ENTRY, UNIT, "model-a", v2([V2_GOOD, ETL_FACT, BPH_FACT]), version="v2")
+    path2, second = ex.ingest(ENTRY, UNIT, "model-b", v2([V2_GOOD, ETL_FACT, BPH_FACT]), version="v2")   # different cache key
     assert path2 == path and second["previous_run"] == "tnau_agriculture_2020/v2/history/abc123.%s.json" % (
         first["cache_key"][:12])
     kept = store / second["previous_run"]
@@ -214,7 +216,7 @@ def test_a_new_run_keeps_the_earlier_one(store):
 
 
 def test_a_new_prompt_keeps_the_earlier_one(store):
-    a, b = ex.build(ENTRY, UNIT, "model-a", TABLES), ex.build(ENTRY, UNIT, "model-b", TABLES)
+    a, b = ex.build(ENTRY, UNIT, "model-a", TABLES, version="v2"), ex.build(ENTRY, UNIT, "model-b", TABLES, version="v2")
     path = ex.write_prompt(ENTRY, UNIT, a)
     assert ex.write_prompt(ENTRY, UNIT, a) == path                              # same key: nothing to keep
     assert not (store / "tnau_agriculture_2020" / "v2" / "history").exists()

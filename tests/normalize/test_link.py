@@ -1,7 +1,7 @@
 """Offline tests for name linking (kg.normalize.link): no embeddings, nothing created."""
 
 from kg.normalize.link import Linker, normalise
-from kg.schema.concepts import AgroClimaticZone, Fertilizer, Label, Nutrient, Purpose, SoilType
+from kg.schema.concepts import AgroClimaticZone, Fertilizer, Label, Nutrient, Pest, Purpose, SoilType
 
 NODES = [
     Fertilizer(id="fertilizer:dap", name_en="Diammonium phosphate (DAP)", n_pct=18, p2o5_pct=46, k2o_pct=0,
@@ -87,6 +87,11 @@ def test_a_label_naming_two_soils_links_to_both_only_in_link_many():
 def test_unlinked_generic_ambiguous_and_wrong_type():
     assert L.link("clayey soils", ("soil",)).reason == "no concept matches"
     assert L.link("Pest", ("pest", "disease")).reason == "generic target, no concept"
+    rat = Linker([Pest(id="pest:rat", name_en="Rat", pest_type="rodent", review_status="needs_review"),
+                  Label(concept_id="pest:rat", text="rodent", lang="en", script="Latn", kind="alias",
+                        review_status="needs_review")])
+    assert rat.link("rodent", ("pest",)).id == "pest:rat"                        # an approved label wins
+    assert rat.link("Pest", ("pest",)).reason == "generic target, no concept"
     assert L.link("Clay", ("soil",)).reason.startswith("ambiguous")
     assert L.link("DAP", ("pest",)).id is None                                    # right name, wrong concept type
     assert L.link("ADT 46", ("variety",)).id is None

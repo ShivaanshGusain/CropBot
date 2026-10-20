@@ -97,7 +97,9 @@ class Linker:
         def ok(cid):
             return cid.split(":", 1)[0] in prefixes
 
-        if normalise(name) in GENERIC:
+        # a generic word links only through a label a reviewer approved for it ("rodent" -> pest:rat)
+        labelled = any(ok(c) for c, _, _ in self.exact.get(name, ()))
+        if normalise(name) in GENERIC and not labelled:
             return Link(None, "generic", None, "generic target, no concept")
         if "nutrient" in prefixes:
             if name in self.symbol:

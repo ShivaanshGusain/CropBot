@@ -156,6 +156,14 @@ def test_a_changed_value_becomes_a_needs_review_revision():
     assert missing and "DELETE" not in " ".join(q for q, _ in tx.calls)          # flagged, never deleted
 
 
+def test_cautions_against_the_same_thing_in_other_words_do_not_conflict():
+    base = {"id": "rec:c1", "subtype": "Caution", "fact_key": "fk:c", "summary_en": "s", "kind": "prohibition",
+            "crop_ids": ["crop:rice"], "regions": [{"id": "state:33", "origin": "source"}],
+            "concerns": ["ai_group:synthetic_pyrethroids"], "text_en": "Do not use synthetic pyrethroids.", "steps": []}
+    other = {**base, "id": "rec:c2", "text_en": "Avoid spraying synthetic pyrethroids; they cause resurgence."}
+    assert lf.conflict_key(base) == lf.conflict_key(other) and lf.value_key(base) == lf.value_key(other)
+
+
 def test_conflicts_inside_a_load_are_found_once_per_pair():
     a, b = storage(), storage(rid="rec:bbbb", moisture=7.0)
     b["fact_key"], b["evidence"] = "fk:2", [{**SPAN, "id": "span:x2", "quote": "another quote"}]

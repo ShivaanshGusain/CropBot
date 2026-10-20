@@ -34,8 +34,8 @@ NO_VERIFIED = "No verified guidance available"
 WINDOW = ("storage_months_min", "storage_months_max", "storage_months_min_inclusive", "storage_months_max_inclusive")
 VALUE_SKIP = {"id", "status", "verifier", "verifier_score", "verifier_claims", "verifier_claim_p_yes",
               "verifier_notes", "review_reasons", "review_notes", "extraction_flags", "created_at",
-              "missing_in_latest_run", "summary_en", "conflict_key", "value_key", "fact_key", "extraction_model",
-              "reviewed_by"}
+              "missing_in_latest_run", "summary_en", "text_en", "conflict_key", "value_key", "fact_key",
+              "extraction_model", "reviewed_by"}
 
 
 def quote_of(row: dict) -> str | None:
