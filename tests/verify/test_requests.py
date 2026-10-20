@@ -64,6 +64,10 @@ def test_answers_are_stored_with_status_latency_and_rate_headers(entry):
     assert log["stored"] and log["status"] == 200 and log["headers"] == {"X-RateLimit-Remaining": "9"}
     assert "latency_ms" in log and log["usage"] == {"input_tokens": 300, "output_tokens": 20}
     assert set(v.load_answers(entry)) == {"ck_a", "ck_b"}
+    (line,) = [json.loads(x) for x in open(entry_dir(entry) / "requests.jsonl", encoding="utf-8")]
+    assert line["usage"] == {"input_tokens": 300, "output_tokens": 20} and line["stored"] and line["missing"] == []
+    assert line["header_names"] == ["Content-Type", "X-RateLimit-Remaining"]           # names only
+    assert "json" not in json.dumps(line["header_names"])
 
 
 def test_a_rerun_sends_nothing_already_answered(entry):
@@ -81,12 +85,15 @@ def test_a_rerun_sends_nothing_already_answered(entry):
 
 def test_backoff_on_429_and_timeouts_then_success(entry):
     req = v.requests_for({"unit:x:aaa": "state"}, [claim("a")], "m")[0]
-    waits = []
+    waits, echoed = [], []
     s = Session([Resp(429, {}, {"Retry-After": "7"}), TimeoutError(), Resp(503), Resp(200, answer("a"))])
-    log = v.send(entry, req, "https://api", "KEY123", s, sleep=waits.append)
+    log = v.send(entry, req, "https://api", "KEY123", s, sleep=waits.append, echo=echoed.append)
     assert log["stored"] and log["attempt"] == 4 and waits == [7, 4, 8]
     tries = [json.loads(line) for line in open(entry_dir(entry) / "requests.jsonl", encoding="utf-8")]
     assert [t["status"] for t in tries] == [429, None, 503, 200] and tries[1]["error"] == "TimeoutError"
+    assert [t.get("retry_in_s") for t in tries] == [7, 4, 8, None] and tries[0]["header_names"] == ["Retry-After"]
+    assert [e["status"] for e in echoed] == [429, None, 503, 200]                  # every try reaches the console
+    assert tries[-1]["usage"] and not any(t["stored"] for t in tries[:3])
 
 
 def test_giving_up_keeps_the_queue(entry):
@@ -94,6 +101,8 @@ def test_giving_up_keeps_the_queue(entry):
     s = Session([Resp(429)] * 6)
     log = v.send(entry, req, "https://api", "KEY123", s, sleep=lambda _: None)
     assert not log["stored"] and v.load_answers(entry) == {}
+    tries = [json.loads(line) for line in open(entry_dir(entry) / "requests.jsonl", encoding="utf-8")]
+    assert len(tries) == 6 and not any(t["stored"] for t in tries)
 
 
 def test_a_body_with_the_key_is_never_stored(entry):

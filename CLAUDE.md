@@ -482,6 +482,11 @@ Input: the step 11 facts (`data/validated/<id>/facts.jsonl`). The URL and model 
 - **Claims** (`kg/verify/claims.py`) are built by code from the stored fields; no model writes them.
   - One yes/no claim per step and value, per threshold clause, per moisture, months or depth field, and per ingredient a Caution concerns.
   - Amounts are restated in the book's terms: `per_cent_nursery` becomes value × `area_cents` "per 20 cents of nursery".
+  - Wording follows the book:
+    - names are as printed, read from the step 9 fact ("super phosphate", "chlorpyriphos", "N"), never `name_en`. Applicability lead-ins (purpose, soil, variety) still use concept names.
+    - a condition with raw text is rendered by that text ("in the absence of predatory spider").
+    - "at most", "below", "at least" and "more than" appear only when the field's printed raw has a bound word, and the inclusive flag picks which. "12%" is "to 12%".
+    - a step's `condition_raw` covering several products, or a fallback option, stays with the whole step: "the alternative to DAP, if not readily available, is urea 16 kg and super phosphate 120 kg per 20 cents of nursery".
   - Timing comes from anchor and offsets, else the stored `timing_raw`. Applicability is a lead-in ("for medium duration varieties grown for seed").
   - Untimed steps fall back to "the advice includes <operation>: <method>".
   - A fact with no claim (the two cautions with no `concerns`, and the saline Spacing with no values) is marked "human review required: no code-built claim" and can never be auto_verified.
@@ -493,7 +498,8 @@ Input: the step 11 facts (`data/validated/<id>/facts.jsonl`). The URL and model 
 - **Queue and cache** (`data/verified/<id>/`, gitignored):
   - Answers are appended to `answers.jsonl` as they arrive, keyed sha256(unit text + claim + model). A re-run sends only unanswered claims.
   - 429, 5xx and timeouts back off (2, 4, 8, 16, 32 s, or `Retry-After` if longer), then stop with the queue kept.
-  - Every try is logged in `requests.jsonl` with HTTP status, latency, rate-limit headers and usage.
+  - The free tier (`jev-1.14-free`) answers 429 with `retry-after: 60` to a request sent soon after the previous one (first real run, 2026-10-20). Plan for about 1 request per minute.
+  - Every try, 429s included, is logged in `requests.jsonl` and printed: HTTP status, latency, rate-limit headers, the names (never the values) of all response headers, and, once known, stored, usage, missing and extra keys.
   - Raw responses are stored only if they're valid JSON with no key or key-like string.
 - **Per fact:** `verifier`, `verifier_score` (the lowest P(yes) of its non-control claims), and its claims with P(yes) and the response file.
 - **Threshold:** `auto_verified_threshold` in `config/verify.toml` has **no default**. Without it nothing becomes auto_verified; calibration is step 15. With it, only an `extracted` fact with claims can become auto_verified; needs_review stays needs_review.

@@ -66,13 +66,16 @@ def main(argv=None) -> int:
     key = os.environ.get("BEATAPI_API_KEY")
     if not key:
         raise SystemExit("missing in .env: BEATAPI_API_KEY")
+    def echo(log):
+        retry = ", retry in %s s" % log["retry_in_s"] if "retry_in_s" in log else ""
+        print("  try %d %s part %d: HTTP %s%s, %s ms, stored %s, usage %s, rate headers %s, header names %s" % (
+            log["attempt"], log["unit_id"].rsplit(":", 1)[1], log["part"], log.get("status"), retry,
+            log.get("latency_ms"), log.get("stored"), log.get("usage"), log.get("headers"), log.get("header_names")))
+
     session, logs = requests.Session(), []
     for r in reqs:
-        log = send(entry, r, url, key, session)
+        log = send(entry, r, url, key, session, echo=echo)
         logs.append(log)
-        print("  sent %s part %d: HTTP %s, %s ms, stored %s, usage %s" % (
-            r["unit_id"].rsplit(":", 1)[1], r["part"], log.get("status"), log.get("latency_ms"), log.get("stored"),
-            log.get("usage")))
         if not log.get("stored"):
             print("stopping: the request was not answered; the queue is kept for the next run")
             break

@@ -238,7 +238,8 @@ def check_review_kept(record: dict, raw_fact: dict) -> dict:
 
 # --- running ---------------------------------------------------------------------------------
 
-def _runs(entry) -> dict:
+def step9_runs(entry) -> dict:
+    """Every step 9 run of the source by cache key (the latest of each version and the history)."""
     d = EXTRACTED_DIR / entry.id.split(":", 1)[1]
     out = {}
     for version_dir in d.iterdir():
@@ -261,7 +262,7 @@ def review_notes(entry, quote: str, pdf_pages: list[int]) -> list[int]:
 def run(entry) -> dict:
     path = NORMALIZED_DIR / entry.id.split(":", 1)[1] / "facts.jsonl"
     records = [json.loads(line) for line in open(path, encoding="utf-8")]
-    runs = _runs(entry)
+    runs = step9_runs(entry)
     nodes = read_seed().nodes
     fertilizers = {n.id: n for n in nodes if isinstance(n, Fertilizer) and n.review_status.value == "approved"}
     ais = {n.id: n for n in nodes if isinstance(n, ActiveIngredient)}
@@ -287,7 +288,7 @@ def run(entry) -> dict:
         notes = list(dict.fromkeys(entry.review_note[i].note for i in hits))
         reasons += ["review note: %s" % n for n in notes]
         status = "needs_review" if reasons or fact["status"] == "needs_review" else fact["status"]
-        out.append({**{k: rec[k] for k in ("unit_id", "raw_index", "subtype")}, "fact_id": fact["id"],
+        out.append({**{k: rec[k] for k in ("unit_id", "raw_index", "subtype", "run")}, "fact_id": fact["id"],
                     "status_before": fact["status"], "status": status, "checks": checks, "review_notes": notes,
                     "review_reasons": rec["review_reasons"] + reasons,
                     "fact": {**fact, "status": status}})

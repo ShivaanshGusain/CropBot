@@ -26,9 +26,9 @@ from kg.extract import get_unit, load_tables, render_unit
 from kg.load.seed import read_seed
 from kg.registry import ROOT
 from kg.schema.concepts import Label
-from kg.validate import VALIDATED_DIR
+from kg.validate import VALIDATED_DIR, step9_runs
 
-from .claims import NO_CLAIM, claim_key, claims_for, control_claim
+from .claims import NO_CLAIM, claim_key, claims_for, control_claim, printed_names
 
 VERIFIED_DIR = ROOT / "data" / "verified"
 CONFIG = ROOT / "config" / "verify.toml"
@@ -75,10 +75,13 @@ def plan(entry, model: str) -> dict:
                                                  encoding="utf-8")]
     names = concept_names()
     tables = load_tables(entry)
+    runs = step9_runs(entry)
+    printed = {rec["fact"]["id"]: printed_names(runs[rec["run"]["cache_key"]]["facts"][rec["raw_index"]]["fact"],
+                                                rec["fact"]) for rec in records}
     units, claims, no_claim = {}, [], []
     for rec in records:
         fact = rec["fact"]
-        texts = claims_for(fact, names)
+        texts = claims_for(fact, names, printed[fact["id"]])
         if not texts:
             no_claim.append(rec)
             continue
@@ -98,7 +101,7 @@ def plan(entry, model: str) -> dict:
                 rec = by_unit[uid].pop(0)
                 if rec in no_claim:
                     continue
-                text = control_claim(rec["fact"], names)
+                text = control_claim(rec["fact"], names, printed[rec["fact"]["id"]])
                 if text:
                     controls.append({"key": claim_key(rec["fact"]["fact_key"], text, control=True), "claim": text,
                                      "control": True, "fact_id": rec["fact"]["id"], "unit_id": uid,
@@ -168,13 +171,22 @@ def unsafe(text: str, key: str | None) -> list[str]:
 RATE_HEADERS = re.compile(r"ratelimit|rate-limit|retry-after|x-request-id", re.I)
 
 
-def send(entry, req: dict, url: str, key: str, session, sleep=time.sleep) -> dict:
-    """POST one request with backoff. Logs status, latency and rate-limit headers for every try;
+def send(entry, req: dict, url: str, key: str, session, sleep=time.sleep, echo=None) -> dict:
+    """POST one request with backoff. Logs every try (status, latency, rate-limit headers and the
+    names of all response headers; usage and stored once known) to requests.jsonl and to `echo`;
     stores the answers as they arrive. Returns the log entry of the last try."""
     d = out_dir(entry)
     d.mkdir(parents=True, exist_ok=True)
     (d / "responses").mkdir(exist_ok=True)
     log_path, ans_path = d / "requests.jsonl", d / "answers.jsonl"
+
+    def done(entry_log):
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry_log) + "\n")
+        if echo:
+            echo(entry_log)
+        return entry_log
+
     for attempt in range(len(BACKOFF) + 1):
         started = time.monotonic()
         entry_log = {"unit_id": req["unit_id"], "part": req["part"], "attempt": attempt + 1,
@@ -185,27 +197,25 @@ def send(entry, req: dict, url: str, key: str, session, sleep=time.sleep) -> dic
                                 headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
                                 timeout=120)
             entry_log.update(status=resp.status_code, latency_ms=round((time.monotonic() - started) * 1000),
-                             headers={k: v for k, v in resp.headers.items() if RATE_HEADERS.search(k)})
+                             headers={k: v for k, v in resp.headers.items() if RATE_HEADERS.search(k)},
+                             header_names=sorted(resp.headers.keys()))      # names only, never values
         except Exception as e:                       # timeouts and connection errors are retried
             entry_log.update(status=None, latency_ms=round((time.monotonic() - started) * 1000),
                              error=type(e).__name__)
             resp = None
         retry = resp is None or resp.status_code == 429 or resp.status_code >= 500
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry_log) + "\n")
         if retry and attempt < len(BACKOFF):
             wait = BACKOFF[attempt]
             if resp is not None and resp.headers.get("Retry-After", "").isdigit():
                 wait = max(wait, int(resp.headers["Retry-After"]))
+            done({**entry_log, "stored": False, "retry_in_s": wait})
             sleep(wait)
             continue
         if resp is None or not 200 <= resp.status_code < 300:
-            entry_log["stored"] = False
-            return entry_log
+            return done({**entry_log, "stored": False})
         problems = unsafe(resp.text, key)
         if problems:
-            entry_log.update(stored=False, problems=problems)
-            return entry_log
+            return done({**entry_log, "stored": False, "problems": problems})
         name = "%s_%d.json" % (req["unit_id"].rsplit(":", 1)[1], req["part"])
         (d / "responses" / name).write_bytes(resp.content)
         body = resp.json()
@@ -220,7 +230,7 @@ def send(entry, req: dict, url: str, key: str, session, sleep=time.sleep) -> dic
         entry_log.update(stored=True, response=name, usage=body.get("usage"), task_id=body.get("id"),
                          missing=[c["key"] for c in req["claims"] if c["key"] not in answers],
                          extra=sorted(set(answers) - {c["key"] for c in req["claims"]}))
-        return entry_log
+        return done(entry_log)
     return entry_log
 
 
