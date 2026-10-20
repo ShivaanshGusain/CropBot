@@ -320,8 +320,42 @@ def ingest(entry, unit: dict, model: str, answer: str, force: bool = False,
     record["ok"] = not (record["parse_error"] or s["parse_failures"] or s["quote_failures"]
                         or s["not_extracted_failures"] or s["uncovered"])
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():                    # an earlier run is kept, never overwritten
+        old = json.loads(path.read_text(encoding="utf-8"))
+        kept = path.parent / "history" / ("%s.%s.json" % (path.stem, old["cache_key"][:12]))
+        kept.parent.mkdir(exist_ok=True)
+        kept.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+        record["previous_run"] = kept.relative_to(EXTRACTED_DIR).as_posix()
     path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
     return path, record
+
+
+def write_prompt(entry, unit: dict, built: dict) -> Path:
+    """Write the filled prompt; an earlier prompt for the unit with a different cache key moves to
+    history/<hash>.<key[:12]>.md first. The key sits beside the prompt in <hash>.key (the prompt
+    text itself is only what the model reads)."""
+    d = out_dir(entry, built["version"]) / "prompts"
+    stem = file_stem(unit["id"])
+    path, key_path = d / ("%s.md" % stem), d / ("%s.key" % stem)
+    d.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        old_key = key_path.read_text(encoding="utf-8").strip() if key_path.exists() else \
+            "nokey-" + hashlib.sha256(path.read_bytes()).hexdigest()
+        if old_key != built["cache_key"]:
+            kept = out_dir(entry, built["version"]) / "history" / ("%s.%s.md" % (stem, old_key[:12]))
+            kept.parent.mkdir(exist_ok=True)
+            kept.write_bytes(path.read_bytes())
+    path.write_text(built["prompt"], encoding="utf-8")
+    key_path.write_text(built["cache_key"], encoding="utf-8")
+    return path
+
+
+def load_run(entry, unit_id: str, ref: str) -> dict:
+    """A stored run: a prompt version ("v2", the latest run under it) or a file path."""
+    path = Path(ref) if ref.endswith(".json") else out_path(entry, unit_id, ref)
+    if not path.exists():
+        raise ExtractError("no run %s for %s (%s)" % (ref, unit_id, path))
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 # --- comparing two runs of one unit -------------------------------------------------------------
@@ -373,7 +407,8 @@ def compare(a: dict, b: dict) -> dict:
         if diff:
             changed.append({"from": x["index"], "to": y["index"], "subtype": x["fact"]["subtype"], "diff": diff})
     return {
-        "from": a["prompt_version"], "to": b["prompt_version"],
+        "from": "%s@%s" % (a["prompt_version"], a["cache_key"][:8]),
+        "to": "%s@%s" % (b["prompt_version"], b["cache_key"][:8]),
         "facts": [len(a["facts"]), len(b["facts"])],
         "by_subtype": [a["summary"]["by_subtype"], b["summary"]["by_subtype"]],
         "matched": len(pairs), "unchanged": len(pairs) - len(changed), "changed": changed,

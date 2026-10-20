@@ -198,5 +198,29 @@ def test_compare_ignores_fields_a_stored_v1_fact_never_had(store):
     assert c["matched"] == 1 and c["unchanged"] == 1 and c["changed"] == []
 
 
+def test_a_new_run_keeps_the_earlier_one(store):
+    path, first = ex.ingest(ENTRY, UNIT, "model-a", v2([V2_GOOD, ETL_FACT, BPH_FACT]))
+    path2, second = ex.ingest(ENTRY, UNIT, "model-b", v2([V2_GOOD, ETL_FACT, BPH_FACT]))   # different cache key
+    assert path2 == path and second["previous_run"] == "tnau_agriculture_2020/v2/history/abc123.%s.json" % (
+        first["cache_key"][:12])
+    kept = store / second["previous_run"]
+    assert json.loads(kept.read_text(encoding="utf-8"))["extraction_model"] == "model-a"
+    assert ex.load_run(ENTRY, UNIT["id"], str(kept))["cache_key"] == first["cache_key"]
+    assert ex.load_run(ENTRY, UNIT["id"], "v2")["cache_key"] == second["cache_key"]
+    with pytest.raises(ex.ExtractError, match="no run v1"):
+        ex.load_run(ENTRY, UNIT["id"], "v1")
+
+
+def test_a_new_prompt_keeps_the_earlier_one(store):
+    a, b = ex.build(ENTRY, UNIT, "model-a", TABLES), ex.build(ENTRY, UNIT, "model-b", TABLES)
+    path = ex.write_prompt(ENTRY, UNIT, a)
+    assert ex.write_prompt(ENTRY, UNIT, a) == path                              # same key: nothing to keep
+    assert not (store / "tnau_agriculture_2020" / "v2" / "history").exists()
+    ex.write_prompt(ENTRY, UNIT, b)
+    kept = store / "tnau_agriculture_2020" / "v2" / "history" / ("abc123.%s.md" % a["cache_key"][:12])
+    assert kept.read_text(encoding="utf-8") == a["prompt"] and path.read_text(encoding="utf-8") == b["prompt"]
+    assert (path.parent / "abc123.key").read_text(encoding="utf-8") == b["cache_key"]
+
+
 def test_file_stem_has_no_colon():
     assert ex.file_stem("unit:tnau_agriculture_2020:abc123-2") == "abc123-2"

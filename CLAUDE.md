@@ -356,7 +356,8 @@ uv run python -m kg.extract compare source:tnau_agriculture_2020 --unit <unit_id
   - Each file records the prompt version and sha256, `extraction_model`, the unit text sha256, the time, the raw answer, every fact and its check results.
   - Cache key: unit text + prompt version + prompt hash + model.
   - `ingest` refuses to replace an answer with the same key unless given `--force`.
-  - Runs under different versions sit side by side. `compare` matches facts by subtype and quote (then by one quote containing the other) and ignores `instruction_en`.
+  - Runs under different versions sit side by side. A new run of the same unit and version moves the earlier answer to `<version>/history/<hash>.<cache key[:12]>.json`, recorded as `previous_run`; nothing is overwritten. `prepare` does the same for an earlier prompt with a different key (`history/<hash>.<key[:12]>.md`; the key sits in `prompts/<hash>.key`).
+  - `compare --from/--to` takes a version (its latest run) or a run file. It matches facts by subtype and quote (then by one quote containing the other) and ignores `instruction_en`. Runs are labelled `<version>@<cache key[:8]>`.
 - **Hand-runs:** the JSON answer is written directly from the rendered prompt; no template generates any field.
 - **Checks here only:**
   - the answer parses into the raw model under its version, fact by fact;

@@ -5,8 +5,8 @@ from pathlib import Path
 
 from kg.registry import read_registry
 
-from . import (ExtractError, build, cached, compare, file_stem, get_unit, ingest, load_units, out_dir,
-               out_path)
+from . import (ExtractError, build, cached, compare, get_unit, ingest, load_run, load_units, out_dir,
+               write_prompt)
 from .versions import LATEST, VERSIONS
 
 KEYS = ("parse_failures", "quote_failures", "quotes_found_more_than_once", "not_extracted",
@@ -75,8 +75,8 @@ def main(argv=None) -> int:
     c = sub.add_parser("compare", help="two runs of one unit")
     c.add_argument("source_id")
     c.add_argument("--unit", required=True)
-    c.add_argument("--from", dest="a", required=True, choices=sorted(VERSIONS))
-    c.add_argument("--to", dest="b", required=True, choices=sorted(VERSIONS))
+    c.add_argument("--from", dest="a", required=True, help="a prompt version (its latest run) or a run file")
+    c.add_argument("--to", dest="b", required=True, help="a prompt version (its latest run) or a run file")
     a = p.parse_args(argv)
     entry = _entry(a.source_id)
     try:
@@ -98,13 +98,7 @@ def main(argv=None) -> int:
                 encoding="utf-8")
             return 0 if all(rec["ok"] for rec in records) else 1
         if a.cmd == "compare":
-            runs = []
-            for version in (a.a, a.b):
-                path = out_path(entry, a.unit, version)
-                if not path.exists():
-                    raise ExtractError("no %s run for %s (%s)" % (version, a.unit, path))
-                runs.append(json.loads(path.read_text(encoding="utf-8")))
-            print_compare(compare(*runs))
+            print_compare(compare(load_run(entry, a.unit, a.a), load_run(entry, a.unit, a.b)))
             return 0
         unit = get_unit(entry, a.unit)
         if a.cmd == "prepare":
@@ -113,9 +107,7 @@ def main(argv=None) -> int:
             if hit:
                 print("cached: %s (same unit text, prompt and model)" % hit)
                 return 0
-            path = out_dir(entry, a.prompt) / "prompts" / ("%s.md" % file_stem(unit["id"]))
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(built["prompt"], encoding="utf-8")
+            path = write_prompt(entry, unit, built)
             print("prompt written: %s (%d chars, %d quote segments)" % (path, len(built["prompt"]),
                                                                         len(built["segments"])))
             return 0
