@@ -405,8 +405,9 @@ No model. Input: the latest v2 run of every unit (a run that failed step 9 stops
   - Nursery cents give `per_cent_nursery`: value per cent, `area_cents` as stated.
   - A bare "/kg" in a seed treatment, and "for one hectare", are read from context and send the fact to review.
   - `basis_rule` must be one of the unit's approved default-scope rules.
-- **`quantity_ref`:** copied from the one earlier fact of the unit that gives the same target an amount, with `inherited: true`; zero or several such facts hold it.
+- **`quantity_ref`:** copied from the one earlier fact of the unit that gives the same target an amount, with `inherited: true`; zero or several such facts hold it. A fact inheriting from a held fact is held too (chains included) until its source validates.
 - **Linking** (`kg/normalize/link.py`): exact canonical label, then an alias label, then a normalised match on name, slug and labels.
+  - Last, for concepts with a `scientific_name`: a table cell that is exactly a known name (`name_en` or a label) followed by that scientific name, both normalised ("Stem borer Scirpophaga incertulas"). Anything else in the cell goes to review.
   - Nutrient symbols match exactly; "P" and "K" follow the NPK convention (p2o5, k2o) and go to review.
   - Generic targets ("Pest", "weeds", "rodent") don't link.
   - No embeddings yet (BGE-M3 isn't set up).
@@ -419,7 +420,9 @@ No model. Input: the latest v2 run of every unit (a run that failed step 9 stops
   - a `fact_key` collision within the unit.
 
   An unlinked *step* or *clause* stage keeps its words in `timing_raw`/`raw`, and the fact goes to review.
-- **`fact_key`:** a hash of the source, section path, subtype, linked applicability, identity (pests, targets, kind, concerns, control class, dose basis), step slots (order, alt group, option, operation, target IDs) and the quote's first passage ref. Values are excluded. `id` is `rec:` plus a hash of the key and the values.
+- **`fact_key`:** a hash of the source, section path, subtype, linked applicability, identity, step slots (order, alt group, option, operation, target IDs) and the quote's first passage ref. Values are excluded.
+  - Identity covers pests, targets, kind, concerns, control class, dose basis, DryingSpec `storage_term_raw`, and every condition of the fact (variable, op, raw).
+  - There is no sentence position; facts that still collide stay held. `id` is `rec:` plus a hash of the key and the values.
 - **Status:** needs_review for any of:
   - an extraction flag;
   - basis_inferred, or a basis read from context;

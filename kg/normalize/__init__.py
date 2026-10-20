@@ -54,6 +54,7 @@ class Fact:
         self.run, self.unit, self.raw, self.index = run, unit, raw["fact"], raw["index"]
         self.quote_check = raw["quote_check"]
         self.blocks, self.review, self.links, self.conversions = [], [], [], []
+        self.inherits_from = set()        # (unit id, raw index) of the facts its amounts came from
 
     def link(self, linker, name, prefixes, name_type, required=True):
         lk = linker.link(name, prefixes)
@@ -64,9 +65,9 @@ class Fact:
                 self.blocks.append("unlinked %s %r (%s)" % (name_type, name, lk.reason))
             return None
         if lk.review_status == "needs_review":
-            self.review.append("linked to a needs_review concept or label: %s -> %s" % (name, lk.id))
+            self.review.append("linked to a needs_review concept or label: %r -> %r" % (name, lk.id))
         if lk.method == "npk_convention":
-            self.review.append("%r read as %s by the N:P2O5:K2O convention" % (name, lk.id))
+            self.review.append("%r read as %r by the N:P2O5:K2O convention" % (name, lk.id))
             self.conversions.append({"fact": self.index, "field": "target", "from": name, "to": lk.id,
                                      "rule": "NPK convention: %s -> %s" % (name, lk.id)})
         return lk.id
@@ -81,7 +82,7 @@ def convert_quantity(f: Fact, q: dict, linker, subtype: str, step_order) -> dict
     out = {"target_id": target, "raw": q["raw"], "formulation": q["formulation"],
            "basis_inferred": q["basis_inferred"], "quantity_ref": q["quantity_ref"]}
     if q["basis_inferred"]:
-        f.review.append("basis inferred for %s (%s)" % (q["target"], q["basis"]))
+        f.review.append("basis inferred for %r (%r)" % (q["target"], q["basis"]))
     w = water_l_per_ha(q["water_raw"])
     if w is not None:
         out["water_l_per_ha"] = w
@@ -271,15 +272,25 @@ def evidence(f: Fact, entry, ocr_pages) -> dict:
             "extraction_method": method}
 
 
+def _conditions(d: dict) -> list:
+    """Every condition of the fact (on the fact, its steps and its clauses) as (variable, op, raw)."""
+    found = list(d.get("conditions") or [])
+    found += [c for s in d.get("steps") or [] for c in s.get("conditions") or []]
+    found += [c for cl in d.get("clauses") or [] for c in cl.get("conditions") or []]
+    return sorted({(c["variable"], c["op"], c["raw"]) for c in found})
+
+
 def fact_key_parts(f: Fact, d: dict) -> dict:
     """source + section path + subtype + applicability + identity + step slots; values excluded.
+    Identity includes the fact's conditions (variable, op, raw) and a DryingSpec's storage term.
     The quote's location (first segment ref) separates facts the rest cannot tell apart."""
     return {"source": f.unit["source_id"], "section": f.unit["section_path"], "subtype": d["subtype"],
             "applicability": {k: sorted(d.get(k) or []) for k in ("crop_ids", "variety_ids", "season_ids", "system_ids",
                                                                    "soil_ids", "purpose_ids", "stage_ids")}
                              | {"regions": sorted(x["id"] for x in d["regions"]), "duration_group": d["duration_group"]},
             "identity": {k: d.get(k) for k in ("pest_ids", "target_ids", "recommends", "kind", "concerns",
-                                               "control_class", "dose_basis")},
+                                               "control_class", "dose_basis", "storage_term_raw")}
+                        | {"conditions": _conditions(d)},
             "steps": [[s["order"], s["alt_group"], s["alt_option"], s["operation"],
                        sorted(a["target_id"] or "" for a in s["applies"])] for s in d["steps"]],
             "passage": (f.quote_check["refs"] or [None])[0]}
@@ -307,7 +318,8 @@ def resolve_quantity_refs(built: list[tuple["Fact", dict]]) -> None:
                     if k in b:
                         a[k] = b[k]
                 a["inherited"], a["raw"] = True, b["raw"]
-                f.review.append("amount for %s inherited from fact %d" % (a["target_id"], cands[0][0]))
+                f.inherits_from.add((f.unit["id"], cands[0][0]))
+                f.review.append("amount for %r inherited from fact %d" % (a["target_id"], cands[0][0]))
                 f.conversions.append({"fact": f.index, "target": a["target_id"], "from": "quantity_ref previous",
                                       "to": {k: a[k] for k in ("value", "unit", "basis", "area_cents") if k in a},
                                       "rule": "inherited from fact %d of the same unit" % cands[0][0]})
@@ -347,6 +359,7 @@ def run(entry) -> dict:
         if not f.blocks:                           # held facts have unlinked IDs; their keys mean nothing
             keys[(f.unit["id"], d["fact_key"])] += 1
         staged.append((f, d, parts))
+    validated = {}
     for f, d, parts in staged:
         if not f.blocks and keys[(f.unit["id"], d["fact_key"])] > 1:
             f.blocks.append("fact_key collides with another fact of the unit")
@@ -355,20 +368,37 @@ def run(entry) -> dict:
         d["status"] = "needs_review" if f.review else "extracted"
         values = {k: v for k, v in d.items() if k not in ("id", "fact_key", "summary_en", "extraction_model")}
         d["id"] = "rec:" + sha([d["fact_key"], values], 16)
+        if not f.blocks:
+            try:
+                validated[id(f)] = FACT.validate_python(copy.deepcopy(d)).model_dump(mode="json")
+            except ValidationError as e:
+                f.blocks += ["schema: %s: %s" % (".".join(map(str, x["loc"])), x["msg"]) for x in e.errors()]
+    hold_inheritors([f for f, _, _ in staged])
+    for f, d, parts in staged:
         common = {"unit_id": f.unit["id"], "raw_index": f.index, "subtype": d["subtype"],
                   "run": {"prompt_version": f.run["prompt_version"], "cache_key": f.run["cache_key"]},
                   "links": f.links, "conversions": f.conversions, "review_reasons": f.review}
-        if not f.blocks:
-            try:
-                fact = FACT.validate_python(copy.deepcopy(d)).model_dump(mode="json")
-            except ValidationError as e:
-                f.blocks += ["schema: %s: %s" % (".".join(map(str, x["loc"])), x["msg"]) for x in e.errors()]
         if f.blocks:
             held.append({**common, "quote": f.raw["quote"], "reasons": f.blocks})
         else:
+            fact = validated[id(f)]
             facts.append({**common, "fact": fact, "status": fact["status"], "purpose_origins": f.purpose_origins,
                           "fact_key_parts": parts})
     return {"facts": facts, "held": held, "built": built}
+
+
+def hold_inheritors(facts: list[Fact]) -> None:
+    """A fact that inherits an amount from a held fact is held too, until its source validates;
+    repeated until nothing changes, so chains are held as well."""
+    changed = True
+    while changed:
+        changed = False
+        held = {(f.unit["id"], f.index) for f in facts if f.blocks}
+        for f in facts:
+            sources = sorted(f.inherits_from & held)
+            if sources and not f.blocks:
+                f.blocks.append("inherits its amount from held fact %s" % ", ".join(str(i) for _, i in sources))
+                changed = True
 
 
 def _zones_of_state() -> dict[str, list[str]]:

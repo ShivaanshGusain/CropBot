@@ -131,6 +131,42 @@ def test_flags_and_unlinked_step_stage_mean_review_not_hold():
     assert finish(f, d).status.value == "needs_review"
 
 
+def drying(index, term, quote):
+    data = {"subtype": "DryingSpec", "summary_en": "s", "quote": quote, "purposes": ["seeds"],
+            "target_moisture_pct_max": 13, "raw": {"target_moisture_pct_max": "13 %"}, "storage_term_raw": term,
+            "steps": [{"order": 1, "operation": "drying"}]}
+    return Fact(RUN, UNIT, {"index": index, "fact": RAW.validate_python(data).model_dump(mode="json"), "quote_check": QC})
+
+
+def key(f):
+    from kg.normalize import fact_key_parts
+    return fact_key_parts(f, build(f, Linker(NODES + [Purpose(id="purpose:seed", name_en="Seed",
+                                                             review_status="approved")]), "crop:rice", ZONES))
+
+
+def test_fact_key_identity_includes_storage_term_and_conditions():
+    short, long_ = drying(0, "short term storage", "a"), drying(1, "long term storage", "b")
+    assert key(short) != key(long_)                                   # same passage, different storage term
+    assert key(short) == key(drying(2, "short term storage", "different words, same passage"))
+    cond = {"variable": "spider_count_per_hill", "op": ">=", "value": 1, "raw": "when spider is present at 1/hill"}
+    a, b = raw_fact(0), raw_fact(1, conditions=[cond])
+    assert key(a) != key(b)
+    assert key(b)["identity"]["conditions"] == [("spider_count_per_hill", ">=", "when spider is present at 1/hill")]
+
+
+def test_a_fact_inheriting_from_a_held_fact_is_held_too():
+    from kg.normalize import hold_inheritors
+    source, child, grandchild, other = raw_fact(0), raw_fact(1), raw_fact(2), raw_fact(3)
+    source.blocks.append("unlinked applies target 'x'")
+    child.inherits_from.add((UNIT["id"], 0))
+    grandchild.inherits_from.add((UNIT["id"], 1))
+    other.inherits_from.add((UNIT["id"], 9))
+    hold_inheritors([grandchild, child, source, other])
+    assert child.blocks == ["inherits its amount from held fact 0"]
+    assert grandchild.blocks == ["inherits its amount from held fact 1"]
+    assert other.blocks == []
+
+
 def test_basis_rule_must_be_approved_for_the_unit():
     rule = "dose basis = per_ha unless stated [ii) Main field, PDF pp. 63-69]"
     step = {"order": 1, "operation": "spraying", "applies": [

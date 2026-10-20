@@ -46,6 +46,31 @@ def test_nutrient_symbols_and_the_npk_convention():
     assert (p.id, p.method, p.review_status) == ("nutrient:p2o5", "npk_convention", "needs_review")
 
 
+def test_table_cell_with_a_known_name_and_the_scientific_name():
+    from kg.schema.concepts import Pest
+    nodes = NODES + [
+        Pest(id="pest:stem_borer", name_en="Stem borer", scientific_name="Scirpophaga incertulas", pest_type="insect",
+             review_status="needs_review"),
+        Pest(id="pest:green_leafhopper", name_en="Green leafhopper",
+             scientific_name="Nephotettix nigropictus, N. cincticeps, N. virescens", pest_type="insect",
+             review_status="needs_review"),
+        Pest(id="pest:earhead_bug", name_en="Earhead bug", scientific_name="Leptocorisa acuta, L. oratorius",
+             pest_type="insect", review_status="needs_review"),
+        Label(concept_id="pest:green_leafhopper", text="GLH", lang="en", script="Latn", kind="abbreviation",
+              review_status="approved")]
+    lk = Linker(nodes)
+    hit = lk.link("Stem borer Scirpophaga incertulas", ("pest",))
+    assert (hit.id, hit.method, hit.review_status) == ("pest:stem_borer", "name_plus_scientific", "needs_review")
+    assert lk.link("Green leafhopper Nephotettix nigropictus N. cincticeps N. virescens", ("pest",)).id == \
+        "pest:green_leafhopper"                                          # punctuation differs only
+    assert lk.link("GLH Nephotettix nigropictus, N. cincticeps, N. virescens", ("pest",)).id == "pest:green_leafhopper"
+    # anything else in the cell, or a different wording, goes to review
+    assert lk.link("Earhead bug Leptocorisa acuta and L. oratorius", ("pest",)).id is None
+    assert lk.link("Yellow stem borer Scirpophaga incertulas", ("pest",)).id is None
+    assert lk.link("Stem borer Scirpophaga", ("pest",)).id is None
+    assert lk.link("Stem borer Scirpophaga incertulas", ("ai",)).id is None
+
+
 def test_unlinked_generic_ambiguous_and_wrong_type():
     assert L.link("clayey soils", ("soil",)).reason == "no concept matches"
     assert L.link("Pest", ("pest", "disease")).reason == "generic target, no concept"

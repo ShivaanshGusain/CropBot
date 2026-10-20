@@ -3,7 +3,9 @@ concept: unmatched or ambiguous names go to review.
 
 Order: (1) a Label whose text equals the name, (2) the same with an alias/abbreviation label,
 (3) a normalised match (casefold, punctuation removed, a trailing plural dropped) against
-name_en, the ID slug and every label. Nutrient symbols match exactly ("N"). "P" and "K" follow
+name_en, the ID slug and every label, (4) only for concepts with a scientific_name: the name is
+exactly a known name (name_en or a label) followed by that scientific name, both normalised
+("Stem borer Scirpophaga incertulas"). Nutrient symbols match exactly ("N"). "P" and "K" follow
 the book's N:P2O5:K2O convention, an inference that sends the fact to review.
 """
 
@@ -45,16 +47,26 @@ class Linker:
         self.exact = defaultdict(set)             # label text -> {(concept id, label status, kind)}
         self.norm = defaultdict(set)              # normalised form -> {(concept id, label status or None)}
         self.symbol = {}
+        self.names_with_scientific = defaultdict(set)   # normalised "<known name> <scientific>" -> {(id, status)}
+        known = defaultdict(set)                  # concept id -> {(known name, label status or None)}
+        scientific = {}
         for n in nodes:
             if isinstance(n, Label):
                 self.exact[n.text].add((n.concept_id, n.review_status.value, n.kind.value))
                 self.norm[normalise(n.text)].add((n.concept_id, n.review_status.value))
+                known[n.concept_id].add((n.text, n.review_status.value))
                 continue
             self.status[n.id] = n.review_status.value
             self.norm[normalise(n.name_en)].add((n.id, None))
             self.norm[normalise(n.id.split(":", 1)[1].replace("_", " "))].add((n.id, None))
+            known[n.id].add((n.name_en, None))
+            if getattr(n, "scientific_name", None):
+                scientific[n.id] = n.scientific_name
             if isinstance(n, Nutrient):
                 self.symbol[n.symbol] = n.id
+        for cid, sci in scientific.items():
+            for name, label_status in known[cid]:
+                self.names_with_scientific[normalise("%s %s" % (name, sci))].add((cid, label_status))
         for v in varieties:
             self.status[v["id"]] = v["review_status"]
             self.norm[normalise(v["name"])].add((v["id"], None))
@@ -100,4 +112,13 @@ class Linker:
             return Link(cid, "normalised", self._status(cid, label))
         if len(ids) > 1:
             return Link(None, "normalised", None, "ambiguous: %s" % sorted(ids))
+        # a table cell printing a known name followed by the concept's scientific name, exactly
+        hits = {(c, s) for c, s in self.names_with_scientific.get(normalise(name), ()) if ok(c)}
+        ids = {c for c, _ in hits}
+        if len(ids) == 1:
+            cid = ids.pop()
+            label = "needs_review" if any(s == "needs_review" for _, s in hits) else None
+            return Link(cid, "name_plus_scientific", self._status(cid, label))
+        if len(ids) > 1:
+            return Link(None, "name_plus_scientific", None, "ambiguous: %s" % sorted(ids))
         return Link(None, "none", None, "no concept matches")
