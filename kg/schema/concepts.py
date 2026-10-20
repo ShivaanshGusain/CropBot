@@ -160,10 +160,11 @@ class Crop(Concept):
 class Variety(Concept):
     """A variety pivoted from a book's variety table (step 8).
 
-    The one sanctioned exception to "never create concepts automatically": a
-    Variety record is always needs_review, and facts linked to an unapproved
-    Variety are needs_review too. Every number keeps its raw text (pending
-    schema v1.2), and every value keeps the table cell it came from.
+    The one sanctioned exception to "never create concepts automatically": the
+    pivot (kg/tables) always produces needs_review records, a reviewer may later
+    approve them, and facts linked to an unapproved Variety are needs_review too.
+    Every number keeps its raw text (schema v1.2), and every value keeps the
+    table cell it came from.
     """
     LABEL = "Variety"
     EDGES = {"crop_id": ("VARIETY_OF", "Crop")}
@@ -187,8 +188,6 @@ class Variety(Concept):
 
     @model_validator(mode="after")
     def _variety_rules(self):
-        if self.review_status is not ReviewStatus.NEEDS_REVIEW:
-            raise ValueError("a pivoted Variety is always needs_review")
         for name in self.NUMERIC_FIELDS:
             if getattr(self, name) is not None and name not in self.raw:
                 raise ValueError("%s needs its raw source text in raw[%r]" % (name, name))
