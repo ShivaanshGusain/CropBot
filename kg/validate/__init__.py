@@ -198,7 +198,9 @@ def check_alternatives(fact: dict, fertilizers: dict) -> dict:
         return result("skip", "no alternatives made only of fertilizers", applies=False)
     out = []
     for key, steps in groups.items():
-        missing = sorted({a["target_id"] for s in steps for a in s["applies"] if a["target_id"] not in fertilizers})
+        missing = sorted({a["target_id"] for s in steps for a in s["applies"] if a["target_id"] not in fertilizers
+                          or None in (fertilizers[a["target_id"]].n_pct, fertilizers[a["target_id"]].p2o5_pct,
+                                      fertilizers[a["target_id"]].k2o_pct)})
         if missing:
             return result("skip", "no approved percentages for %s" % ", ".join(missing), applies=True)
         totals = []

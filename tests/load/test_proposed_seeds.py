@@ -33,7 +33,14 @@ def test_active_ingredients_never_take_reg_status_from_the_book(seed):
     ais = [n for n in by_id(seed).values() if isinstance(n, ActiveIngredient)]
     assert all(a.reg_status.value == "unknown" and "CIB&RC" in a.source for a in ais)
     dicofol = by_id(seed)["ai:dicofol"]
-    assert dicofol.use_class is None and "acaricide" in dicofol.source
+    assert dicofol.use_class.value == "acaricide"                         # schema v1.3, approved 2026-10-20
+
+
+def test_pyrethroid_members_come_from_irac(seed):
+    members = sorted(n.id for n in by_id(seed).values()
+                     if isinstance(n, ActiveIngredient) and "ai_group:synthetic_pyrethroids" in n.member_of)
+    assert members == ["ai:cypermethrin", "ai:deltamethrin", "ai:etofenprox", "ai:fenvalerate", "ai:permethrin"]
+    assert all("IRAC MoA Classification Scheme v11.5" in by_id(seed)[m].source for m in members)
 
 
 def test_standard_names_with_book_spellings_as_labels(seed):
@@ -46,10 +53,15 @@ def test_standard_names_with_book_spellings_as_labels(seed):
     assert ("Bavistin", "ai:carbendazim") in labels and ("clayey soils", "soil:clay") in labels
 
 
-def test_fertilizers_with_unknown_percentages_and_their_labels_stay_pending(seed):
+def test_fertilizers_with_unknown_percentages_load_with_blank_percentages(seed):
     nodes = by_id(seed)
-    assert "fertilizer:znso4" not in nodes and "fertilizer:feso4" not in nodes
-    assert {"fertilizers.csv:6", "fertilizers.csv:7", "labels.csv:11", "labels.csv:12"} <= set(seed.pending)
+    for f in ("fertilizer:znso4", "fertilizer:feso4", "fertilizer:potassium_nitrate"):
+        assert (nodes[f].n_pct, nodes[f].p2o5_pct, nodes[f].k2o_pct) == (None, None, None)
+        assert "blank" in nodes[f].source
+    labels = {(lb.text, lb.concept_id) for lb in seed.nodes if isinstance(lb, Label)}
+    assert {("ZnSO4", "fertilizer:znso4"), ("KNO3", "fertilizer:potassium_nitrate"), ("KCl", "fertilizer:mop"),
+            ("rodent", "pest:rat")} <= labels
+    assert not any(p.startswith(("fertilizers.csv", "labels.csv")) for p in seed.pending)
 
 
 def test_drafts_in_proposed_validate_but_are_not_loaded(seed):

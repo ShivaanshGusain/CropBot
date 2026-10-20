@@ -163,9 +163,11 @@ class Fertilizer(Concept):
     schema other{} (Zn, Fe, S, ...) is stored as CONTAINS edges, since a property is never a map."""
     LABEL = "Fertilizer"
     id: FertilizerId
-    n_pct: float = Field(ge=0, le=100)
-    p2o5_pct: float = Field(ge=0, le=100)
-    k2o_pct: float = Field(ge=0, le=100)
+    # optional (decided 2026-10-20): a fertilizer with no sourced grade still loads and links, and the
+    # alternatives check skips it, since it uses approved percentages only
+    n_pct: float | None = Field(default=None, ge=0, le=100)
+    p2o5_pct: float | None = Field(default=None, ge=0, le=100)
+    k2o_pct: float | None = Field(default=None, ge=0, le=100)
     contains: list[NutrientShare] = []  # seed CSV: a JSON list of {nutrient_id, pct, raw}
     source: Text                        # required: where the percentages come from
 

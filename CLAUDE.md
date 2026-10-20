@@ -191,15 +191,20 @@ data/gold/           hand-annotated sections (committed)
 - **Step 10 rows** (approved 2026-10-20) are now in `concepts/`, all needs_review: 18 pests, 53 active ingredients, 7 organic inputs and their labels.
   - Active ingredients keep `reg_status: unknown`, which comes only from the CIB&RC list.
   - `name_en` uses the standard spelling, and the book's spelling is a label (chlorpyriphos, Tricyclozole, bromodialone, ethopenprox). The brand label Bavistin → carbendazim and "clayey soils" → `soil:clay` are approved.
-  - Dicofol has no `use_class`, since there is no acaricide value.
+  - Dicofol is `acaricide`; Bt, Beauveria and Pseudomonas are `biopesticide` (schema v1.3, approved 2026-10-20).
   - Labels approved later the same day: "Hispa/ spiny beetle" → hispa, "Earhead bug" → earhead bug, "saline soil condition" → `soil:saline`. "saline / sodic soils" is one label text on both `soil:saline` and `soil:sodic`; for soils, systems and seasons such a shared label links to all its concepts (`link_many`). Single-valued links still treat it as ambiguous.
   - Kept held by decision: "Zinc deficient soils", "direct sowing", "ADT 46", "synthetic pyrethroids".
   - Earhead bug's `scientific_name` is the book's wording, "Leptocorisa acuta and L. oratorius", so its table cell links.
-  - ZnSO4/FeSO4 and their labels are TODO, pending their nutrient percentages from an official source.
+  - **Fertilizer percentages are optional** (decided 2026-10-20). ZnSO4, FeSO4 and potassium nitrate (KNO3) load with blank percentages and a source note, so they link. The alternatives check skips any fertilizer without approved percentages.
+  - **Schema v1.3 concepts** (approved 2026-10-20, all needs_review):
+    - 17 Inputs (`concepts/inputs.csv`). KNO3 is a Fertilizer, not an Input; KCl links to `fertilizer:mop` through its label.
+    - `ai_group:synthetic_pyrethroids`, with `MEMBER_OF` from cypermethrin, deltamethrin, etofenprox, fenvalerate and permethrin. All five are in IRAC MoA Classification Scheme v11.5 (February 2026), p. 8, group 3A.
+    - Labels: KCl, KNO3, NaCl, HNO3, "rodent" → `pest:rat`, and the trap and perch names as printed.
+    - Not seeded: "KKM" (unidentified).
 - **Review rule for linking and loading (steps 10 and 13):**
   - Linking may use needs_review concepts, but any fact linked to a needs_review concept must itself be needs_review.
   - The rice and wheat crop rows are approved; their labels are still needs_review.
-  - Fertilizer percentages with `review_status: needs_review` must not be used by the alternatives check until approved. All four seeded fertilizers are needs_review.
+  - Fertilizer percentages with `review_status: needs_review` must not be used by the alternatives check until approved. All seven seeded fertilizers are needs_review.
 
 ## Source registry (`registry/`)
 
@@ -644,6 +649,15 @@ Found in step 10; until v1.3, normalisation holds the affected facts with the re
   - The loader's primitive-property check stays, and each mapping gets a test.
 
 Candidate for prompt v3: a flag `scope_from_heading` for applicability taken from a sub-heading rather than the quote. For example, the soil "saline soil condition" comes from the p. 74 sub-heading "Recommendation for planting under saline soil condition", and "Zinc deficient soils" comes the same way. v2 has no flag for this.
+
+## Pending for schema v1.4
+
+The code does these; the v1.3 doc doesn't say them, or says them differently (recorded 2026-10-20):
+1. **KNO3 is a Fertilizer** (potassium nitrate), not an `Input`: v1.3's Input example list is wrong. Identity follows the substance.
+2. **fact_key** also hashes identity (pests, targets, kind, concerns, control class, dose basis, storage term, ABOUT), the alternative group/option and the quote's first passage ref. The doc lists source, section, subtype, applicability, conditions and step slot.
+3. **Formulation → operation for mixed lists:** D/DP → dusting, G/GR/CG → application, EC/WP/SC/WG/SL → spraying, no code → no operation (held). The doc names only D and EC/WP/SC.
+4. **An APPLIES may have no dose:** a strength, ratio or share alone ("1% KCl solution", "basal (50%)"). The doc says these sit "beside the dose".
+5. **Fertilizer percentages are optional** (blank = no sourced grade); the alternatives check uses approved percentages only.
 
 ## Known issues for segmentation and tables (steps 6–7)
 

@@ -105,6 +105,10 @@ def test_alternatives_agree_within_15_percent_on_approved_percentages():
     r = check_alternatives(nursery(), {k: v for k, v in FERT.items() if k != "fertilizer:ssp"})
     assert (r["status"], r["applies"]) == ("skip", True) and "fertilizer:ssp" in r["reason"]
     assert check_alternatives(fact([step(applies=[qty("ai:x", 1)])]), FERT)["applies"] is False
+    blank = {**FERT, "fertilizer:ssp": Fertilizer(id="fertilizer:ssp", name_en="SSP", review_status="approved",
+                                                  source="no grade sourced")}     # percentages optional (2026-10-20)
+    r = check_alternatives(nursery(), blank)
+    assert r["status"] == "skip" and "fertilizer:ssp" in r["reason"]
 
 
 # 5 ingredients

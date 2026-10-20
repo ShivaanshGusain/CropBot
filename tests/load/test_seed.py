@@ -151,8 +151,8 @@ def test_fertilizer_needs_a_source():
 
 def test_seeded_fertilizers_are_all_needs_review():
     fertilizers = [n for n in read_seed().nodes if isinstance(n, Fertilizer)]
-    assert {f.id for f in fertilizers} == {"fertilizer:urea", "fertilizer:dap",
-                                           "fertilizer:ssp", "fertilizer:mop"}
+    assert {f.id for f in fertilizers} == {"fertilizer:urea", "fertilizer:dap", "fertilizer:ssp", "fertilizer:mop",
+                                           "fertilizer:znso4", "fertilizer:feso4", "fertilizer:potassium_nitrate"}
     assert all(f.review_status == "needs_review" for f in fertilizers)
 
 
