@@ -33,12 +33,12 @@ def statements() -> list[str]:
             % (constraint_name(label), label) for label in NODE_LABELS]
 
 
-def ensure_constraints(driver) -> int:
+def ensure_constraints(driver, database=None) -> int:
     """Create any missing constraint; existing ones are left alone. Returns how many exist."""
     for stmt in statements():
-        driver.execute_query(stmt)
+        driver.execute_query(stmt, database_=database)
     records, _, _ = driver.execute_query(
-        "SHOW CONSTRAINTS YIELD name WHERE name ENDS WITH '_id_unique' RETURN count(*) AS n")
+        "SHOW CONSTRAINTS YIELD name WHERE name ENDS WITH '_id_unique' RETURN count(*) AS n", database_=database)
     return records[0]["n"]
 
 

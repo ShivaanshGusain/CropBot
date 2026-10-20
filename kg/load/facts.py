@@ -16,8 +16,9 @@ different properties; a duplicate id; an approved status from code; an unanswere
 
 Revisions (schema "Revisions"): matched on fact_key. Same id = same values: the node is kept, and a human
 status (approved, rejected) or reviewed_by is never overwritten. Same fact_key with a new id: the new node
-is needs_review with (new)-[:REVISION_OF]->(old). Any fact of the source not in this load is flagged
-missing_in_latest_run, never deleted. superseded_by stays reserved for a newer edition.
+is needs_review with (new)-[:REVISION_OF]->(old), and the old node is left untouched. Any other fact of the
+source not in this load is flagged missing_in_latest_run, never deleted. superseded_by stays reserved for
+a newer edition.
 
 Conflicts: facts with the same conflict_key (subtype, applicability, identity, step slots and the storage
 window) and a different value_key get one CONFLICTS_WITH {origin: "detected"} per pair, from the smaller id
@@ -373,9 +374,11 @@ def write(tx, entry, built: dict) -> dict:
     report["edges_not_matched"] = {k: v for k, v in short.items() if v}
     if report["edges_not_matched"]:
         raise LoadError(["edges whose ends are not in the graph: %s" % report["edges_not_matched"]])
+    # the old side of a revision is left untouched: it keeps serving (if approved) until its revision is
     missing = _run(tx, created, "MATCH (r:Recommendation)-[:EVIDENCED_BY]->(:SourceSpan)-[:IN_SOURCE]->(:Source {id: $src}) "
-                   "WHERE NOT r.id IN $ids WITH DISTINCT r SET r.missing_in_latest_run = true RETURN r.id AS id",
-                   src=entry.id, ids=ids)
+                   "WHERE NOT r.id IN $ids AND NOT r.id IN $revised WITH DISTINCT r "
+                   "SET r.missing_in_latest_run = true RETURN r.id AS id",
+                   src=entry.id, ids=ids, revised=[x["dst"] for x in revisions])
     detected = _run(tx, created,
                     "MATCH (a:Recommendation) MATCH (b:Recommendation {conflict_key: a.conflict_key}) WHERE a.id < b.id "
                     "AND a.value_key <> b.value_key AND NOT EXISTS { (a)-[:REVISION_OF*]-(b) } "
@@ -393,14 +396,27 @@ def write(tx, entry, built: dict) -> dict:
     return report
 
 
-def snapshot(driver) -> dict:
+def snapshot(driver, database=None) -> dict:
     """A hash over every node (labels, properties) and relationship (type, ends, properties)."""
-    nodes, _, _ = driver.execute_query("MATCH (n) RETURN labels(n) AS l, properties(n) AS p")
-    rels, _, _ = driver.execute_query("MATCH (a)-[r]->(b) RETURN type(r) AS t, a.id AS a, b.id AS b, properties(r) AS p")
+    nodes, _, _ = driver.execute_query("MATCH (n) RETURN labels(n) AS l, properties(n) AS p", database_=database)
+    rels, _, _ = driver.execute_query("MATCH (a)-[r]->(b) RETURN type(r) AS t, a.id AS a, b.id AS b, properties(r) AS p",
+                                      database_=database)
     lines = sorted(json.dumps([sorted(n["l"]), n["p"]], sort_keys=True, default=str) for n in nodes)
     lines += sorted(json.dumps([r["t"], r["a"], r["b"], r["p"]], sort_keys=True, default=str) for r in rels)
     return {"sha256": hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest(), "nodes": len(nodes),
             "relationships": len(rels)}
+
+
+def load(driver, entry, built: dict, database=None) -> dict:
+    """Constraints, the Source node, then one write transaction; snapshots before and after."""
+    ensure_constraints(driver, database)
+    load_sources(driver, [entry], database)
+    before = snapshot(driver, database)
+    with driver.session(database=database) as session:
+        result = session.execute_write(write, entry, built)
+    after = snapshot(driver, database)
+    return {"write": result, "snapshot_before": before, "snapshot_after": after,
+            "changed": before["sha256"] != after["sha256"]}
 
 
 # --- command line -----------------------------------------------------------------------------
@@ -410,10 +426,11 @@ def main(argv=None) -> int:
     ap.add_argument("source_id", nargs="?")
     ap.add_argument("--check", action="store_true", help="build and check every row; no database")
     ap.add_argument("--snapshot", action="store_true", help="print the graph's snapshot hash; no writes")
+    ap.add_argument("--database", help="the Neo4j database to use (default: the server's home database)")
     a = ap.parse_args(argv)
     if a.snapshot:
         with get_driver() as driver:
-            print(json.dumps(snapshot(driver)))
+            print(json.dumps(snapshot(driver, a.database)))
         return 0
     try:
         entries = read_registry()
@@ -434,17 +451,10 @@ def main(argv=None) -> int:
         print("check only: nothing written")
         return 0
     with get_driver() as driver:
-        ensure_constraints(driver)
-        load_sources(driver, [entry])
-        before = snapshot(driver)
-        with driver.session() as session:
-            try:
-                result = session.execute_write(write, entry, built)
-            except LoadError as e:
-                raise SystemExit("refused, transaction rolled back:\n  " + "\n  ".join(e.problems))
-        after = snapshot(driver)
-    rep |= {"write": result, "snapshot_before": before, "snapshot_after": after,
-            "changed": before["sha256"] != after["sha256"]}
+        try:
+            rep |= load(driver, entry, built, a.database)
+        except LoadError as e:
+            raise SystemExit("refused, transaction rolled back:\n  " + "\n  ".join(e.problems))
     out = LOADED_DIR / entry.id.split(":", 1)[1]
     out.mkdir(parents=True, exist_ok=True)
     (out / "report.json").write_text(json.dumps(rep, indent=2, ensure_ascii=False, default=str), encoding="utf-8")

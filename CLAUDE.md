@@ -42,6 +42,7 @@ uv run python -m kg.load.sources          # MERGE Source nodes and SUPERSEDES ed
 uv run python -m kg.convert source:tnau_agriculture_2020                # full Docling conversion (cached)
 uv run python -m kg.convert source:tnau_agriculture_2020 --pages 13-76  # trial run on a page range
 uv run python -m pytest -m slow           # the real 2-page conversion test (skipped by default)
+uv run python -m pytest tests/load/test_live_revisions.py --neo4j-test-db cropbot-test   # live revision rules (skipped without the flag)
 uv run python -m kg.segment source:tnau_agriculture_2020   # section units -> data/units/<id>/ (exit 1 on scope failures)
 uv run python -m kg.tables source:tnau_agriculture_2020    # rice + wheat tables -> data/tables/<id>/, data/review/tables.csv
 uv run python -m kg.extract report source:tnau_agriculture_2020   # extraction checks (see "Extraction")
@@ -520,14 +521,15 @@ Step 13. Input: step 12's facts (status, verifier), step 11's (the fact, review 
 - **Refused before writing:** a fact with no IN_REGION, SourceSpan or FOR_CROP (or failing the schema model); an edge to a concept not in `concepts/`; any non-primitive property, or a mixed-type array; one span id with different properties; a duplicate id; `approved` from code; an unanswered claim. During the write, any edge whose ends don't match aborts the transaction.
 - **Revisions** (matched on `fact_key`):
   - same id: the node is kept, and a human status (approved, rejected) or `reviewed_by` is never overwritten; code statuses are refreshed;
-  - a new id for a known fact_key: a needs_review node with `(new)-[:REVISION_OF]->(old)`;
+  - a new id for a known fact_key: a needs_review node with `(new)-[:REVISION_OF]->(old)`, and the old node is left untouched (an approved one keeps serving);
   - every fact of the source not in this load gets `missing_in_latest_run = true`, never deleted. `superseded_by` stays reserved for a newer edition.
 - **Conflicts:**
   - `conflict_key` = subtype + applicability + identity + step slots (order, alt group/option, operation, method, anchor, targets with formulation) + storage window; `value_key` = the values.
   - Same conflict_key and a different value_key (not on one REVISION_OF chain) → one `CONFLICTS_WITH {origin: "detected"}` per pair, smaller id → larger, and both needs_review. Detection runs over the whole graph, so other books compare.
   - Registry `[[conflict]]` (sides: subtype, pdf_page, quote) is for what detection can't find, e.g. across subtypes. Each side must match exactly one loaded fact, proposed or not; approved ones add `{origin: "review"}`.
-  - TNAU: 0 detected. One proposed entry, the rice seed long-term storage conflict: DryingSpec 8-9 % (p. 74, C2#18) vs StorageRule more than 15 months at less than 8 % (p. 75, C2#24).
-- **Idempotency:** the first TNAU load created 336 nodes and 664 relationships. The second created none, and the `--snapshot` hash was identical before and after it.
+  - TNAU: 0 detected. One approved entry (2026-10-20), the rice seed long-term storage conflict: DryingSpec 8-9 % (p. 74, C2#18) vs StorageRule more than 15 months at less than 8 % (p. 75, C2#24). It is one `{origin: "review"}` link, and C2#24 is needs_review.
+- **Idempotency:** the first TNAU load created 336 nodes and 664 relationships. The second created none, and the `--snapshot` hash was identical before and after it. After the conflict approval it was the same: one relationship created, then a third load changed nothing.
+- **Live test database:** `cropbot-test` on the local Enterprise server. Neo4j database names allow no underscores. `--database` on `kg.load.facts` targets it. The live test refuses the home database (`neo4j`) and any name without "test", and empties the test database before it runs.
 
 ## Scope rules for extraction and normalisation
 

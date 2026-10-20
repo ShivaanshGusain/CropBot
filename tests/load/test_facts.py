@@ -193,6 +193,6 @@ def test_tnau_load_builds_without_refusals():
     c = lf.counts(built)
     assert c["nodes"]["Recommendation"] == 56 and c["nodes"]["Variety"] == 38
     assert c["edges"]["IN_REGION"] == 56 and c["edges"]["EVIDENCED_BY"] == 56 + 38
-    assert built["detected_in_load"] == []
-    (p,) = built["proposed"]
+    assert built["detected_in_load"] == [] and built["proposed"] == []
+    (p,) = built["reviewer"]                                      # approved 2026-10-20
     assert sorted(p["facts"]) == ["f5b06c9fd3f8#18", "f5b06c9fd3f8#24"]

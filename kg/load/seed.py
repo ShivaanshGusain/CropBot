@@ -91,7 +91,7 @@ def is_primitive(value) -> bool:
     return value is None or isinstance(value, (str, int, float, bool))
 
 
-def load(driver, seed: Seed) -> Counter:
+def load(driver, seed: Seed, database=None) -> Counter:
     """MERGE every node on id, then MERGE its edges (with their properties). Safe to run any
     number of times: a second run creates nothing. Returns what this run created."""
     by_label = defaultdict(list)
@@ -107,7 +107,7 @@ def load(driver, seed: Seed) -> Counter:
     created = Counter()
 
     def run(query, rows):
-        summary = driver.execute_query(query, rows=rows).summary.counters
+        summary = driver.execute_query(query, rows=rows, database_=database).summary.counters
         created["nodes"] += summary.nodes_created
         created["relationships"] += summary.relationships_created
 

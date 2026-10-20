@@ -9,18 +9,18 @@ from .constraints import ensure_constraints
 from .db import get_driver
 
 
-def load_sources(driver, entries) -> None:
+def load_sources(driver, entries, database=None) -> None:
     rows = []
     for e in entries:
         source = e.to_source()
         rows.append({"id": source.id, "props": source.model_dump(mode="json", exclude={"id"})})
     driver.execute_query("UNWIND $rows AS row MERGE (s:Source {id: row.id}) SET s += row.props",
-                         rows=rows)
+                         rows=rows, database_=database)
     edges = [{"new": e.id, "old": e.supersedes} for e in entries if e.supersedes]
     if edges:
         driver.execute_query("UNWIND $rows AS row MATCH (n:Source {id: row.new}) "
                              "MATCH (o:Source {id: row.old}) MERGE (n)-[:SUPERSEDES]->(o)",
-                             rows=edges)
+                             rows=edges, database_=database)
 
 
 def main():

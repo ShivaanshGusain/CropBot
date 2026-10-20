@@ -71,7 +71,7 @@ class FakeDriver:
     def __init__(self):
         self.seen, self.queries = set(), []
 
-    def execute_query(self, query, rows):
+    def execute_query(self, query, rows, database_=None):
         from types import SimpleNamespace
         self.queries.append(query)
         made = 0

@@ -341,7 +341,7 @@ status = "approved"
 
 [[conflict]]   # rice seed: the drying section calls 8-9 % "long term"; the storage section's long term (> 15 months) is < 8 %
 note = "rice seed long term storage: dried to 8-9 % moisture (p. 74) vs stored at less than 8 % for more than 15 months (p. 75)"
-status = "proposed"
+status = "approved"   # approved by the user 2026-10-20, as quoted below
 
 [conflict.a]
 subtype = "DryingSpec"
