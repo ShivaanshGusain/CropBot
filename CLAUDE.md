@@ -46,6 +46,7 @@ uv run python -m kg.segment source:tnau_agriculture_2020   # section units -> da
 uv run python -m kg.tables source:tnau_agriculture_2020    # rice + wheat tables -> data/tables/<id>/, data/review/tables.csv
 uv run python -m kg.extract report source:tnau_agriculture_2020   # extraction checks (see "Extraction")
 uv run python -m kg.normalize source:tnau_agriculture_2020        # step 10 -> data/normalized/<id>/, data/review/proposed_concepts.csv
+uv run python -m kg.validate source:tnau_agriculture_2020         # step 11 -> data/validated/<id>/, data/review/validation.csv
 
 uv run --project extraction python extraction/extract.py --list   # registry check: included, duplicate, unregistered PDFs
 uv run --project extraction python extraction/extract.py --all --source tnau_agriculture
@@ -437,6 +438,36 @@ No model. Input: the latest v2 run of every unit (a run that failed step 9 stops
 
   Otherwise `extracted`; never approved.
 - **Code-written fields:** `instruction_en` is written by code. `SourceSpan.extraction_method` is `table_parse` for table facts, `ocr` on OCR pages, else `native_text`; `bbox` is not filled yet.
+
+## Validation (`kg/validate`)
+
+No model. Input: the facts step 10 validated (`data/normalized/<id>/facts.jsonl`) and the step 9 runs they came from. Each check returns pass, fail or skip with a reason.
+- **Rules:** a failure only adds a review reason. `extracted` becomes `needs_review`; nothing is fixed and nothing becomes approved (step 12, Jev, decides `auto_verified`).
+- **The checks:**
+  1. **quote_location:** the quote is found exactly once in its unit, and `table_ref`/`table_row` is where it was found. Either piece of a merged row counts.
+  2. **raw_numbers:** on the step 9 fact (printed values, before conversion), every raw text is in the quote and every number is printed in its raw text. Indian grouping and number words up to twelve count; interpretations such as "a week" = 7 fail.
+  3. **value_ranges** (approved 2026-10-20):
+
+     | Field | Range |
+     |---|---|
+     | Harvest moisture | 10–30 % |
+     | Threshing moisture | 10–25 % |
+     | Drying target, storage max moisture | 5–20 % |
+     | Storage months | 0–60 |
+     | Offsets | ±180 days, ±72 hours |
+     | depth_cm | 0–20 |
+     | Nutrients `per_ha` | ≤ 500 kg |
+     | Fertilizers `per_ha` | ≤ 1000 kg |
+     | Organic inputs `per_ha` | ≤ 25 t |
+     | `per_kg_seed` | ≤ 20 g or ml |
+     | `per_cent_nursery` | ≤ 50 kg (organic inputs ≤ 100 kg) |
+     | Active ingredient per ha | ≤ 3 kg a.i. (dose × formulation %, ml read as g) |
+
+     A dose with no formulation % is skipped with that reason.
+  4. **alternatives:** fertilizer-only alternatives agree within 15 % on N, P2O5 and K2O, using **approved** Fertilizer percentages only. Without them it skips with a review reason.
+  5. **ingredients:** every applied active ingredient must be `registered`; unknown, restricted, banned and not seeded all fail (fail closed). A Caution's `concerns` aren't checked.
+  6. **review_kept:** a fact with flags, an inferred or context basis, an inherited amount, an exclusion or any step 10 review reason must be `needs_review`.
+- **Known source typos** (checked on the rendered pages 2026-10-20): "Fipronil 80%WG 50- 62.5 kg" (PDF p. 64) and "Imidacloprid 70% WG 30-35 kg" (pp. 66, 67) are printed in kg. The same Fipronil product is printed as "50-62.5 g" on p. 65. Extraction and normalisation keep the book's kg, check 3 fails them, and they go to review as suspected typos.
 
 ## Scope rules for extraction and normalisation
 
