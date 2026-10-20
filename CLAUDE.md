@@ -150,7 +150,8 @@ data/gold/           hand-annotated sections (committed)
   - Their rows are drafted in `concepts/proposed/` (`PROPOSED_FILES`) and are not loaded until approved.
   - Fertilizer keeps `n_pct`, `p2o5_pct` and `k2o_pct` as properties. The schema's `other{}` (Zn, Fe, S, …) is stored as `(:Fertilizer)-[:CONTAINS {pct, raw}]->(:Nutrient)` edges. In the seed CSV it's the `contains` column, a JSON list of `{nutrient_id, pct, raw}`. Rows with TODO percentages are pending and get no edges.
 - **Neo4j properties are never maps**, only primitives or flat arrays.
-  - Anything map-shaped becomes edges. A concept's `edges()` gives (relationship, target label, target id, relationship properties) for the loader.
+  - Anything map-shaped becomes edges, or flat properties when that's decided: `raw{}` → `raw_<field>`, `coefficients{}` → `coef_<name>`, Variety `cells{}` → opaque `cells_json` (all built in step 13).
+  - A concept's `edges()` gives (relationship, target label, target id, relationship properties) for the loader.
   - The loader refuses a node whose properties aren't primitives.
   - The loader MERGEs every node and edge and reports what each run created; a second run creates nothing.
 - **`per_cent_nursery`:** value is the amount per one cent of nursery, and `area_cents` is the nursery area the source stated. "40 kg DAP per 20 cents" is value 2, area_cents 20.
@@ -464,7 +465,11 @@ Found in step 10; until v1.3, normalisation holds the affected facts with the re
 - ActiveIngredient `use_class` needs an `acaricide` value (Dicofol, PDF p. 67); until then `use_class` is empty.
 - Properties are never maps: Neo4j rejects them, which the 2026-10-20 seed load showed.
   - `Fertilizer.other{}` is now `CONTAINS {pct, raw}` edges to Nutrient.
-  - v1.2 still has map properties that need a decision before facts or varieties are loaded: `raw{}` on every subtype and on Variety, Variety `cells{}`, and DoseFormula `coefficients{}`.
+  - Decided 2026-10-20, to build in step 13 when the fact and Variety loaders exist:
+    - `raw{}` on subtypes and Variety → flat properties `raw_<field>`;
+    - DoseFormula `coefficients{}` → flat properties `coef_<name>`;
+    - Variety `cells{}` → one JSON string property `cells_json`, opaque provenance that is never queried in Cypher.
+  - The loader's primitive-property check stays, and each mapping gets a test.
 
 Candidate for prompt v3: a flag `scope_from_heading` for applicability taken from a sub-heading rather than the quote. For example, the soil "saline soil condition" comes from the p. 74 sub-heading "Recommendation for planting under saline soil condition", and "Zinc deficient soils" comes the same way. v2 has no flag for this.
 
