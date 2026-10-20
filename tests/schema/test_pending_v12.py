@@ -1,4 +1,4 @@
-"""Pending schema v1.2 additions: strict bounds, hour offsets, edition labels."""
+"""Pending schema v1.2 additions: strict bounds, hour offsets, edition labels, exclusions."""
 
 import copy
 
@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from kg.schema import FACT, Applies, Source, Step
 
-from .examples import DRYING_SEED_SHORT, STORAGE_LONG, TNAU_SOURCE
+from .examples import DRYING_SEED_SHORT, NURSERY_DAP, STORAGE_LONG, TNAU_SOURCE
 
 # --- strict bounds ---------------------------------------------------------------------
 
@@ -85,3 +85,45 @@ def test_edition_label_keeps_the_written_form():
 def test_edition_year_must_be_the_label_start_year(year):
     with pytest.raises(ValidationError, match="start year"):
         Source.model_validate({**TNAU_SOURCE, "edition_year": year, "edition_label": "2021-22"})
+
+
+# --- exclusions ("other than Cauvery Delta") ------------------------------------------------
+
+OTHER_ZONES = ["zone:tn_north_eastern", "zone:tn_western", "zone:tn_north_western",
+               "zone:tn_high_altitude", "zone:tn_southern", "zone:tn_high_rainfall"]
+EXCLUSION = {
+    "excluded_regions": [{"id": "zone:tn_cauvery_delta", "raw": "other than Cauvery Delta"}],
+    "regions": [{"id": z, "origin": "text_exclusion"} for z in OTHER_ZONES],
+    "status": "needs_review",
+}
+
+
+def test_exclusion_expanded_by_code_validates():
+    fact = FACT.validate_python({**copy.deepcopy(NURSERY_DAP), **EXCLUSION})
+    assert {r.origin.value for r in fact.regions} == {"text_exclusion"}
+    assert fact.excluded_regions[0].raw == "other than Cauvery Delta"
+
+
+def test_exclusion_must_be_needs_review():
+    with pytest.raises(ValidationError, match="exclusion must be needs_review"):
+        FACT.validate_python({**copy.deepcopy(NURSERY_DAP), **EXCLUSION, "status": "extracted"})
+
+
+def test_text_exclusion_edges_need_their_exclusion():
+    data = {**copy.deepcopy(NURSERY_DAP), **EXCLUSION, "excluded_regions": []}
+    with pytest.raises(ValidationError, match="need the excluded_regions"):
+        FACT.validate_python(data)
+
+
+def test_excluded_region_cannot_also_be_included():
+    data = {**copy.deepcopy(NURSERY_DAP), **EXCLUSION}
+    data["regions"] = data["regions"] + [{"id": "zone:tn_cauvery_delta", "origin": "text_exclusion"}]
+    with pytest.raises(ValidationError, match="excluded region also in regions"):
+        FACT.validate_python(data)
+
+
+def test_exclusion_needs_raw_text():
+    data = {**copy.deepcopy(NURSERY_DAP), **EXCLUSION}
+    data["excluded_regions"] = [{"id": "zone:tn_cauvery_delta"}]
+    with pytest.raises(ValidationError, match="raw"):
+        FACT.validate_python(data)

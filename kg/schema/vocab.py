@@ -86,6 +86,7 @@ class RegionOrigin(StrEnum):
     TEXT = "text"
     SECTION = "section"
     SOURCE = "source"
+    TEXT_EXCLUSION = "text_exclusion"   # pending schema v1.2: code expanded "other than <region>"
 
 
 class Anchor(StrEnum):

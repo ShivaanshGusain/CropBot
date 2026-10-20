@@ -263,7 +263,9 @@ class Source(Model):
     state_id: StateId | None = None       # whose book it is; None for national books
     region_scope: list[RegionId] = Field(min_length=1)
     authority_tier: AuthorityTier
-    default_scope: str | None = None      # book-wide rules, e.g. "dose basis = per_ha unless stated"
+    # pending schema v1.2: a list of approved rules, each optionally section-scoped;
+    # the registry (registry/*.toml) holds the full rule with its quote and page
+    default_scope: list[str] = []
 
     @model_validator(mode="after")
     def _edition(self):
@@ -279,6 +281,16 @@ class Source(Model):
 class RegionRef(Model):
     id: RegionId
     origin: RegionOrigin
+
+
+class ExcludedRegion(Model):
+    """Pending schema v1.2: a region the text excludes ("other than Cauvery Delta").
+
+    The extractor records it; code (never the LLM) expands it into IN_REGION
+    edges to the state's remaining zones, with origin text_exclusion.
+    """
+    id: RegionId
+    raw: Text
 
 
 class Recommendation(Model):
@@ -306,6 +318,7 @@ class Recommendation(Model):
     # applicability edges; several edges of one kind are alternatives
     crop_ids: list[CropId] = Field(min_length=1)          # FOR_CROP (required)
     regions: list[RegionRef] = Field(min_length=1)        # IN_REGION (required)
+    excluded_regions: list[ExcludedRegion] = []           # pending schema v1.2
     variety_ids: list[VarietyId] = []                     # FOR_VARIETY
     season_ids: list[SeasonRef] = []                      # IN_SEASON
     system_ids: list[SystemId] = []                       # UNDER_SYSTEM
@@ -331,5 +344,14 @@ class Recommendation(Model):
             raise ValueError("raw has entries for non-numeric fields: %s" % sorted(extra))
         if self.conflicts_with and self.status is not Status.NEEDS_REVIEW:
             raise ValueError("a recommendation with conflicts must be needs_review")
+        expanded = any(r.origin is RegionOrigin.TEXT_EXCLUSION for r in self.regions)
+        if expanded and not self.excluded_regions:
+            raise ValueError("text_exclusion regions need the excluded_regions they were expanded from")
+        if self.excluded_regions:
+            if self.status is not Status.NEEDS_REVIEW:
+                raise ValueError("a recommendation with an exclusion must be needs_review")
+            clash = {r.id for r in self.regions} & {x.id for x in self.excluded_regions}
+            if clash:
+                raise ValueError("excluded region also in regions: %s" % sorted(clash))
         check_groups(self.conditions)
         return self

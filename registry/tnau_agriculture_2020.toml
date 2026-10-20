@@ -1,0 +1,110 @@
+# Source registry entry: TNAU Crop Production Guide, Agriculture 2020.
+# Fields follow docs/schema_v1.1.md "Source registry" plus pending v1.2 changes
+# (edition_label, default_scope as a list of rules). Validate with:
+#   uv run python -m kg.registry
+
+id = "source:tnau_agriculture_2020"
+title = "Crop Production Guide: Agriculture 2020"
+publisher = "Directorate of Agriculture, Tamil Nadu and Tamil Nadu Agricultural University"
+edition_year = 2020
+edition_label = "2020"
+language = "en"
+url = "https://agritech.tnau.ac.in/pdf/AGRICULTURE.pdf"
+sha256 = "adbb66a8efc7bc24cb6b4afc99782519cf41d8b1ca0414c486db6627d7bc5c7f"
+# Identical copies (same sha256) also exist at BooksData/AGRICULTURE.pdf and
+# sources/pdfs/tnau_agriculture.pdf; they serve the two extraction scripts.
+file = "data/raw/AGRICULTURE.pdf"
+state_id = "state:33"
+region_scope = ["state:33"]
+authority_tier = 1
+doc_type = "practice_guide"
+rights_note = "State extension publication; portal footer says All Rights Reserved. Attribute TNAU."
+
+[extraction]   # carried over from extraction/sources.toml; used by convert, not loaded into the graph
+ocr = "auto"
+ocr_lang = ["en"]
+note = "Page 7 (Tamil preface) uses a legacy font; it is not crop content."
+
+# --- default scope: only status = "approved" rules are used ------------------------
+
+[[default_scope]]
+rule = "dose basis = per_ha unless stated"
+quote = "Dose recommended are per ha, unless otherwise specified"
+pdf_page = 63
+status = "approved"
+section = { heading = "ii) Main field", pdf_pages = [63, 69] }
+
+[[default_scope]]
+rule = "nursery doses are for 800 m2 (20 cents) of nursery per ha of main field"
+quote = "An area of 800 sq.m. (20 cents) nursery is required for planting one ha of main field."
+pdf_page = 62
+status = "approved"
+section = { heading = "A) Pest management Nursery", pdf_pages = [62, 63] }
+
+# --- section scopes: proposed, not used until approved --------------------------------
+
+[[section_scope]]   # integrated farming systems
+heading = "1. WESTERN ZONE WETLAND"
+pdf_pages = [399, 401]
+regions = ["zone:tn_western"]
+status = "proposed"
+
+[[section_scope]]
+heading = "2. CAUVERY DELTA ZONE"
+pdf_pages = [401, 402]
+regions = ["zone:tn_cauvery_delta"]
+status = "proposed"
+
+[[section_scope]]   # includes "WETLANDS OF PERIYAR VAIGAI COMMAND AREA" and "DRY LANDS OF SOUTHERN ZONE"
+heading = "3. SOUTHERN ZONE WETLANDS OF TAMBIRAPARANI COMMAND AREA"
+pdf_pages = [402, 403]
+regions = ["zone:tn_southern"]
+status = "proposed"
+
+[[section_scope]]
+heading = "4. NORTH WESTERN ZONE"
+pdf_pages = [403, 403]
+regions = ["zone:tn_north_western"]
+status = "proposed"
+
+[[section_scope]]   # agrometeorology: length of growing period
+heading = "1. North Eastern Zone"
+pdf_pages = [417, 418]
+regions = ["zone:tn_north_eastern"]
+status = "proposed"
+
+[[section_scope]]
+heading = "2. North Western Zone"
+pdf_pages = [418, 419]
+regions = ["zone:tn_north_western"]
+status = "proposed"
+
+[[section_scope]]
+heading = "3. Western Zone"
+pdf_pages = [419, 420]
+regions = ["zone:tn_western"]
+status = "proposed"
+
+[[section_scope]]
+heading = "4. Cauvery Delta Zone"
+pdf_pages = [420, 421]
+regions = ["zone:tn_cauvery_delta"]
+status = "proposed"
+
+[[section_scope]]
+heading = "5. Southern Zone"
+pdf_pages = [421, 422]
+regions = ["zone:tn_southern"]
+status = "proposed"
+
+[[section_scope]]
+heading = "6. High Rainfall Zone"
+pdf_pages = [422, 423]
+regions = ["zone:tn_high_rainfall"]
+status = "proposed"
+
+[[section_scope]]   # sorghum, dryland
+heading = "iv) Time of sowing and nutrient level for sorghum under different rainfall situations in dryland (black soil) of western agro climate zone of Tamil Nadu"
+pdf_pages = [431, 432]
+regions = ["zone:tn_western"]
+status = "proposed"

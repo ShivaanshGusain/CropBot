@@ -34,6 +34,8 @@ uv run python -m pytest tests/schema/test_rejections.py::test_rejected   # one t
 uv run python -m kg.load.seed --check     # validate concepts/ without a database
 uv run python -m kg.load.seed --counts    # node/relationship counts, no writes
 uv run python -m kg.load.seed             # id constraints + MERGE concepts/ into Neo4j
+uv run python -m kg.registry              # validate registry/ and check each PDF's sha256
+uv run python -m kg.load.sources          # MERGE Source nodes and SUPERSEDES edges
 
 uv run --project extraction python extraction/extract.py --list   # registry check: included, duplicate, unregistered PDFs
 uv run --project extraction python extraction/extract.py --all --source tnau_agriculture
@@ -156,6 +158,40 @@ data/gold/           hand-annotated sections (committed)
   - The rice and wheat crop rows are approved; their labels are still needs_review.
   - Fertilizer percentages with `review_status: needs_review` must not be used by the alternatives check until approved. All four seeded fertilizers are needs_review.
 
+## Source registry (`registry/`)
+
+- **One TOML per book,** named after its ID (`registry/tnau_agriculture_2020.toml` ↔ `source:tnau_agriculture_2020`). The model is `kg/registry/model.py`.
+- **`extraction/sources.toml` stays as it is.**
+  - Carried over: title, publisher, url, language, rights_note, doc_type, note, OCR settings, page_range and crop (the last four in `[extraction]`).
+  - `year` became `edition_year` + `edition_label`.
+  - `region`, `include` and `season` were not carried.
+- **`file` is the local path** and must match `sha256`.
+  - The TNAU guide points to `data/raw/AGRICULTURE.pdf`.
+  - The identical copies in `BooksData/` and `sources/pdfs/` serve the two extraction scripts.
+  - A missing file fails validation; the error gives the URL to download from.
+- **Validation fails on:**
+  - a missing field;
+  - an unknown or malformed region ID, or one outside the book's state;
+  - a sha256 mismatch;
+  - an unregistered `supersedes`;
+  - a file name that doesn't match the ID;
+  - `edition_year` not being the start year of `edition_label`.
+- **What reaches the graph:** Source nodes and `SUPERSEDES` edges. Extraction settings and scopes stay in the registry.
+- **`default_scope` rules and `section_scope` overrides** carry `status` (`proposed` | `approved` | `rejected`); only approved ones are used.
+  - Sections are keyed by heading text plus PDF page range, because heading levels are unreliable.
+  - Once segmentation exists, a section that matches zero units or more than one must fail loudly. Until then, `kg.registry.heading_matches` checks each section against the committed conversion.
+- **TNAU:**
+  - 2 approved default-scope rules, both section-scoped: per ha unless stated, p. 63; nursery area 800 m² per ha, p. 62.
+  - 11 proposed section scopes, in integrated farming systems, agrometeorology and sorghum.
+
+## Scope rules for extraction and normalisation
+
+- **The p. 63 per-ha rule applies only to its section.** Elsewhere, a dose with no stated basis gets `basis_inferred: true` and goes to review.
+- **Exclusions ("other than Cauvery Delta", p. 34)** are recorded by the extractor as `excluded_regions` with their raw text.
+  - Code, never the LLM, expands them into `IN_REGION` edges to the state's remaining zones, with `origin: text_exclusion`.
+  - Such facts are needs_review.
+- **Sub-zones with no concept** (old delta, new delta, "Western region") are not mapped. Scope the fact at the state level, put the phrase in `unmapped`, and set it to needs_review.
+
 ## Pending schema changes (v1.2, not yet in the doc)
 
 Build to these, but don't edit `docs/schema_v1.1.md`; the schema owner is updating it to v1.2. They are marked `pending schema v1.2` in `kg/schema/`.
@@ -171,6 +207,11 @@ Build to these, but don't edit `docs/schema_v1.1.md`; the schema owner is updati
 6. **Editions.** `Source.edition_year` is the integer start year, used for ranking. `edition_label` keeps the edition as written ("2021-22").
 7. **IDs are prefixed and lowercase everywhere** (`season:rabi`, `nutrient:p2o5`). v1.2 fixes the doc's farm context (`"season": "rabi"`) and its uppercase Nutrient IDs. The prefixes the doc doesn't name are the ones in `kg/schema/ids.py`.
 8. **Worked example 2 is wrong.** The book gives short-term seed storage as 8–9 months, not 0–9. Follow the book.
+9. **`default_scope` is a list of rules,** each optionally section-scoped. The Source node stores the approved rules as text; the registry holds each rule's quote, page and section.
+10. **Exclusions.**
+    - A Recommendation can carry `excluded_regions` (`{id, raw}`).
+    - `RegionOrigin` gains `text_exclusion` for the edges code expands from them.
+    - A fact with an exclusion must be needs_review, and an excluded region can't also be in its regions.
 
 Decisions on gaps that don't change the doc:
 - `sowing_date`, `variety` and `purpose` are in the condition-variable registry only for their `on_unknown` policy. Applicability to a variety or purpose is always an edge.
