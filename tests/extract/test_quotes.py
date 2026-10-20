@@ -44,6 +44,13 @@ def test_quote_failures(quote):
     assert not QuoteIndex(SEGMENTS).find(quote)["ok"]
 
 
+def test_quote_in_a_merged_row_records_every_page():
+    merged = {"ref": "#/tables/57 row 4 + #/tables/58 row 0", "text": "WBPH | Imidacloprid 70% WG 30-35 kg",
+              "pdf_page": 66, "pdf_pages": [66, 67], "printed_page": "54", "printed_pages": ["54", "55"]}
+    hit = QuoteIndex(SEGMENTS + [merged]).find("Imidacloprid 70% WG 30-35 kg")
+    assert hit["pdf_pages"] == [66, 67] and hit["printed_pages"] == ["54", "55"]
+
+
 def test_table_row_quote():
     hit = QuoteIndex(SEGMENTS).find("Brown planthopper | 1 hopper/ tiller")
     assert hit["ok"] and hit["refs"] == ["#/tables/53 row 6"] and hit["printed_pages"] == ["52"]

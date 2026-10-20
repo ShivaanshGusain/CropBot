@@ -33,9 +33,7 @@ def test_approved_review_note_is_attached_and_values_are_unchanged(result, facts
     assert facts[("e63c6fbba0e4", 37)]["review_notes"] == [imid]                     # WBPH row, pp. 66-67
 
 
-@pytest.mark.xfail(strict=True, reason="known bug, reported 2026-10-20: step 9 records only the first piece's page "
-                                       "for a quote in a row merged across pages, so the p. 67 note never matches")
-def test_no_approved_note_is_stale(result):
+def test_no_approved_note_is_stale(result):                      # the WBPH row spans pp. 66-67 and matches both notes
     assert result["stale_notes"] == []
 
 

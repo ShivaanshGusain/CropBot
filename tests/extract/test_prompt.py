@@ -27,7 +27,8 @@ UNIT = {
     "pdf_pages": [30, 64], "regions": [{"id": "state:33", "origin": "source"}],
     "default_scope": [r.label() for r in ENTRY.default_scope if "per_ha" in r.rule],
 }
-ETL = {"table_refs": ["#/tables/53", "#/tables/54"], "pdf_pages": [63, 64], "header": ["Pest", "ETL"],
+ETL = {"table_refs": ["#/tables/53", "#/tables/54", "#/tables/55"], "pdf_pages": [63, 64, 65],
+       "header": ["Pest", "ETL"],
        "rows": [[{"text": "Stem borer", "part_ref": "#/tables/53", "row": 1},
                  {"text": "10% dead hearts", "part_ref": "#/tables/53", "row": 1}],
                 [{"text": "Brown planthopper", "part_ref": "#/tables/54", "row": 0},
@@ -69,10 +70,11 @@ def test_prompt_has_each_slot_once_and_vocabularies_come_from_code(version):
 def test_render_unit_and_segments():
     text, segments = ex.render_unit(ENTRY, UNIT, TABLES)
     assert "[p.30] ## Nutrient management" in text
-    assert "[p.63-64] TABLE #/tables/53 + #/tables/54" in text and text.count("TABLE") == 1
+    assert "[p.63-65] TABLE #/tables/53 + #/tables/54 + #/tables/55" in text and text.count("TABLE") == 1
     assert "[#/tables/54 row 0 + #/tables/55 row 0] Brown planthopper | 1 hopper/ tiller" in text
     row = next(s for s in segments if s["ref"] == "#/tables/54 row 0 + #/tables/55 row 0")
     assert (row["kind"], row["pdf_page"], row["printed_page"]) == ("row", 64, "52")
+    assert row["pdf_pages"] == [64, 65] and row["printed_pages"] == ["52", "53"]      # every piece's page
     assert [s["kind"] for s in segments] == ["subheading", "text", "text", "header", "row", "row"]
 
 

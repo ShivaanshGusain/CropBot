@@ -283,7 +283,8 @@ def run(entry) -> dict:
             reasons.append("alternatives: %s" % alt["reason"])
         hits = review_notes(entry, fact["evidence"][0]["quote"], step9["quote_check"]["pdf_pages"])
         note_hits.update(hits)
-        notes = [entry.review_note[i].note for i in hits]
+        # a row merged across pages can match the same note on each page; its text is listed once
+        notes = list(dict.fromkeys(entry.review_note[i].note for i in hits))
         reasons += ["review note: %s" % n for n in notes]
         status = "needs_review" if reasons or fact["status"] == "needs_review" else fact["status"]
         out.append({**{k: rec[k] for k in ("unit_id", "raw_index", "subtype")}, "fact_id": fact["id"],

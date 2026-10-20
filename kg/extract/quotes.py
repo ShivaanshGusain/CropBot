@@ -35,7 +35,9 @@ class QuoteIndex:
         for h in hits:
             segs.append([i for i, (a, b) in enumerate(self.starts) if a < h + len(q) and h < b])
         first = [self.segments[i] for i in segs[0]] if segs else []
+        # a segment may lie on several pages (a table row merged across a page break)
+        pages = {p for s in first for p in (s.get("pdf_pages") or [s.get("pdf_page")]) if p}
+        printed = {p for s in first for p in (s.get("printed_pages") or [s.get("printed_page")]) if p}
         return {"ok": bool(hits), "occurrences": len(hits),
                 "refs": [s["ref"] for s in first],
-                "pdf_pages": sorted({s["pdf_page"] for s in first if s.get("pdf_page")}),
-                "printed_pages": sorted({s["printed_page"] for s in first if s.get("printed_page")})}
+                "pdf_pages": sorted(pages), "printed_pages": sorted(printed)}

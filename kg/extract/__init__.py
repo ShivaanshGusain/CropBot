@@ -127,8 +127,12 @@ def render_unit(entry, unit: dict, tables: dict[str, dict]) -> tuple[str, list[d
                 ref, part = _row_ref(row), row[0]["part_ref"]
                 text = " | ".join(c["text"] or "" for c in row)
                 lines.append("[%s] %s" % (ref, text))
-                segments.append({**base, "kind": "row", "ref": ref, "pdf_page": page_of[part],
-                                 "printed_page": entry.printed_page(page_of[part]), "text": text})
+                # a row merged across a page break lies on every page its pieces came from
+                pieces = {part} | {c["part_ref"] for cell in row for c in cell.get("continued_from") or []}
+                pages = sorted({page_of[p] for p in pieces})
+                segments.append({**base, "kind": "row", "ref": ref, "pdf_page": page_of[part], "pdf_pages": pages,
+                                 "printed_page": entry.printed_page(page_of[part]),
+                                 "printed_pages": [entry.printed_page(p) for p in pages], "text": text})
     lo, hi = unit["pdf_pages"]
     printed = [p for p in (entry.printed_page(lo), entry.printed_page(hi)) if p]
     head = ["SECTION: %s" % unit["section_path"], "CHAPTER: %s" % unit["chapter"]["title"],
