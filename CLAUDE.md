@@ -125,6 +125,13 @@ tests/               mirrors kg/
 data/gold/           hand-annotated sections (committed)
 ```
 
-## Pending schema change (v1.2, not yet in the doc)
+## Pending schema changes (v1.2, not yet in the doc)
 
-`SourceSpan` will hold both `pdf_page` (the PDF page, used to locate text) and `printed_page` (the page number printed in the book, used in citations). Docling reports PDF pages. Build to this, but don't edit `docs/schema_v1.1.md`; the schema owner is updating it to v1.2.
+Build to these, but don't edit `docs/schema_v1.1.md`; the schema owner is updating it to v1.2. They are marked `pending schema v1.2` in `kg/schema/`.
+
+1. **Two page numbers.** `SourceSpan` holds both `pdf_page` (the PDF page, used to locate text) and `printed_page` (the page number printed in the book, used in citations). Docling reports PDF pages.
+2. **Raw text for every number.**
+   - `ThresholdClause` gets a `raw` field.
+   - Each subtype gets a `raw` map from field name to source text, required for every non-null numeric field (for example `DryingSpec.raw["target_moisture_pct_max"] = "12 - 13 %"`).
+   - `APPLIES.raw` covers the whole quantity phrase, including `water_l_per_ha` and `area_cents`.
+3. **Condition-only units.** `mm` (`forecast_rain_mm_24h`) and `degC` (`tmax_c`) are allowed only in Conditions, as `ConditionOnlyUnit`. Dose units stay as listed in the doc.
