@@ -45,6 +45,7 @@ uv run python -m pytest -m slow           # the real 2-page conversion test (ski
 uv run python -m kg.segment source:tnau_agriculture_2020   # section units -> data/units/<id>/ (exit 1 on scope failures)
 uv run python -m kg.tables source:tnau_agriculture_2020    # rice + wheat tables -> data/tables/<id>/, data/review/tables.csv
 uv run python -m kg.extract report source:tnau_agriculture_2020   # extraction checks (see "Extraction")
+uv run python -m kg.normalize source:tnau_agriculture_2020        # step 10 -> data/normalized/<id>/, data/review/proposed_concepts.csv
 
 uv run --project extraction python extraction/extract.py --list   # registry check: included, duplicate, unregistered PDFs
 uv run --project extraction python extraction/extract.py --all --source tnau_agriculture
@@ -379,6 +380,46 @@ uv run python -m kg.extract compare source:tnau_agriculture_2020 --unit <unit_id
   - flag a quote found in more than one place in its unit. "Narrow bund maintenance (45 x 30 cms)" appears in both the rat row and the IPM module, so the location can't be told apart.
   - check a fact's `table_ref`/`table_row` against where its quote was found;
   - check numbers in quotes with `kg.extract.numbers` (Indian grouping included), plus vocabularies, alternatives and the banned list.
+
+## Normalisation and linking (`kg/normalize`)
+
+No model. Input: the latest v2 run of every unit (a run that failed step 9 stops it). Each raw fact either validates against `kg.schema.FACT` and goes to `data/normalized/<id>/facts.jsonl`, or is held in `held.jsonl` with every blocking reason. Nothing is forced or dropped.
+
+- **Scope:**
+  - **Crop:** the chapter's crop_id, only if the chapter is approved.
+  - **Regions:** the unit's, with their origin. Text regions are linked; "other than X" is expanded by code into the state's other zones (`text_exclusion`).
+  - **Purposes:** from the quote (origin text), merged with the section's (origin section). The origins are kept beside the fact (`purpose_origins`), because v1.2's FOR_PURPOSE has none.
+- **Units and bases:** `kg/normalize/units.py`, code only. Every conversion is logged with its rule.
+  - acre = 0.404686 ha, cent = 1/100 acre, quintal = 100 kg.
+  - Nursery cents give `per_cent_nursery`: value per cent, `area_cents` as stated.
+  - A bare "/kg" in a seed treatment, and "for one hectare", are read from context and send the fact to review.
+  - `basis_rule` must be one of the unit's approved default-scope rules.
+- **`quantity_ref`:** copied from the one earlier fact of the unit that gives the same target an amount, with `inherited: true`; zero or several such facts hold it.
+- **Linking** (`kg/normalize/link.py`): exact canonical label, then an alias label, then a normalised match on name, slug and labels.
+  - Nutrient symbols match exactly; "P" and "K" follow the NPK convention (p2o5, k2o) and go to review.
+  - Generic targets ("Pest", "weeds", "rodent") don't link.
+  - No embeddings yet (BGE-M3 isn't set up).
+  - Unlinked names are listed in `data/review/proposed_concepts.csv`; no concept is ever created.
+- **Held:** a fact is held for:
+  - an unlinked required name or applicability (variety, season, system, soil, purpose, stage), since dropping the edge would widen the fact's scope;
+  - a step with no operation;
+  - a unit or basis with no canonical form;
+  - a threshold sampling unit outside `Basis`;
+  - a `fact_key` collision within the unit.
+
+  An unlinked *step* or *clause* stage keeps its words in `timing_raw`/`raw`, and the fact goes to review.
+- **`fact_key`:** a hash of the source, section path, subtype, linked applicability, identity (pests, targets, kind, concerns, control class, dose basis), step slots (order, alt group, option, operation, target IDs) and the quote's first passage ref. Values are excluded. `id` is `rec:` plus a hash of the key and the values.
+- **Status:** needs_review for any of:
+  - an extraction flag;
+  - basis_inferred, or a basis read from context;
+  - an inherited amount;
+  - an exclusion;
+  - a needs_review concept or label;
+  - the NPK convention;
+  - an unlinked stage.
+
+  Otherwise `extracted`; never approved.
+- **Code-written fields:** `instruction_en` is written by code. `SourceSpan.extraction_method` is `table_parse` for table facts, `ocr` on OCR pages, else `native_text`; `bbox` is not filled yet.
 
 ## Scope rules for extraction and normalisation
 

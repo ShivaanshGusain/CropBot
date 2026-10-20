@@ -25,6 +25,7 @@ data/units/
 data/tables/
 data/review/
 data/extracted/
+data/normalized/
 
 # New book PDFs (books are recorded by URL and sha256 in the source registry)
 BooksData/*.pdf

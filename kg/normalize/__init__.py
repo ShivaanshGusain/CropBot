@@ -1,0 +1,380 @@
+"""Normalise and link (step 10): raw facts from the latest v2 run of each unit -> facts that
+validate against the final schema models (kg.schema), or held facts with every blocking reason.
+
+  uv run python -m kg.normalize source:tnau_agriculture_2020
+
+Code only, no model. Crop from the chapter's approved crop_id; regions from the unit with their
+origin; purposes from the quote (origin text) merged with the section's (origin section); text
+exclusions expanded into IN_REGION edges to the state's other zones (origin text_exclusion).
+Units and bases are converted in code (kg.normalize.units) and every conversion is logged.
+Names link to concepts (kg.normalize.link); nothing is created. Nothing becomes approved here.
+Output: data/normalized/<id>/{facts.jsonl, held.jsonl, report.json},
+        data/review/proposed_concepts.csv (all gitignored).
+"""
+
+import copy
+import csv
+import hashlib
+import json
+from collections import Counter, defaultdict
+
+from pydantic import ValidationError
+
+from kg.extract import EXTRACTED_DIR, get_unit
+from kg.extract.versions import LATEST
+from kg.registry import ROOT
+from kg.schema import FACT
+from kg.schema.vocab import CONDITION_VARIABLES, Basis, Unit
+
+from .link import Linker
+from .units import canon_basis, canon_unit, water_l_per_ha
+
+NORMALIZED_DIR = ROOT / "data" / "normalized"
+PROPOSED_CSV = ROOT / "data" / "review" / "proposed_concepts.csv"
+APPLIES_TARGETS = ("nutrient", "fertilizer", "organic_input", "ai")
+PEST_TARGETS = ("pest", "disease", "weed", "disorder")
+APPLICABILITY = {"varieties": ("variety_ids", ("variety",), "variety"),
+                 "seasons": ("season_ids", ("season", "season_local"), "season"),
+                 "systems": ("system_ids", ("system",), "system"), "soils": ("soil_ids", ("soil",), "soil"),
+                 "stages": ("stage_ids", ("stage",), "stage")}
+SAMPLING = {"/ tiller": Basis.PER_TILLER, "/tiller": Basis.PER_TILLER, "per tiller": Basis.PER_TILLER,
+            "/hill": Basis.PER_HILL, "/ hill": Basis.PER_HILL, "per hill": Basis.PER_HILL,
+            "/m 2": Basis.PER_M2, "/m2": Basis.PER_M2, "per m2": Basis.PER_M2, "/plant": Basis.PER_PLANT}
+
+
+def sha(obj, n=20) -> str:
+    return hashlib.sha1(json.dumps(obj, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:n]
+
+
+class Fact:
+    """One raw fact on its way to the final model: the dict being built, what blocks it, why it
+    needs review, and everything linked or converted."""
+
+    def __init__(self, run, unit, raw):
+        self.run, self.unit, self.raw, self.index = run, unit, raw["fact"], raw["index"]
+        self.quote_check = raw["quote_check"]
+        self.blocks, self.review, self.links, self.conversions = [], [], [], []
+
+    def link(self, linker, name, prefixes, name_type, required=True):
+        lk = linker.link(name, prefixes)
+        self.links.append({"name": name, "name_type": name_type, "id": lk.id, "method": lk.method,
+                           "review_status": lk.review_status, "reason": lk.reason})
+        if lk.id is None:
+            if required:
+                self.blocks.append("unlinked %s %r (%s)" % (name_type, name, lk.reason))
+            return None
+        if lk.review_status == "needs_review":
+            self.review.append("linked to a needs_review concept or label: %s -> %s" % (name, lk.id))
+        if lk.method == "npk_convention":
+            self.review.append("%r read as %s by the N:P2O5:K2O convention" % (name, lk.id))
+            self.conversions.append({"fact": self.index, "field": "target", "from": name, "to": lk.id,
+                                     "rule": "NPK convention: %s -> %s" % (name, lk.id)})
+        return lk.id
+
+
+def _is_nursery(unit) -> bool:
+    return "nursery" in unit["section_path"].lower()
+
+
+def convert_quantity(f: Fact, q: dict, linker, subtype: str, step_order) -> dict | None:
+    target = f.link(linker, q["target"], APPLIES_TARGETS, "applies target")
+    out = {"target_id": target, "raw": q["raw"], "formulation": q["formulation"],
+           "basis_inferred": q["basis_inferred"], "quantity_ref": q["quantity_ref"]}
+    if q["basis_inferred"]:
+        f.review.append("basis inferred for %s (%s)" % (q["target"], q["basis"]))
+    w = water_l_per_ha(q["water_raw"])
+    if w is not None:
+        out["water_l_per_ha"] = w
+    elif q["water_raw"]:
+        f.unmapped_extra.append(q["water_raw"])
+    has_amount = any(q[k] is not None for k in ("value", "min", "max"))
+    if not has_amount:
+        return out                                   # quantity_ref: resolved later
+    u = canon_unit(q["unit"])
+    if u is None:
+        f.blocks.append("no canonical unit for %r; raw %r" % (q["unit"], q["raw"]))
+        return None
+    seed = subtype == "SeedTreatment" or (subtype == "StorageRule" and q["basis"] and "kg" in q["basis"])
+    if q["basis"] is None:
+        f.blocks.append("no basis printed or given by a rule (a concentration or share); raw %r" % q["raw"])
+        return None
+    b = canon_basis(q["basis"], nursery=_is_nursery(f.unit), seed_treatment=seed)
+    if b is None:
+        f.blocks.append("no canonical basis for %r; raw %r" % (q["basis"], q["raw"]))
+        return None
+    if q["basis_rule"] and q["basis_rule"] not in f.unit["default_scope"]:
+        f.blocks.append("basis rule %r is not approved for this unit" % q["basis_rule"])
+        return None
+    if b.inference:
+        f.review.append("basis read from context: %s" % b.rule)
+    factor = u.factor * b.factor
+    for k in ("value", "min", "max"):
+        if q[k] is not None:
+            out[k] = round(q[k] * factor, 6)
+    out.update(min_inclusive=q["min_inclusive"], max_inclusive=q["max_inclusive"], unit=u.unit.value,
+               basis=b.basis.value)
+    if b.area_cents is not None:
+        out["area_cents"] = b.area_cents
+    f.conversions.append({"fact": f.index, "step": step_order, "target": q["target"], "raw": q["raw"],
+                          "from": {k: q[k] for k in ("value", "min", "max", "unit", "basis") if q[k] is not None},
+                          "to": {k: out[k] for k in ("value", "min", "max", "unit", "basis", "area_cents") if k in out},
+                          "rule": "; ".join([u.rule, b.rule])})
+    return out
+
+
+def instruction(step: dict, names: dict) -> str:
+    """instruction_en, written by code from the step's fields (prompt v2 no longer asks for it)."""
+    parts = [(step.get("operation") or "").replace("_", " ").capitalize() or "Do"]
+    if step.get("method"):
+        parts.append("(%s)" % step["method"])
+    for a in step.get("applies", []):
+        parts.append("%s %s" % (names.get(a["target_id"], a["target_id"]), a.get("raw") or "(amount stated earlier)"))
+    if step.get("timing_raw"):
+        parts.append(step["timing_raw"])
+    if step.get("condition_raw"):
+        parts.append("if: %s" % step["condition_raw"])
+    return " ".join(parts) + "."
+
+
+def convert_condition(f: Fact, c: dict) -> dict | None:
+    spec = CONDITION_VARIABLES[c["variable"]]
+    out = {k: c[k] for k in ("variable", "op", "value", "value_max", "any_of_group", "raw")}
+    out["unit"] = spec.unit.value if spec.unit else None
+    if c["unit"] and (canon_unit(c["unit"]) is None or canon_unit(c["unit"]).unit != spec.unit):
+        f.blocks.append("condition %s unit %r is not %s" % (c["variable"], c["unit"], spec.unit))
+        return None
+    return out
+
+
+def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
+    r, unit = f.raw, f.unit
+    f.unmapped_extra = []
+    if r["extraction_flags"]:
+        f.review.append("extraction flags: %s" % ", ".join(r["extraction_flags"]))
+    d = {"subtype": r["subtype"], "summary_en": r["summary_en"], "duration_group": r["duration_group"],
+         "extraction_model": f.run["extraction_model"], "crop_ids": [crop_id], "raw": r["raw"]}
+    # regions: the unit's (source or section), or the text's; exclusions expanded by code
+    regions = [dict(x) for x in unit["regions"]]
+    if r["regions"]:
+        ids = [f.link(linker, n, ("zone", "district", "state"), "region") for n in r["regions"]]
+        regions = [{"id": i, "origin": "text"} for i in ids if i]
+    if r["excluded_regions"]:
+        excluded = [(f.link(linker, x["name"], ("zone", "district"), "excluded region"), x["raw"])
+                    for x in r["excluded_regions"]]
+        d["excluded_regions"] = [{"id": i, "raw": raw} for i, raw in excluded if i]
+        gone = {i for i, _ in excluded}
+        state = next((x["id"] for x in unit["regions"] if x["id"].startswith("state:")), None)
+        regions = [{"id": z, "origin": "text_exclusion"} for z in zones_of_state.get(state, []) if z not in gone]
+        if not regions:
+            f.blocks.append("exclusion leaves no zone of %s" % state)
+        f.review.append("text exclusion: %s" % [x["raw"] for x in r["excluded_regions"]])
+    d["regions"] = regions
+    # applicability: an unlinked name would widen the fact's scope, so it holds the fact
+    for field, (target, prefixes, name_type) in APPLICABILITY.items():
+        d[target] = [i for i in (f.link(linker, n, prefixes, name_type) for n in r[field]) if i]
+    purposes = [(f.link(linker, n, ("purpose",), "purpose"), "text") for n in r["purposes"]]
+    purposes += [(p["id"], "section") for p in unit.get("purposes", [])]
+    origins = defaultdict(list)
+    for pid, origin in purposes:
+        if pid and origin not in origins[pid]:
+            origins[pid].append(origin)
+    d["purpose_ids"] = list(origins)
+    f.purpose_origins = dict(origins)
+    # subtype fields
+    names = {}
+    st = r["subtype"]
+    if st == "VarietyRecommendation":
+        d["recommends"] = [f.link(linker, n, ("variety",), "variety") for n in r["recommends"]]
+        d["note"] = r["note"]
+    elif st in ("PestThreshold",):
+        d["pest_ids"] = [f.link(linker, n, ("pest", "disease"), "pest") for n in r["pests"]]
+        d["clauses"] = []
+        for c in r["clauses"]:
+            unit_ = Unit.PCT if (c["unit"] or "").strip() == "%" else (Unit.COUNT if not c["unit"] else None)
+            if unit_ is None:
+                f.blocks.append("threshold unit %r has no canonical form" % c["unit"])
+            sampling = None
+            if c["sampling_unit"]:
+                sampling = SAMPLING.get(c["sampling_unit"].strip())
+                if sampling is None:
+                    f.blocks.append("threshold sampling unit %r is not a schema basis" % c["sampling_unit"])
+            if c["stage"]:
+                sid = f.link(linker, c["stage"], ("stage",), "clause stage", required=False)
+                if sid is None:
+                    f.review.append("clause stage %r not linked; kept in raw" % c["stage"])
+            conds = [convert_condition(f, x) for x in c["conditions"]]
+            d["clauses"].append({"observation": c["observation"], "value": c["value"],
+                                 "unit": unit_.value if unit_ else None,
+                                 "sampling_unit": sampling.value if sampling else None,
+                                 "raw": c["raw"], "conditions": [x for x in conds if x]})
+    elif st == "ControlMeasure":
+        d["control_class"] = r["control_class"]
+        d["target_ids"] = [f.link(linker, n, PEST_TARGETS, "target") for n in r["targets"]]
+    elif st == "StorageRule":
+        d["target_ids"] = [f.link(linker, n, ("pest",), "storage pest") for n in r["targets"]]
+    elif st == "Caution":
+        d["kind"], d["text_en"] = r["kind"], r["text_en"]
+        d["concerns"] = [f.link(linker, n, ("ai",), "active ingredient") for n in r["concerns"]]
+    elif st == "DoseFormula":
+        f.blocks.append("DoseFormula coefficients are not parsed yet")
+    copy_fields = {"VarietyRecommendation": (), "SowingWindow": ("start_month", "start_day", "end_month", "end_day"),
+                   "SeedRate": ("method",), "Spacing": ("row_cm", "plant_cm", "hills_per_m2", "seedlings_per_hill"),
+                   "NutrientDose": ("dose_basis",), "IrrigationRule": ("depth_cm", "criterion"),
+                   "WeatherRule": ("operation", "advice"),
+                   "HarvestRule": tuple(k for k in r if k.startswith(("harvest_", "threshing_")) or k == "maturity_signs"),
+                   "DryingSpec": tuple(k for k in r if k.startswith(("target_moisture", "storage_months"))
+                                       ) + ("storage_term_raw", "method"),
+                   "StorageRule": tuple(k for k in r if k.startswith(("storage_months", "max_moisture"))) + ("structure",),
+                   "QualitySpec": ("authority", "valid_for_season", "parameter", "limit_value")}
+    for k in copy_fields.get(st, ()):
+        d[k] = r[k]
+    if st == "QualitySpec" and r["unit"]:
+        u = canon_unit(r["unit"])
+        if u is None:
+            f.blocks.append("no canonical unit %r" % r["unit"])
+        else:
+            d["unit"] = u.unit.value
+    # steps
+    d["steps"] = []
+    for s in r["steps"]:
+        if s["operation"] is None:
+            f.blocks.append("step %d has no operation; method %r" % (s["order"], s["method"] or ""))
+        step = {k: s[k] for k in ("order", "alt_group", "alt_option", "alt_priority", "condition_raw", "operation",
+                                  "method", "anchor", "offset_min", "offset_max", "offset_min_inclusive",
+                                  "offset_max_inclusive", "offset_unit", "month_start", "month_end", "timing_raw")}
+        if s["stage"]:
+            sid = f.link(linker, s["stage"], ("stage",), "step stage", required=False)
+            step["stage_id"] = sid
+            if sid is None:
+                f.review.append("step stage %r not linked; kept in timing_raw" % s["stage"])
+        step["applies"] = []
+        for q in s["applies"]:
+            a = convert_quantity(f, q, linker, st, s["order"])
+            if a is not None:
+                step["applies"].append(a)
+                names[a["target_id"]] = q["target"]
+        step["conditions"] = [x for x in (convert_condition(f, c) for c in s["conditions"]) if x]
+        d["steps"].append(step)
+    d["conditions"] = [x for x in (convert_condition(f, c) for c in r["conditions"]) if x]
+    d["unmapped"] = r["unmapped"] + f.unmapped_extra
+    f.names = names
+    return d
+
+
+def evidence(f: Fact, entry, ocr_pages) -> dict:
+    qc, r, unit = f.quote_check, f.raw, f.unit
+    page = min(qc["pdf_pages"]) if qc["pdf_pages"] else unit["pdf_pages"][0]
+    method = "table_parse" if r["table_ref"] else ("ocr" if page in ocr_pages else "native_text")
+    return {"id": "span:" + sha([unit["id"], r["quote"]], 16), "source_id": entry.id, "pdf_page": page,
+            "printed_page": entry.printed_page(page), "section_path": unit["section_path"], "quote": r["quote"],
+            "table_ref": r["table_ref"], "table_row": r["table_row"], "table_col": r["table_col"],
+            "extraction_method": method}
+
+
+def fact_key_parts(f: Fact, d: dict) -> dict:
+    """source + section path + subtype + applicability + identity + step slots; values excluded.
+    The quote's location (first segment ref) separates facts the rest cannot tell apart."""
+    return {"source": f.unit["source_id"], "section": f.unit["section_path"], "subtype": d["subtype"],
+            "applicability": {k: sorted(d.get(k) or []) for k in ("crop_ids", "variety_ids", "season_ids", "system_ids",
+                                                                   "soil_ids", "purpose_ids", "stage_ids")}
+                             | {"regions": sorted(x["id"] for x in d["regions"]), "duration_group": d["duration_group"]},
+            "identity": {k: d.get(k) for k in ("pest_ids", "target_ids", "recommends", "kind", "concerns",
+                                               "control_class", "dose_basis")},
+            "steps": [[s["order"], s["alt_group"], s["alt_option"], s["operation"],
+                       sorted(a["target_id"] or "" for a in s["applies"])] for s in d["steps"]],
+            "passage": (f.quote_check["refs"] or [None])[0]}
+
+
+def resolve_quantity_refs(built: list[tuple["Fact", dict]]) -> None:
+    """quantity_ref "previous": copy the amount from the one earlier fact in the unit that applies
+    the same target with an amount; none or several -> hold."""
+    for i, (f, d) in enumerate(built):
+        if d is None:
+            continue
+        for s in d["steps"]:
+            for a in s["applies"]:
+                if a.get("quantity_ref") != "previous" or a.get("value") is not None or a.get("min") is not None:
+                    continue
+                cands = [(g.index, b) for g, e in built[:i] if e is not None and g.unit["id"] == f.unit["id"]
+                         for t in e["steps"] for b in t["applies"]
+                         if b["target_id"] == a["target_id"] and any(b.get(k) is not None for k in ("value", "min", "max"))]
+                facts = {ix for ix, _ in cands}
+                if len(facts) != 1:
+                    f.blocks.append("quantity_ref for %s: %d earlier facts state an amount" % (a["target_id"], len(facts)))
+                    continue
+                _, b = cands[0]
+                for k in ("value", "min", "max", "min_inclusive", "max_inclusive", "unit", "basis", "area_cents"):
+                    if k in b:
+                        a[k] = b[k]
+                a["inherited"], a["raw"] = True, b["raw"]
+                f.review.append("amount for %s inherited from fact %d" % (a["target_id"], cands[0][0]))
+                f.conversions.append({"fact": f.index, "target": a["target_id"], "from": "quantity_ref previous",
+                                      "to": {k: a[k] for k in ("value", "unit", "basis", "area_cents") if k in a},
+                                      "rule": "inherited from fact %d of the same unit" % cands[0][0]})
+
+
+def latest_runs(entry):
+    d = EXTRACTED_DIR / entry.id.split(":", 1)[1] / LATEST
+    return [json.loads(p.read_text(encoding="utf-8")) for p in sorted(d.glob("*.json")) if p.name != "report.json"]
+
+
+def run(entry) -> dict:
+    linker = Linker.for_source(entry)
+    zones_of_state = _zones_of_state()
+    ocr = set(json.loads((ROOT / "data" / "docling" / entry.id.split(":", 1)[1] / "meta.json").read_text(
+        encoding="utf-8")).get("ocr", {}).get("pages_with_ocr_text", []))
+    chapter_crop = {c.path_label(): (c.crop_id if c.status == "approved" else None) for c in entry.chapters}
+    built = []
+    for rec in latest_runs(entry):
+        if not rec["ok"]:
+            raise SystemExit("run %s for %s did not pass step 9; not normalised" % (rec["cache_key"][:8], rec["unit_id"]))
+        unit = get_unit(entry, rec["unit_id"])
+        for raw in rec["facts"]:
+            f = Fact(rec, unit, raw)
+            crop = chapter_crop.get(unit["chapter"]["title"])
+            if crop is None:
+                f.blocks.append("chapter %r is not approved: no crop_id" % unit["chapter"]["title"])
+            d = build(f, linker, crop, zones_of_state)
+            built.append((f, d))
+    resolve_quantity_refs(built)
+    facts, held = [], []
+    keys = Counter()
+    staged = []
+    for f, d in built:
+        d["evidence"] = [evidence(f, entry, ocr)]
+        parts = fact_key_parts(f, d)
+        d["fact_key"] = "fk:" + sha(parts, 24)
+        if not f.blocks:                           # held facts have unlinked IDs; their keys mean nothing
+            keys[(f.unit["id"], d["fact_key"])] += 1
+        staged.append((f, d, parts))
+    for f, d, parts in staged:
+        if not f.blocks and keys[(f.unit["id"], d["fact_key"])] > 1:
+            f.blocks.append("fact_key collides with another fact of the unit")
+        for s in d["steps"]:
+            s["instruction_en"] = instruction(s, f.names)
+        d["status"] = "needs_review" if f.review else "extracted"
+        values = {k: v for k, v in d.items() if k not in ("id", "fact_key", "summary_en", "extraction_model")}
+        d["id"] = "rec:" + sha([d["fact_key"], values], 16)
+        common = {"unit_id": f.unit["id"], "raw_index": f.index, "subtype": d["subtype"],
+                  "run": {"prompt_version": f.run["prompt_version"], "cache_key": f.run["cache_key"]},
+                  "links": f.links, "conversions": f.conversions, "review_reasons": f.review}
+        if not f.blocks:
+            try:
+                fact = FACT.validate_python(copy.deepcopy(d)).model_dump(mode="json")
+            except ValidationError as e:
+                f.blocks += ["schema: %s: %s" % (".".join(map(str, x["loc"])), x["msg"]) for x in e.errors()]
+        if f.blocks:
+            held.append({**common, "quote": f.raw["quote"], "reasons": f.blocks})
+        else:
+            facts.append({**common, "fact": fact, "status": fact["status"], "purpose_origins": f.purpose_origins,
+                          "fact_key_parts": parts})
+    return {"facts": facts, "held": held, "built": built}
+
+
+def _zones_of_state() -> dict[str, list[str]]:
+    out = defaultdict(list)
+    with open(ROOT / "concepts" / "zones.csv", encoding="utf-8-sig", newline="") as fh:
+        for row in csv.DictReader(fh):
+            if row.get("state_id"):
+                out[row["state_id"]].append(row["id"])
+    return dict(out)
