@@ -1,5 +1,6 @@
-"""Normalise and link (step 10): raw facts from the latest v2 run of each unit -> facts that
-validate against the final schema models (kg.schema), or held facts with every blocking reason.
+"""Normalise and link (step 10): raw facts from the latest run of each unit (prompt version
+kg.extract.versions.LATEST) -> facts that validate against the final schema models (kg.schema,
+v1.3), or held facts with every blocking reason.
 
   uv run python -m kg.normalize source:tnau_agriculture_2020
 
@@ -27,11 +28,11 @@ from kg.schema import FACT
 from kg.schema.vocab import CONDITION_VARIABLES, Basis, Unit
 
 from .link import Linker
-from .units import canon_basis, canon_unit, water_l_per_ha
+from .units import canon_basis, canon_conc_unit, canon_unit, repeat, sample, water_l_per_ha
 
 NORMALIZED_DIR = ROOT / "data" / "normalized"
 PROPOSED_CSV = ROOT / "data" / "review" / "proposed_concepts.csv"
-APPLIES_TARGETS = ("nutrient", "fertilizer", "organic_input", "ai")
+APPLIES_TARGETS = ("nutrient", "fertilizer", "organic_input", "ai", "input")      # input: schema v1.3
 PEST_TARGETS = ("pest", "disease", "weed", "disorder")
 APPLICABILITY = {"varieties": ("variety_ids", ("variety",), "variety"),
                  "seasons": ("season_ids", ("season", "season_local"), "season"),
@@ -101,9 +102,11 @@ def convert_quantity(f: Fact, q: dict, linker, subtype: str, step_order) -> dict
         out["water_l_per_ha"] = w
     elif q["water_raw"]:
         f.unmapped_extra.append(q["water_raw"])
+    if not strength_ratio_share(f, q, out, step_order):
+        return None
     has_amount = any(q[k] is not None for k in ("value", "min", "max"))
     if not has_amount:
-        return out                                   # quantity_ref: resolved later
+        return out                                   # quantity_ref (resolved later), or a strength/ratio/share
     u = canon_unit(q["unit"])
     if u is None:
         f.blocks.append("no canonical unit for %r; raw %r" % (q["unit"], q["raw"]))
@@ -136,15 +139,55 @@ def convert_quantity(f: Fact, q: dict, linker, subtype: str, step_order) -> dict
     return out
 
 
+def strength_ratio_share(f: Fact, q: dict, out: dict, step_order) -> bool:
+    """Schema v1.3 strength (conc_*), mixing ratio and dose share; False when the fact must be held.
+    The ratio's whole is part + rest, computed here (the model gives the printed parts)."""
+    if any(q.get(k) is not None for k in ("conc_value", "conc_min", "conc_max")):
+        cu = canon_conc_unit(q.get("conc_unit"))
+        if cu is None:
+            f.blocks.append("no canonical strength unit for %r; raw %r" % (q.get("conc_unit"), q.get("conc_raw")))
+            return False
+        out.update({k: q[k] for k in ("conc_value", "conc_min", "conc_max") if q.get(k) is not None},
+                   conc_unit=cu.value, conc_raw=q["conc_raw"])
+        f.conversions.append({"fact": f.index, "step": step_order, "target": q["target"], "raw": q["conc_raw"],
+                              "rule": "strength %s -> %s" % (q.get("conc_unit"), cu.value)})
+    if q.get("ratio_part") is not None:
+        out.update(ratio_part=q["ratio_part"], ratio_whole=q["ratio_part"] + q["ratio_rest"], ratio_raw=q["ratio_raw"])
+        f.conversions.append({"fact": f.index, "step": step_order, "target": q["target"], "raw": q["ratio_raw"],
+                              "rule": "ratio %g part with %g parts -> %g in %g" % (
+                                  q["ratio_part"], q["ratio_rest"], q["ratio_part"], out["ratio_whole"])})
+    if q.get("share_pct") is not None:
+        out.update(share_pct=q["share_pct"], share_raw=q["share_raw"])
+    return True
+
+
+def convert_repeat(f: Fact, s: dict, step: dict) -> None:
+    """repeat_raw -> repeat_count / repeat_interval / repeat_interval_unit by the word table."""
+    if not s.get("repeat_raw"):
+        return
+    parsed = repeat(s["repeat_raw"])
+    if parsed is None:
+        f.blocks.append("repeat words %r are not in the code word table" % s["repeat_raw"])
+        return
+    count, interval, unit, rule = parsed
+    step.update(repeat_count=count, repeat_interval=interval,
+                repeat_interval_unit=unit.value if unit else None, repeat_raw=s["repeat_raw"])
+    f.conversions.append({"fact": f.index, "step": s["order"], "raw": s["repeat_raw"], "rule": rule})
+
+
 def instruction(step: dict, names: dict) -> str:
     """instruction_en, written by code from the step's fields (prompt v2 no longer asks for it)."""
     parts = [(step.get("operation") or "").replace("_", " ").capitalize() or "Do"]
     if step.get("method"):
         parts.append("(%s)" % step["method"])
     for a in step.get("applies", []):
-        parts.append("%s %s" % (names.get(a["target_id"], a["target_id"]), a.get("raw") or "(amount stated earlier)"))
+        printed = [x for x in (a.get("raw"), a.get("conc_raw"), a.get("ratio_raw"), a.get("share_raw")) if x]
+        parts.append("%s %s" % (names.get(a["target_id"], a["target_id"]),
+                                ", ".join(dict.fromkeys(printed)) or "(amount stated earlier)"))
     if step.get("timing_raw"):
         parts.append(step["timing_raw"])
+    if step.get("repeat_raw"):
+        parts.append(step["repeat_raw"])
     if step.get("condition_raw"):
         parts.append("if: %s" % step["condition_raw"])
     return " ".join(parts) + "."
@@ -166,7 +209,8 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
     if r["extraction_flags"]:
         f.review.append("extraction flags: %s" % ", ".join(r["extraction_flags"]))
     d = {"subtype": r["subtype"], "summary_en": r["summary_en"], "duration_group": r["duration_group"],
-         "extraction_model": f.run["extraction_model"], "crop_ids": [crop_id], "raw": r["raw"]}
+         "extraction_model": f.run["extraction_model"], "crop_ids": [crop_id], "raw": r["raw"],
+         "extraction_flags": list(r["extraction_flags"] or [])}                  # kept on the fact (v1.3)
     # regions: the unit's (source or section), or the text's; exclusions expanded by code
     regions = [dict(x) for x in unit["regions"]]
     if r["regions"]:
@@ -210,11 +254,16 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
             unit_ = Unit.PCT if (c["unit"] or "").strip() == "%" else (Unit.COUNT if not c["unit"] else None)
             if unit_ is None:
                 f.blocks.append("threshold unit %r has no canonical form" % c["unit"])
-            sampling = None
+            sampling, sampled = None, None
             if c["sampling_unit"]:
                 sampling = SAMPLING.get(c["sampling_unit"].strip())
-                if sampling is None:
-                    f.blocks.append("threshold sampling unit %r is not a schema basis" % c["sampling_unit"])
+                sampled = None if sampling else sample(c["sampling_unit"])      # v1.3: "/25 net sweeps"
+                if sampling is None and sampled is None:
+                    f.blocks.append("threshold sampling unit %r is neither a schema basis nor a sample size"
+                                    % c["sampling_unit"])
+                elif sampled:
+                    f.conversions.append({"fact": f.index, "raw": c["sampling_unit"],
+                                          "rule": "sample %r -> %d %s" % (c["sampling_unit"], *sampled)})
             if c["stage"]:
                 sid = f.link(linker, c["stage"], ("stage",), "clause stage", required=False)
                 if sid is None:
@@ -223,6 +272,8 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
             d["clauses"].append({"observation": c["observation"], "value": c["value"],
                                  "unit": unit_.value if unit_ else None,
                                  "sampling_unit": sampling.value if sampling else None,
+                                 "sampling_count": sampled[0] if sampled else None,
+                                 "sampling_object": sampled[1].value if sampled else None,
                                  "raw": c["raw"], "conditions": [x for x in conds if x]})
     elif st == "ControlMeasure":
         d["control_class"] = r["control_class"]
@@ -231,7 +282,8 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
         d["target_ids"] = [f.link(linker, n, ("pest",), "storage pest") for n in r["targets"]]
     elif st == "Caution":
         d["kind"], d["text_en"] = r["kind"], r["text_en"]
-        d["concerns"] = [f.link(linker, n, ("ai",), "active ingredient") for n in r["concerns"]]
+        d["concerns"] = [f.link(linker, n, ("ai", "ai_group"), "active ingredient") for n in r["concerns"]]
+        d["about_ids"] = [f.link(linker, n, ("pest", "disease"), "caution pest") for n in r.get("about") or []]
     elif st == "DoseFormula":
         f.blocks.append("DoseFormula coefficients are not parsed yet")
     copy_fields = {"VarietyRecommendation": (), "SowingWindow": ("start_month", "start_day", "end_month", "end_day"),
@@ -243,7 +295,8 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
                    "HarvestRule": tuple(k for k in r if k.startswith(("harvest_", "threshing_")) or k == "maturity_signs"),
                    "DryingSpec": tuple(k for k in r if k.startswith(("target_moisture", "storage_months"))
                                        ) + ("storage_term_raw", "method"),
-                   "StorageRule": tuple(k for k in r if k.startswith(("storage_months", "max_moisture"))) + ("structure",),
+                   "StorageRule": tuple(k for k in r if k.startswith(("storage_months", "min_moisture", "max_moisture"))
+                                        ) + ("structure",),
                    "QualitySpec": ("authority", "valid_for_season", "parameter", "limit_value")}
     for k in copy_fields.get(st, ()):
         d[k] = r[k]
@@ -273,6 +326,7 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
             step["stage_id"] = sid
             if sid is None:
                 f.review.append("step stage %r not linked; kept in timing_raw" % s["stage"])
+        convert_repeat(f, s, step)
         step["applies"] = []
         for q in s["applies"]:
             a = convert_quantity(f, q, linker, st, s["order"])
@@ -308,15 +362,16 @@ def _conditions(d: dict) -> list:
 def fact_key_parts(f: Fact, d: dict) -> dict:
     """source + section path + subtype + applicability + identity + step slots; values excluded.
     Identity includes the fact's conditions (variable, op, raw) and a DryingSpec's storage term.
-    The quote's location (first segment ref) separates facts the rest cannot tell apart."""
+    A step slot is order, alternative, operation, method, anchor and targets (method and anchor:
+    schema v1.3). The quote's location (first segment ref) separates facts the rest cannot tell apart."""
     return {"source": f.unit["source_id"], "section": f.unit["section_path"], "subtype": d["subtype"],
             "applicability": {k: sorted(d.get(k) or []) for k in ("crop_ids", "variety_ids", "season_ids", "system_ids",
                                                                    "soil_ids", "purpose_ids", "stage_ids")}
                              | {"regions": sorted(x["id"] for x in d["regions"]), "duration_group": d["duration_group"]},
             "identity": {k: d.get(k) for k in ("pest_ids", "target_ids", "recommends", "kind", "concerns",
-                                               "control_class", "dose_basis", "storage_term_raw")}
+                                               "control_class", "dose_basis", "storage_term_raw", "about_ids")}
                         | {"conditions": _conditions(d)},
-            "steps": [[s["order"], s["alt_group"], s["alt_option"], s["operation"],
+            "steps": [[s["order"], s["alt_group"], s["alt_option"], s["operation"], s.get("method"), s.get("anchor"),
                        sorted(a["target_id"] or "" for a in s["applies"])] for s in d["steps"]],
             "passage": (f.quote_check["refs"] or [None])[0]}
 

@@ -14,6 +14,8 @@ import copy
 import hashlib
 import re
 
+from kg.schema.vocab import COUNT_WORDS, INTERVAL_WORDS
+
 BASIS = {"per_ha": "per hectare", "per_kg_seed": "per kg of seed", "per_l_water": "per litre of water",
          "per_m2": "per square metre", "per_hill": "per hill", "per_tiller": "per tiller", "per_plant": "per plant",
          "absolute": ""}
@@ -35,17 +37,17 @@ def printed_names(raw: dict, fact: dict) -> dict:
     (step 10 links them one to one). Raises if they don't line up."""
     out = {"applies": [[q["target"] for q in s["applies"]] for s in raw.get("steps") or []],
            "pest_ids": list(raw.get("pests") or []), "target_ids": list(raw.get("targets") or []),
-           "concerns": list(raw.get("concerns") or [])}
+           "concerns": list(raw.get("concerns") or []), "about_ids": list(raw.get("about") or [])}
     shape = [len(s["applies"]) for s in fact.get("steps") or []]
     if [len(a) for a in out["applies"]] != shape or any(
-            len(out[k]) != len(fact.get(k) or []) for k in ("pest_ids", "target_ids", "concerns")):
+            len(out[k]) != len(fact.get(k) or []) for k in ("pest_ids", "target_ids", "concerns", "about_ids")):
         raise ValueError("printed names don't line up with %s" % fact["id"])
     return out
 
 
 def _names(fact: dict, key: str, names: dict, printed: dict | None) -> list[str]:
     if printed is not None:
-        return printed[key]
+        return printed.get(key, [])
     return [names.get(i, i) for i in fact.get(key) or []]
 
 
@@ -72,9 +74,16 @@ def amount(a: dict) -> str:
 
 
 def _amount(a: dict) -> tuple[str, str]:
-    """("40 kg", "per 20 cents of nursery")."""
+    """("40 kg", "per 20 cents of nursery"); with no amount, the mixing ratio or dose share
+    ("1 part with 49 parts", "50% of the dose"), or ("", "") when only a strength is given."""
     lo = a.get("value") if a.get("value") is not None else a.get("min")
     hi = a.get("value") if a.get("value") is not None else a.get("max")
+    if lo is None and hi is None:
+        if a.get("ratio_part") is not None:
+            return "%s part with %s parts" % (num(a["ratio_part"]), num(a["ratio_whole"] - a["ratio_part"])), ""
+        if a.get("share_pct") is not None:
+            return "%s%% of the dose" % num(a["share_pct"]), ""
+        return "", ""
     if a["basis"] == "per_cent_nursery":
         area = a["area_cents"]
         lo, hi = lo * area, hi * area
@@ -103,6 +112,33 @@ def timing(s: dict) -> str:
     if s.get("timing_raw"):
         return " " + s["timing_raw"]
     return ""
+
+
+INTERVAL_TEXT = {(v[0], v[1]): w for w, v in INTERVAL_WORDS.items()}
+COUNT_TEXT = {n: w for w, n in COUNT_WORDS.items()}
+CONC_SIGN = {"pct": "%", "normal": " N", "micromolar": " µM"}
+SAMPLE_TEXT = {"net_sweep": "net sweeps", "earhead": "earheads", "pass": "passes"}
+
+
+def repeats(s: dict) -> str:
+    """" thrice at weekly interval", in the word table's words (schema v1.3 repeat_* fields)."""
+    out = ""
+    if s.get("repeat_count") is not None:
+        out += " " + COUNT_TEXT.get(s["repeat_count"], "%d times" % s["repeat_count"])
+    if s.get("repeat_interval") is not None:
+        word = INTERVAL_TEXT.get((s["repeat_interval"], s.get("repeat_interval_unit")))
+        out += " at %s interval" % word if word else " every %s %s" % (num(s["repeat_interval"]),
+                                                                        s.get("repeat_interval_unit"))
+    return out
+
+
+def strength(a: dict) -> str:
+    """"5%", "0.1 N", "80 µM" from a quantity's conc_* fields, or ""."""
+    lo = a.get("conc_value") if a.get("conc_value") is not None else a.get("conc_min")
+    hi = a.get("conc_value") if a.get("conc_value") is not None else a.get("conc_max")
+    if lo is None:
+        return ""
+    return span(lo, hi) + CONC_SIGN.get(a.get("conc_unit"), "")
 
 
 def lead(fact: dict, names: dict) -> str:
@@ -141,18 +177,26 @@ def _q(text: str) -> str:
 
 
 def _name(a: dict, names: dict, printed: str | None = None) -> str:
-    """Target and formulation: "Acephate 75 % SP", "Azospirillum (Carrier based)"."""
+    """Target, strength and formulation: "Acephate 75 % SP", "KCl 1%", "Azospirillum (Carrier based)"."""
     name, form = printed or names.get(a["target_id"], a["target_id"]), a.get("formulation")
+    if strength(a):
+        name = "%s %s" % (name, strength(a))
     if not form:
         return name
     return "%s %s" % (name, form) if form[0].isdigit() else "%s (%s)" % (name, form)
+
+
+def _at(a: dict) -> str:
+    """" at 40 kg per hectare", or "" when only a strength is given."""
+    dose = amount(a)
+    return " at %s" % dose if dose else ""
 
 
 def _together(applies: list[dict], step_names: list[str]) -> str:
     """"urea 16 kg and super phosphate 120 kg per 20 cents of nursery" (one basis shared, else each its own)."""
     parts = [(n, *_amount(a)) for n, a in zip(step_names, applies)]
     if len({per for _, _, per in parts}) == 1:
-        return (" and ".join("%s %s" % (n, q) for n, q, _ in parts) + " " + parts[0][2]).strip()
+        return (" and ".join(("%s %s" % (n, q)).strip() for n, q, _ in parts) + " " + parts[0][2]).strip()
     return " and ".join(("%s %s %s" % (n, q, per)).strip() for n, q, per in parts)
 
 
@@ -165,7 +209,8 @@ def step_claims(fact: dict, names: dict, printed: dict | None = None) -> list[st
         step_names = [_name(a, names, printed["applies"][si][ai] if printed else None)
                       for ai, a in enumerate(s["applies"])]
         cond = " (%s)" % s["condition_raw"] if s.get("condition_raw") else ""
-        conds = conditions(s.get("conditions"))
+        conds = conditions((fact.get("conditions") or []) + (s.get("conditions") or []))
+        when = timing(s) + repeats(s)
         primary = [t for t in fact["steps"] if s.get("alt_group") is not None and t.get("alt_group") == s["alt_group"]
                    and (t.get("alt_option") or 0) < (s.get("alt_option") or 0)]
         if s["applies"] and s.get("condition_raw") and (primary or len(s["applies"]) > 1):
@@ -176,18 +221,18 @@ def step_claims(fact: dict, names: dict, printed: dict | None = None) -> list[st
                 instead = " and ".join(_name(a, names, printed["applies"][fi][ai] if printed else None)
                                        for ai, a in enumerate(first["applies"])) or (first.get("method") or "")
                 out.append(_q("%sthe alternative to %s, %s, is %s%s%s%s" % (
-                    ld, instead, s["condition_raw"], _together(s["applies"], step_names), against, timing(s), conds)))
+                    ld, instead, s["condition_raw"], _together(s["applies"], step_names), against, when, conds)))
             else:
                 out.append(_q("%s%s, %s %s applied%s%s%s" % (
                     ld.rstrip(", ") + ", " if ld else ", ", s["condition_raw"], _together(s["applies"], step_names),
-                    "is" if len(s["applies"]) == 1 else "are", against, timing(s), conds)))
+                    "is" if len(s["applies"]) == 1 else "are", against, when, conds)))
             continue
         for a, name in zip(s["applies"], step_names):
-            out.append(_q("%s%s is applied%s at %s%s%s%s" % (ld, name, against, amount(a), timing(s), conds, cond)))
+            out.append(_q("%s%s is applied%s%s%s%s%s" % (ld, name, against, _at(a), when, conds, cond)))
         if not s["applies"] and timing(s) and fact.get("depth_cm") is None:
             op = (s.get("operation") or "").replace("_", " ")
             method = " (%s)" % s["method"] if s.get("method") else ""
-            out.append(_q("%s%s%s is done%s%s%s" % (lead(fact, names), op, method, timing(s), conds, cond)))
+            out.append(_q("%s%s%s is done%s%s%s" % (lead(fact, names), op, method, when, conds, cond)))
     return out
 
 
@@ -223,7 +268,8 @@ def field_claims(fact: dict, names: dict, printed: dict | None = None) -> list[s
     elif st == "DryingSpec" and pct("target_moisture_pct"):
         term = " for %s" % fact["storage_term_raw"] if fact.get("storage_term_raw") else ""
         out.append(_q("%sthe produce is dried to %s moisture%s" % (ld, pct("target_moisture_pct"), term)))
-    elif st == "StorageRule" and (fact.get("storage_months_min") is not None or fact.get("max_moisture_pct") is not None):
+    elif st == "StorageRule" and any(fact.get(k) is not None for k in ("storage_months_min", "min_moisture_pct",
+                                                                       "max_moisture_pct")):
         lo, hi = fact.get("storage_months_min"), fact.get("storage_months_max")
         if lo is not None and hi is None:
             months = "for %s months" % bounded(fact, "storage_months_min", "min", lo)
@@ -231,8 +277,13 @@ def field_claims(fact: dict, names: dict, printed: dict | None = None) -> list[s
             months = "for %s months" % span(lo, hi)
         else:
             months = ""
-        m = fact.get("max_moisture_pct")
-        b = None if m is None else bounded(fact, "max_moisture_pct", "max", m)
+        m_lo, m = fact.get("min_moisture_pct"), fact.get("max_moisture_pct")
+        if m_lo is not None and m is not None:                    # schema v1.3: "12 - 13 %" keeps both bounds
+            b = span(m_lo, m)
+        elif m_lo is not None:
+            b = bounded(fact, "min_moisture_pct", "min", m_lo)
+        else:
+            b = None if m is None else bounded(fact, "max_moisture_pct", "max", m)
         moist = "" if b is None else " at a moisture content %s%%" % (b if b.startswith("below") else "of " + b)
         where = " in %s" % fact["structure"] if fact.get("structure") else ""
         out.append(_q("%sit is stored %s%s%s" % (ld, months, moist, where)))
@@ -244,11 +295,22 @@ def field_claims(fact: dict, names: dict, printed: dict | None = None) -> list[s
         for c in fact["clauses"]:
             unit = "%" if c["unit"] == "pct" else ""
             per = " " + BASIS.get(c.get("sampling_unit") or "absolute", "") if c.get("sampling_unit") else ""
+            if c.get("sampling_count") is not None:                  # schema v1.3: "/25 net sweeps"
+                per = " per %d %s" % (c["sampling_count"], SAMPLE_TEXT[c["sampling_object"]])
             out.append(_q("action against %s is needed at %s%s %s%s%s" % (pests, num(c["value"]), unit, c["observation"],
                                                                            per, conditions(c.get("conditions")))))
+    elif st == "Spacing":
+        lo, hi = fact.get("seedlings_per_hill_min"), fact.get("seedlings_per_hill_max")
+        if lo is not None or hi is not None:
+            out.append(_q("%s%s seedlings are planted per hill" % (ld, span(lo if lo is not None else hi, hi))))
+        if fact.get("row_cm") is not None and fact.get("plant_cm") is not None:
+            out.append(_q("%sthe spacing is %s x %s cm" % (ld, num(fact["row_cm"]), num(fact["plant_cm"]))))
+        if fact.get("hills_per_m2") is not None:
+            out.append(_q("%s%s hills are planted per square metre" % (ld, num(fact["hills_per_m2"]))))
     elif st == "Caution":
+        about = " or ".join(_names(fact, "about_ids", names, printed))
         for name in _names(fact, "concerns", names, printed):
-            out.append(_q("%sit advises against using %s" % (ld, name)))
+            out.append(_q("%sit advises against using %s%s" % (ld, name, " for %s" % about if about else "")))
     return out
 
 

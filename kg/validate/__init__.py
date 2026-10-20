@@ -32,7 +32,7 @@ VALIDATED_DIR = ROOT / "data" / "validated"
 REVIEW_CSV = ROOT / "data" / "review" / "validation.csv"
 CHECKS = ("quote_location", "raw_numbers", "value_ranges", "alternatives", "ingredients", "review_kept",
           "range_narrowed")
-NARROWED = "printed range stored as a single bound (pending v1.3 min_moisture_pct)"
+NARROWED = "printed range stored as a single bound"
 PRINTED_RANGE = re.compile(r"(\d+(?:\.\d+)?)\s*%?\s*(?:-|to)\s*(\d+(?:\.\d+)?)")
 NUMBER_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
                 "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "twenty": 20, "hundred": 100}
@@ -94,10 +94,18 @@ def check_raw_numbers(raw_fact: dict) -> dict:
         in_quote(s["timing_raw"], "timing_raw")
         for k in ("offset_min", "offset_max"):
             printed(s[k], s["timing_raw"], "step %d %s" % (s["order"], k))
+        in_quote(s.get("repeat_raw"), "repeat_raw")          # its count and interval come from code's word table
         for a in s["applies"]:
             in_quote(a["raw"], "raw of %s" % a["target"])
             for k in ("value", "min", "max"):
                 printed(a[k], a["raw"], "%s %s" % (a["target"], k))
+            # prompt v3: strength, mixing parts and share, each printed in its own raw text
+            for raw_key, keys in (("conc_raw", ("conc_value", "conc_min", "conc_max")),
+                                  ("ratio_raw", ("ratio_part", "ratio_rest")), ("share_raw", ("share_pct",))):
+                if a.get(raw_key):
+                    in_quote(a[raw_key], "%s of %s" % (raw_key, a["target"]))
+                    for k in keys:
+                        printed(a.get(k), a[raw_key], "%s %s" % (a["target"], k))
         for c in s["conditions"]:
             in_quote(c["raw"], "condition raw")
             printed(c["value"] if isinstance(c["value"], (int, float)) else None, c["raw"], c["variable"])
@@ -117,7 +125,7 @@ def check_raw_numbers(raw_fact: dict) -> dict:
 
 FIELD_RANGES = {
     "harvest_moisture_pct": (10, 30), "threshing_moisture_pct": (10, 25), "target_moisture_pct": (5, 20),
-    "max_moisture_pct": (5, 20), "storage_months": (0, 60), "depth_cm": (0, 20),
+    "max_moisture_pct": (5, 20), "min_moisture_pct": (5, 20), "storage_months": (0, 60), "depth_cm": (0, 20),
 }
 TO_KG = {"kg": 1, "g": 0.001, "t": 1000, "l": 1, "ml": 0.001}      # l and ml read as kg (density ~1)
 
@@ -343,7 +351,7 @@ def run(entry) -> dict:
         out.append({**{k: rec[k] for k in ("unit_id", "raw_index", "subtype", "run")}, "fact_id": fact["id"],
                     "status_before": fact["status"], "status": status, "checks": checks, "review_notes": notes,
                     "review_reasons": rec["review_reasons"] + reasons,
-                    "fact": {**fact, "status": status}})
+                    "fact": {**fact, "status": status, "review_notes": notes}})          # notes on the fact (v1.3)
     stale = [{"pdf_page": n.pdf_page, "match": n.match} for i, n in enumerate(entry.review_note)
              if n.status == "approved" and not note_hits[i]]
     return {"facts": out, "stale_notes": stale}

@@ -154,7 +154,7 @@ def test_a_printed_range_stored_as_one_bound_fails_and_the_value_is_kept():
     store = fact(subtype="StorageRule", max_moisture_pct=13.0, raw={"max_moisture_pct": "12 - 13 %"})
     r = check_range_narrowed(store)
     assert r["status"] == "fail" and r["reason"].startswith(
-        "printed range stored as a single bound (pending v1.3 min_moisture_pct)")
+        "printed range stored as a single bound:")
     assert "max_moisture_pct 13 from '12 - 13 %'" in r["reason"] and store["max_moisture_pct"] == 13.0
     both = fact(subtype="StorageRule", storage_months_min=8.0, storage_months_max=9.0,
                 raw={"storage_months_min": "8-9 months", "storage_months_max": "8-9 months"})

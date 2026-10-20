@@ -427,6 +427,12 @@ No model. Input: the latest v2 run of every unit (a run that failed step 9 stops
   - A bare "/kg" in a seed treatment, and "for one hectare", are read from context and send the fact to review.
   - `basis_rule` must be one of the unit's approved default-scope rules.
 - **`quantity_ref`:** copied from the one earlier fact of the unit that gives the same target an amount, with `inherited: true`; zero or several such facts hold it. A fact inheriting from a held fact is held too (chains included) until its source validates.
+- **Schema v1.3 fields, read by code** (`kg/normalize/units.py`; every reading is logged, anything unreadable holds the fact):
+  - strength units: "%", "w/w" → pct; "N" → normal; "µM" → micromolar. A damaged glyph ("�M") holds the fact;
+  - `ratio_whole` = printed part + rest;
+  - repeat words via the fixed word table in `kg.schema.vocab` (once/twice/thrice; daily/weekly/fortnightly) or printed digits ("4 times", "at 10 days interval"). "second a week later" holds;
+  - sample sizes in `sampling_unit` ("/25 net sweeps", "/100 ear heads", "in 12 passes") → `sampling_count` + `sampling_object`.
+- **Linking (v1.3):** APPLIES may link to `input:`; Caution `concerns` to `ai:` or `ai_group:`; Caution `about` (the pest it names) to a pest or disease. `extraction_flags` are kept on the fact. A v1/v2 raw `seedlings_per_hill` becomes equal min/max bounds.
 - **Linking** (`kg/normalize/link.py`): exact canonical label, then an alias label, then a normalised match on name, slug and labels.
   - Last, for concepts with a `scientific_name`: a table cell that is exactly a known name (`name_en` or a label) followed by that scientific name, both normalised ("Stem borer Scirpophaga incertulas"). Anything else in the cell goes to review.
   - Nutrient symbols match exactly; "P" and "K" follow the NPK convention (p2o5, k2o) and go to review.
@@ -441,7 +447,7 @@ No model. Input: the latest v2 run of every unit (a run that failed step 9 stops
   - a `fact_key` collision within the unit.
 
   An unlinked *step* or *clause* stage keeps its words in `timing_raw`/`raw`, and the fact goes to review.
-- **`fact_key`:** a hash of the source, section path, subtype, linked applicability, identity, step slots (order, alt group, option, operation, target IDs) and the quote's first passage ref. Values are excluded.
+- **`fact_key`:** a hash of the source, section path, subtype, linked applicability, identity (incl. Caution `about_ids`), step slots (order, alt group, option, operation, method, anchor, target IDs; method and anchor added for v1.3) and the quote's first passage ref. Values are excluded. With the v2 data, adding the method resolved the b879#13/#14 collision, and the sample sizes validated three thresholds: 61 validated, 63 held (2026-10-20).
   - Identity covers pests, targets, kind, concerns, control class, dose basis, DryingSpec `storage_term_raw`, and every condition of the fact (variable, op, raw).
   - There is no sentence position; facts that still collide stay held. `id` is `rec:` plus a hash of the key and the values.
 - **Status:** needs_review for any of:
@@ -505,6 +511,15 @@ Input: the step 11 facts (`data/validated/<id>/facts.jsonl`). The URL and model 
     - a step's `condition_raw` covering several products, or a fallback option, stays with the whole step: "the alternative to DAP, if not readily available, is urea 16 kg and super phosphate 120 kg per 20 cents of nursery".
   - Timing comes from anchor and offsets, else the stored `timing_raw`. Applicability is a lead-in ("for medium duration varieties grown for seed").
   - Untimed steps fall back to "the advice includes <operation>: <method>".
+  - Schema v1.3 claims:
+    - a strength joins the name ("KCl 1% is applied");
+    - a ratio or share stands in for the amount ("at 1 part with 49 parts", "at 50% of the dose");
+    - repeats use the word table's words ("thrice at weekly interval");
+    - fact-level conditions join each step claim;
+    - StorageRule gives "12 to 13%" when both moisture bounds are stored;
+    - Spacing claims seedlings per hill, row x plant spacing and hills per m²;
+    - thresholds use "per 25 net sweeps";
+    - a Caution names its ABOUT pest ("… for BPH").
   - A fact with no claim (the two cautions with no `concerns`, and the saline Spacing with no values) is marked "human review required: no code-built claim" and can never be auto_verified.
   - The key is `c_` + hash(fact_key + claim).
 - **Controls:** 5 deliberately wrong claims, one number changed (×2, or +10 points for a percentage) on the first numeric claim of facts taken round-robin over units. Keys are `x_…`; they're excluded from scores and reported separately. Step 15 raises them to about 10 % of claims.

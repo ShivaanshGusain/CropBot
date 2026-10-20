@@ -4,12 +4,14 @@ Every rule returns its name so each conversion can be logged; a printed form wit
 returns None and the fact is held, never guessed.
   1 acre = 0.404686 ha; 1 cent = 1/100 acre = 40.4686 m2; 1 quintal = 100 kg.
   per_cent_nursery: value per one cent of nursery; area_cents = the area the source stated.
+Schema v1.3: strength units, sample sizes and repeat words are read here too, never by the model.
 """
 
 import re
 from typing import NamedTuple
 
-from kg.schema.vocab import Basis, Unit
+from kg.schema.vocab import (COUNT_WORDS, INTERVAL_WORDS, Basis, ConcUnit, RepeatUnit, SamplingObject,
+                             Unit)
 
 HA_PER_ACRE = 0.404686
 CENTS_PER_HA = 100 / HA_PER_ACRE            # 247.105...
@@ -102,6 +104,55 @@ def canon_basis(printed: str | None, nursery: bool = False, seed_treatment: bool
     if t in ("per hill", "per tiller", "per plant"):
         return BasisRule(Basis(t.replace(" ", "_")), 1, None, "%s -> %s" % (printed, t.replace(" ", "_")), False)
     return None
+
+
+CONC_UNITS = {"%": ConcUnit.PCT, "per cent": ConcUnit.PCT, "pct": ConcUnit.PCT, "w/w": ConcUnit.PCT,
+              "% w/w": ConcUnit.PCT, "n": ConcUnit.NORMAL, "µm": ConcUnit.MICROMOLAR, "μm": ConcUnit.MICROMOLAR,
+              "um": ConcUnit.MICROMOLAR, "micromolar": ConcUnit.MICROMOLAR}
+
+
+def canon_conc_unit(printed: str | None) -> ConcUnit | None:
+    """Schema v1.3 strength units. A damaged glyph ("�M") has no rule: the fact is held, never guessed."""
+    return CONC_UNITS.get((printed or "").strip().lower())
+
+
+SAMPLE_OBJECTS = ((r"net\s*sweeps?", SamplingObject.NET_SWEEP), (r"ear\s*heads?", SamplingObject.EARHEAD),
+                  (r"pass(?:es)?", SamplingObject.PASS))
+
+
+def sample(printed: str | None) -> tuple[int, SamplingObject] | None:
+    """"/25 net sweeps" -> (25, net_sweep); "/100 ear heads" -> (100, earhead); "in 12 passes" -> (12, pass)."""
+    t = _clean(printed or "")
+    for rx, obj in SAMPLE_OBJECTS:
+        m = re.fullmatch(r"(?:/|per|in)\s*(\d+)\s*%s" % rx, t)
+        if m:
+            return int(m.group(1)), obj
+    return None
+
+
+def repeat(printed: str | None) -> tuple[int | None, float | None, RepeatUnit | None, str] | None:
+    """Count and interval from repeat words, by the fixed word table (schema v1.3) or printed digits:
+    "thrice (at weekly interval" -> (3, 1, weeks). None when neither is found (the fact is held)."""
+    t = _clean(printed or "")
+    count = next((n for w, n in COUNT_WORDS.items() if re.search(r"\b%s\b" % w, t)), None)
+    if count is None:
+        m = re.search(r"\b(\d+)\s*times\b", t)
+        count = int(m.group(1)) if m else None
+    interval = unit = None
+    word = next((w for w in INTERVAL_WORDS if re.search(r"\b%s\b" % w, t)), None)
+    if word:
+        interval, u = INTERVAL_WORDS[word]
+        unit = RepeatUnit(u)
+    else:
+        m = re.search(r"\b(?:every|at)\s*(\d+(?:\.\d+)?)\s*(days?|weeks?)\b|\b(\d+(?:\.\d+)?)\s*(days?|weeks?)\s*interval",
+                      t)
+        if m:
+            interval = float(m.group(1) or m.group(3))
+            unit = RepeatUnit((m.group(2) or m.group(4)).rstrip("s") + "s")
+    if count is None and interval is None:
+        return None
+    rule = "repeat %r -> count %s, interval %s %s (word table)" % (printed, count, interval, unit.value if unit else "")
+    return count, interval, unit, rule
 
 
 def water_l_per_ha(printed: str | None) -> float | None:
