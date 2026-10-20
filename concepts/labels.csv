@@ -22,3 +22,8 @@ ai:etofenprox,ethopenprox,en,Latn,alias,needs_review,"book spelling, PDF p. 69 (
 ai:methyl_parathion,methylparathion,en,Latn,alias,needs_review,"TNAU 2020 PDF p. 69, printed as one word"
 ai:cartap_hydrochloride,Cartaphydrochloride,en,Latn,alias,needs_review,"book spelling without a space, PDF p. 65 (approved for seeding 2026-10-20)"
 soil:clay,clayey soils,en,Latn,alias,needs_review,TNAU 2020 PDF p. 30; whether 'clayey' means the clay soil type is your call (approved for seeding 2026-10-20)
+pest:hispa,Hispa/ spiny beetle,en,Latn,alias,needs_review,"TNAU 2020 PDF p. 65, the book's name in the management table (approved 2026-10-20)"
+pest:earhead_bug,Earhead bug,en,Latn,alias,needs_review,"TNAU 2020 PDF pp. 64, 67, the book's spelling (approved 2026-10-20)"
+soil:saline,saline soil condition,en,Latn,alias,needs_review,"TNAU 2020 PDF p. 74 sub-heading 'Recommendation for planting under saline soil condition' (approved 2026-10-20)"
+soil:saline,saline / sodic soils,en,Latn,alias,needs_review,"TNAU 2020 PDF p. 73; one phrase naming two soils, linked to both (approved 2026-10-20)"
+soil:sodic,saline / sodic soils,en,Latn,alias,needs_review,"TNAU 2020 PDF p. 73; one phrase naming two soils, linked to both (approved 2026-10-20)"

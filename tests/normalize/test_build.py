@@ -121,6 +121,16 @@ def test_blocking_reasons():
     assert f.blocks == ["unlinked target 'Pest' (generic target, no concept)"]
 
 
+def test_one_soil_phrase_gives_two_soil_edges():
+    nodes = NODES + [SoilType(id="soil:saline", name_en="Saline", review_status="approved"),
+                     SoilType(id="soil:sodic", name_en="Sodic", review_status="approved")] + [
+        Label(concept_id=c, text="saline / sodic soils", lang="en", script="Latn", kind="alias",
+              review_status="approved") for c in ("soil:saline", "soil:sodic")]
+    f = raw_fact(soils=["saline / sodic soils"])
+    d = build(f, Linker(nodes), "crop:rice", ZONES)
+    assert d["soil_ids"] == ["soil:saline", "soil:sodic"] and not f.blocks
+
+
 def test_flags_and_unlinked_step_stage_mean_review_not_hold():
     f = raw_fact(extraction_flags=["shared_amount"],
                  steps=[{**copy.deepcopy(DAP_STEP), "anchor": None, "stage": "panicle initiation",

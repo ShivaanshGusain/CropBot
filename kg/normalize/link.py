@@ -81,6 +81,17 @@ class Linker:
         statuses = {self.status.get(concept_id), label_status} - {None}
         return "needs_review" if "needs_review" in statuses else "approved"
 
+    def link_many(self, name: str, prefixes: tuple[str, ...]) -> list[Link]:
+        """For applicability lists (soils, systems, seasons), where several edges are alternatives:
+        a phrase that is an exact label of several concepts ("saline / sodic soils" -> saline and
+        sodic) links to all of them. Anything else behaves like link()."""
+        hits = {(c, s) for c, s, k in self.exact.get(name, ()) if c.split(":", 1)[0] in prefixes}
+        ids = sorted({c for c, _ in hits})
+        if len(ids) > 1:
+            return [Link(c, "label_multi", self._status(c, "needs_review" if any(
+                s == "needs_review" for cc, s in hits if cc == c) else "approved")) for c in ids]
+        return [self.link(name, prefixes)]
+
     def link(self, name: str, prefixes: tuple[str, ...]) -> Link:
         """`prefixes`: the ID prefixes this name may link to, e.g. ("pest", "disease")."""
         def ok(cid):

@@ -71,6 +71,19 @@ def test_table_cell_with_a_known_name_and_the_scientific_name():
     assert lk.link("Stem borer Scirpophaga incertulas", ("ai",)).id is None
 
 
+def test_a_label_naming_two_soils_links_to_both_only_in_link_many():
+    nodes = NODES + [SoilType(id="soil:saline", name_en="Saline", review_status="approved"),
+                     SoilType(id="soil:sodic", name_en="Sodic", review_status="approved")] + [
+        Label(concept_id=c, text="saline / sodic soils", lang="en", script="Latn", kind="alias",
+              review_status="needs_review") for c in ("soil:saline", "soil:sodic")]
+    lk = Linker(nodes)
+    many = lk.link_many("saline / sodic soils", ("soil",))
+    assert [(x.id, x.method, x.review_status) for x in many] == [
+        ("soil:saline", "label_multi", "needs_review"), ("soil:sodic", "label_multi", "needs_review")]
+    assert lk.link("saline / sodic soils", ("soil",)).reason.startswith("ambiguous")      # single-valued: strict
+    assert [x.id for x in lk.link_many("Clay", ("soil",))] == [None]                       # not a shared label
+
+
 def test_unlinked_generic_ambiguous_and_wrong_type():
     assert L.link("clayey soils", ("soil",)).reason == "no concept matches"
     assert L.link("Pest", ("pest", "disease")).reason == "generic target, no concept"

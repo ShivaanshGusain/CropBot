@@ -183,6 +183,8 @@ data/gold/           hand-annotated sections (committed)
   - Active ingredients keep `reg_status: unknown`, which comes only from the CIB&RC list.
   - `name_en` uses the standard spelling, and the book's spelling is a label (chlorpyriphos, Tricyclozole, bromodialone, ethopenprox). The brand label Bavistin → carbendazim and "clayey soils" → `soil:clay` are approved.
   - Dicofol has no `use_class`, since there is no acaricide value.
+  - Labels approved later the same day: "Hispa/ spiny beetle" → hispa, "Earhead bug" → earhead bug, "saline soil condition" → `soil:saline`. "saline / sodic soils" is one label text on both `soil:saline` and `soil:sodic`; for soils, systems and seasons such a shared label links to all its concepts (`link_many`). Single-valued links still treat it as ambiguous.
+  - Kept held by decision: "Zinc deficient soils", "direct sowing", "ADT 46", "synthetic pyrethroids".
   - ZnSO4/FeSO4 and their labels are TODO, pending their nutrient percentages from an official source.
 - **Review rule for linking and loading (steps 10 and 13):**
   - Linking may use needs_review concepts, but any fact linked to a needs_review concept must itself be needs_review.
@@ -466,6 +468,9 @@ Found in step 10; until v1.3, normalisation holds the affected facts with the re
 - ThresholdClause sampling units outside `Basis`: "/25 net sweeps", "/100 earheads", "in 12 passes".
 - `FOR_PURPOSE` needs `{origin}` (text or section); normalisation keeps the origin beside the fact for now.
 - ActiveIngredient `use_class` needs an `acaricide` value (Dicofol, PDF p. 67); until then `use_class` is empty.
+- Soil-test conditions as applicability: "Zinc deficient soils" (PDF p. 74) is a soil condition, not a soil type. The fact stays held.
+- ActiveIngredient groups: "synthetic pyrethroids" (PDF pp. 63, 68) names a class of ingredients, not one. The cautions concerning it stay held.
+- GrowthStage seeds for rice, needed for stage timing: "flowering", "tillering stage", "boot leaf stage", "vegetative phase", "from milky stage to grain maturity". Today these stay only in `timing_raw`/`raw`, and the fact needs review.
 - Properties are never maps: Neo4j rejects them, which the 2026-10-20 seed load showed.
   - `Fertilizer.other{}` is now `CONTAINS {pct, raw}` edges to Nutrient.
   - Decided 2026-10-20, to build in step 13 when the fact and Variety loaders exist:

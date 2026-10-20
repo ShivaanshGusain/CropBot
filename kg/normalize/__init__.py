@@ -56,6 +56,19 @@ class Fact:
         self.blocks, self.review, self.links, self.conversions = [], [], [], []
         self.inherits_from = set()        # (unit id, raw index) of the facts its amounts came from
 
+    def link_many(self, linker, name, prefixes, name_type) -> list[str]:
+        """Applicability: a phrase naming several concepts links to all of them."""
+        lks = linker.link_many(name, prefixes)
+        if len(lks) == 1:
+            i = self.link(linker, name, prefixes, name_type)
+            return [i] if i else []
+        for lk in lks:
+            self.links.append({"name": name, "name_type": name_type, "id": lk.id, "method": lk.method,
+                               "review_status": lk.review_status, "reason": None})
+            if lk.review_status == "needs_review":
+                self.review.append("linked to a needs_review concept or label: %r -> %r" % (name, lk.id))
+        return [lk.id for lk in lks]
+
     def link(self, linker, name, prefixes, name_type, required=True):
         lk = linker.link(name, prefixes)
         self.links.append({"name": name, "name_type": name_type, "id": lk.id, "method": lk.method,
@@ -172,7 +185,10 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
     d["regions"] = regions
     # applicability: an unlinked name would widen the fact's scope, so it holds the fact
     for field, (target, prefixes, name_type) in APPLICABILITY.items():
-        d[target] = [i for i in (f.link(linker, n, prefixes, name_type) for n in r[field]) if i]
+        if field in ("soils", "systems", "seasons"):
+            d[target] = sorted({i for n in r[field] for i in f.link_many(linker, n, prefixes, name_type)})
+        else:
+            d[target] = [i for i in (f.link(linker, n, prefixes, name_type) for n in r[field]) if i]
     purposes = [(f.link(linker, n, ("purpose",), "purpose"), "text") for n in r["purposes"]]
     purposes += [(p["id"], "section") for p in unit.get("purposes", [])]
     origins = defaultdict(list)
