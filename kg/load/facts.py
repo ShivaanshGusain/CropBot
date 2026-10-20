@@ -3,6 +3,8 @@
   uv run python -m kg.load.facts source:tnau_agriculture_2020 --check   # build and check every row; no database
   uv run python -m kg.load.facts source:tnau_agriculture_2020           # one write transaction, then the report
   uv run python -m kg.load.facts --snapshot                             # hash of the whole graph, no writes
+  uv run python -m kg.load.facts --reset-source source:tnau_agriculture_2020 [--database cropbot-test]
+                                         # one-time: delete the source's facts (refused if any is reviewed)
 
 Input: data/verified/<id>/facts.jsonl (status and verifier), data/validated/<id>/facts.jsonl (the fact and
 its review reasons), data/normalized/<id>/facts.jsonl (purpose origins) and data/tables/<id>/varieties.jsonl.
@@ -52,7 +54,7 @@ APPLICABILITY = (("crop_ids", "FOR_CROP"), ("variety_ids", "FOR_VARIETY"), ("sea
                  ("system_ids", "UNDER_SYSTEM"), ("soil_ids", "ON_SOIL"), ("purpose_ids", "FOR_PURPOSE"),
                  ("stage_ids", "AT_STAGE"))
 IDENTITY = (("pest_ids", "FOR_PEST"), ("target_ids", "TARGETS"), ("concerns", "CONCERNS"),
-            ("recommends", "RECOMMENDS"))
+            ("recommends", "RECOMMENDS"), ("about_ids", "ABOUT"))      # ABOUT: schema v1.3
 IDENTITY_FIELDS = ("kind", "control_class", "dose_basis", "storage_term_raw")
 WINDOW_FIELDS = ("storage_months_min", "storage_months_max", "storage_months_min_inclusive",
                  "storage_months_max_inclusive")
@@ -128,11 +130,15 @@ def value_key(fact: dict) -> str:
     fields = {k: v for k, v in fact.items() if k not in CORE_VALUE_SKIP}
     steps = sorted([s["order"], s.get("alt_group"), s.get("alt_option"), s.get("offset_min"), s.get("offset_max"),
                     s.get("offset_unit"), s.get("month_start"), s.get("month_end"),
+                    s.get("repeat_count"), s.get("repeat_interval"), s.get("repeat_interval_unit"),
                     sorted([a["target_id"], a.get("formulation"), a.get("value"), a.get("min"), a.get("max"),
-                            a.get("unit"), a.get("basis"), a.get("area_cents")] for a in s["applies"]),
+                            a.get("unit"), a.get("basis"), a.get("area_cents"),
+                            a.get("conc_value"), a.get("conc_min"), a.get("conc_max"), a.get("conc_unit"),
+                            a.get("ratio_part"), a.get("ratio_whole"), a.get("share_pct")] for a in s["applies"]),
                     sorted([c["variable"], c["op"], c["value"], c.get("value_max")] for c in s.get("conditions") or [])]
                    for s in fact["steps"])
-    clauses = sorted([c["observation"], c["value"], c["unit"], c.get("sampling_unit"),
+    clauses = sorted([c["observation"], c["value"], c["unit"], c.get("sampling_unit"), c.get("sampling_count"),
+                      c.get("sampling_object"),
                       sorted([x["variable"], x["op"], x["value"], x.get("value_max")] for x in c.get("conditions") or [])]
                      for c in fact.get("clauses") or [])
     return "vk:" + sha({"fields": fields, "coefficients": fact.get("coefficients"), "steps": steps,
@@ -409,6 +415,33 @@ def snapshot(driver, database=None) -> dict:
             "relationships": len(rels)}
 
 
+def reset_source(tx, source_id: str) -> dict:
+    """One-time removal of a source's facts before a reload that changes every id (schema v1.3's fact_key).
+    Deletes its Recommendations with their Steps, ThresholdClauses and Conditions, and the source's spans
+    that nothing cites any more; Varieties, concepts and the Source node stay. Refuses, deleting nothing,
+    if any of its facts is approved, rejected or reviewed by anyone."""
+    created = Counter()
+    recs = _run(tx, created, "MATCH (r:Recommendation)-[:EVIDENCED_BY]->(:SourceSpan)-[:IN_SOURCE]->(:Source {id: $src}) "
+                "RETURN DISTINCT r.id AS id, r.status AS status, r.reviewed_by AS reviewed_by", src=source_id)
+    reviewed = [r for r in recs if r["status"] in HUMAN_STATUSES or r["reviewed_by"] is not None]
+    if reviewed:
+        raise LoadError(["%s has reviewed work, nothing deleted: %s" % (
+            source_id, ", ".join("%s (%s%s)" % (r["id"], r["status"], ", by %s" % r["reviewed_by"]
+                                                if r["reviewed_by"] else "") for r in reviewed))])
+    ids = [r["id"] for r in recs]
+    parts = _run(tx, created, "MATCH (r:Recommendation) WHERE r.id IN $ids "
+                 "OPTIONAL MATCH (r)-[:HAS_STEP|HAS_CLAUSE]->(child) OPTIONAL MATCH (child)-[:WHEN]->(cc:Condition) "
+                 "OPTIONAL MATCH (r)-[:WHEN]->(rc:Condition) "
+                 "WITH collect(DISTINCT child) + collect(DISTINCT cc) + collect(DISTINCT rc) AS parts "
+                 "UNWIND parts AS p WITH DISTINCT p DETACH DELETE p RETURN count(*) AS n", ids=ids)
+    deleted = _run(tx, created, "MATCH (r:Recommendation) WHERE r.id IN $ids DETACH DELETE r RETURN count(*) AS n",
+                   ids=ids)
+    spans = _run(tx, created, "MATCH (s:SourceSpan)-[:IN_SOURCE]->(:Source {id: $src}) "
+                 "WHERE NOT EXISTS { ()-[:EVIDENCED_BY]->(s) } DETACH DELETE s RETURN count(*) AS n", src=source_id)
+    return {"recommendations": deleted[0]["n"] if deleted else 0,
+            "steps_clauses_conditions": parts[0]["n"] if parts else 0, "spans": spans[0]["n"] if spans else 0}
+
+
 def missing_approved(driver, database=None) -> list[dict]:
     """Approved facts absent from their source's latest load: still served, flagged, and queued for review."""
     rows, _, _ = driver.execute_query(
@@ -447,10 +480,23 @@ def main(argv=None) -> int:
     ap.add_argument("--check", action="store_true", help="build and check every row; no database")
     ap.add_argument("--snapshot", action="store_true", help="print the graph's snapshot hash; no writes")
     ap.add_argument("--database", help="the Neo4j database to use (default: the server's home database)")
+    ap.add_argument("--reset-source", metavar="SOURCE_ID",
+                    help="one-time: delete that source's facts (refused if any is approved, rejected or reviewed)")
     a = ap.parse_args(argv)
     if a.snapshot:
         with get_driver() as driver:
             print(json.dumps(snapshot(driver, a.database)))
+        return 0
+    if a.reset_source:
+        with get_driver() as driver:
+            before = snapshot(driver, a.database)
+            with driver.session(database=a.database) as session:
+                try:
+                    done = session.execute_write(reset_source, a.reset_source)
+                except LoadError as e:
+                    raise SystemExit("refused:\n  " + "\n  ".join(e.problems))
+            after = snapshot(driver, a.database)
+        print(json.dumps({"deleted": done, "snapshot_before": before, "snapshot_after": after}, indent=1))
         return 0
     try:
         entries = read_registry()

@@ -555,6 +555,15 @@ Step 13. Input: step 12's facts (status, verifier), step 11's (the fact, review 
   - Registry `[[conflict]]` (sides: subtype, pdf_page, quote) is for what detection can't find, e.g. across subtypes. Each side must match exactly one loaded fact, proposed or not; approved ones add `{origin: "review"}`.
   - TNAU: 0 detected. One approved entry (2026-10-20), the rice seed long-term storage conflict: DryingSpec 8-9 % (p. 74, C2#18) vs StorageRule more than 15 months at less than 8 % (p. 75, C2#24). It is one `{origin: "review"}` link, and C2#24 is needs_review.
 - **Idempotency:** the first TNAU load created 336 nodes and 664 relationships. The second created none, and the `--snapshot` hash was identical before and after it. After the conflict approval it was the same: one relationship created, then a third load changed nothing.
+- **Schema v1.3 in the loader:**
+  - `ABOUT` edges (Caution → pest);
+  - `CONCERNS` may point at an AIGroup and APPLIES at an Input (both are `:Concept`);
+  - `extraction_flags` and `review_notes` are fact properties;
+  - `value_key` includes strengths, ratios, shares, repeats and sample sizes.
+- **`--reset-source <id>`** (one-time, for v1.3's new fact_key, which changes every id):
+  - deletes the source's Recommendations with their Steps, ThresholdClauses and Conditions, and the source's spans nothing cites any more. Varieties, concepts and the Source stay;
+  - refused, deleting nothing, if any of its facts is approved, rejected or has `reviewed_by`;
+  - tested live on `cropbot-test` (`tests/load/test_live_reset.py`). Not yet run on the main database.
 - **Live test database:** `cropbot-test` on the local Enterprise server. Neo4j database names allow no underscores. `--database` on `kg.load.facts` targets it. The live tests (`neo4j_test_db` in `tests/conftest.py`) refuse the home database (`neo4j`) and any name without "test", and empty the test database before they run.
 - **Review queue** `data/review/missing_approved.csv` (gitignored): approved facts flagged `missing_in_latest_run`. They are still served, with the flag in their citation. It is rewritten by every load of the home database, never by `--database` loads.
 
