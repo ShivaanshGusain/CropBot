@@ -50,6 +50,14 @@ def test_suspected_source_typos_fail_the_dose_check(facts):
         assert r["status"] == "fail" and "kg a.i./ha" in r["reason"]
 
 
+def test_rice_seed_storage_ranges_stored_as_one_bound_go_to_review(result, facts):
+    failed = {k for k, f in facts.items() if f["checks"]["range_narrowed"]["status"] == "fail"}
+    assert failed == {("f5b06c9fd3f8", 22), ("f5b06c9fd3f8", 23)}
+    for k in failed:
+        assert facts[k]["status_before"] == "extracted" and facts[k]["status"] == "needs_review"
+        assert facts[k]["fact"]["max_moisture_pct"] in (13.0, 9.0)                   # the value is never changed
+
+
 def test_every_applied_ingredient_fails_closed_while_unknown(facts):
     with_ai = [f for f in facts.values() if any(a["target_id"].startswith("ai:") for s in f["fact"]["steps"]
                                                  for a in s["applies"])]

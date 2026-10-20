@@ -3,8 +3,8 @@
 import copy
 
 from kg.extract.model import FACT as RAW
-from kg.validate import (check_alternatives, check_ingredients, check_quote_location, check_raw_numbers,
-                         check_review_kept, check_value_ranges)
+from kg.validate import (check_alternatives, check_ingredients, check_quote_location, check_range_narrowed,
+                         check_raw_numbers, check_review_kept, check_value_ranges)
 from kg.schema.concepts import ActiveIngredient, Fertilizer
 
 SPAN = {"id": "span:x", "source_id": "source:tnau_agriculture_2020", "pdf_page": 64, "section_path": "s",
@@ -147,3 +147,33 @@ def test_flagged_or_inferred_facts_must_be_needs_review():
     assert check_review_kept(rec, raw_fact)["status"] == "pass"
     inherited = {"fact": fact([step(applies=[qty("fertilizer:dap", 2, inherited=True)])]), "review_reasons": []}
     assert check_review_kept(inherited, raw())["status"] == "fail"
+
+
+# 7 range narrowed
+def test_a_printed_range_stored_as_one_bound_fails_and_the_value_is_kept():
+    store = fact(subtype="StorageRule", max_moisture_pct=13.0, raw={"max_moisture_pct": "12 - 13 %"})
+    r = check_range_narrowed(store)
+    assert r["status"] == "fail" and r["reason"].startswith(
+        "printed range stored as a single bound (pending v1.3 min_moisture_pct)")
+    assert "max_moisture_pct 13 from '12 - 13 %'" in r["reason"] and store["max_moisture_pct"] == 13.0
+    both = fact(subtype="StorageRule", storage_months_min=8.0, storage_months_max=9.0,
+                raw={"storage_months_min": "8-9 months", "storage_months_max": "8-9 months"})
+    assert check_range_narrowed(both)["status"] == "pass"
+    one = fact(subtype="DryingSpec", target_moisture_pct_max=13.0, raw={"target_moisture_pct_max": "12 to 13%"})
+    assert check_range_narrowed(one)["status"] == "fail"                      # any min/max field, not only storage
+    assert check_range_narrowed(fact(subtype="DryingSpec", target_moisture_pct_max=12.0,
+                                     raw={"target_moisture_pct_max": "12%"}))["status"] == "pass"
+
+
+def test_range_narrowed_covers_amounts_offsets_and_conditions():
+    dose = fact(steps=[step(applies=[qty("ai:x", value=1000, unit="ml", raw="Fipronil 5% SC 1000-1500 ml")])])
+    assert check_range_narrowed(dose)["status"] == "fail"
+    ranged = fact(steps=[step(applies=[qty("ai:x", min=1000, max=1500, unit="ml", raw="Fipronil 5% SC 1000-1500 ml")])])
+    assert check_range_narrowed(ranged)["status"] == "pass"
+    other = fact(steps=[step(applies=[qty("ai:x", value=25, raw="Carbofuran 3% CG 25 kg (2-3 rounds)")])])
+    assert check_range_narrowed(other)["status"] == "pass"                  # 25 is not an end of the printed range
+    timed = fact(steps=[step(offset_min=-7, offset_max=-7, timing_raw="7 - 10 days before harvest")])
+    assert check_range_narrowed(timed)["status"] == "fail"
+    cond = fact(steps=[step(conditions=[{"variable": "soil_pH", "op": ">=", "value": 6.5, "value_max": None,
+                                         "raw": "pH 6.5 - 7.5"}])])
+    assert check_range_narrowed(cond)["status"] == "fail"

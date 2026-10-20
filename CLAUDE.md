@@ -469,6 +469,7 @@ No model. Input: the facts step 10 validated (`data/normalized/<id>/facts.jsonl`
   4. **alternatives:** fertilizer-only alternatives agree within 15 % on N, P2O5 and K2O, using **approved** Fertilizer percentages only. Without them it skips with a review reason.
   5. **ingredients:** every applied active ingredient must be `registered`; unknown, restricted, banned and not seeded all fail (fail closed). A Caution's `concerns` aren't checked.
   6. **review_kept:** a fact with flags, an inferred or context basis, an inherited amount, an exclusion or any step 10 review reason must be `needs_review`.
+  7. **range_narrowed:** a value stored as one bound (or equal bounds) that is an end of a range printed in its raw text fails with "printed range stored as a single bound (pending v1.3 min_moisture_pct)". It covers every raw field, quantity, step offset and condition, and the value is never changed. TNAU: rice seed storage "12 - 13 %" and "8 - 9 %" (C2#22, #23), stored as `max_moisture_pct` only.
 - **Review notes:** `[[review_note]]` in the registry is printed text on a PDF page plus a note, with a status.
   - Step 11 attaches an approved note to every fact whose quote contains that text on that page, as a review reason; the value never changes.
   - An approved note that matches no fact is reported as stale.

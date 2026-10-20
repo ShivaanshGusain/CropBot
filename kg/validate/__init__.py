@@ -13,6 +13,7 @@ Output: data/validated/<id>/{facts.jsonl, report.json} and data/review/validatio
   4 alternatives     fertilizer alternatives agree within 15 % on N, P2O5, K2O (approved percentages only)
   5 ingredients      every applied active ingredient is registered; unknown, restricted, banned fail (closed)
   6 review_kept      a flagged or inferred fact is needs_review
+  7 range_narrowed   a printed range ("12 - 13 %") is not stored as a single bound
 """
 
 import json
@@ -29,7 +30,10 @@ from kg.schema.concepts import ActiveIngredient, Fertilizer
 NORMALIZED_DIR = ROOT / "data" / "normalized"
 VALIDATED_DIR = ROOT / "data" / "validated"
 REVIEW_CSV = ROOT / "data" / "review" / "validation.csv"
-CHECKS = ("quote_location", "raw_numbers", "value_ranges", "alternatives", "ingredients", "review_kept")
+CHECKS = ("quote_location", "raw_numbers", "value_ranges", "alternatives", "ingredients", "review_kept",
+          "range_narrowed")
+NARROWED = "printed range stored as a single bound (pending v1.3 min_moisture_pct)"
+PRINTED_RANGE = re.compile(r"(\d+(?:\.\d+)?)\s*%?\s*(?:-|to)\s*(\d+(?:\.\d+)?)")
 NUMBER_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
                 "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "twenty": 20, "hundred": 100}
 AI_MAX_KG_PER_HA = 3.0
@@ -236,6 +240,53 @@ def check_review_kept(record: dict, raw_fact: dict) -> dict:
     return result("pass", reasons=len(reasons))
 
 
+# --- 7 range narrowed ------------------------------------------------------------------------
+
+def _range_ends(text: str | None) -> set[float]:
+    """Both ends of every range printed in the text ("12 - 13 %" -> {12, 13})."""
+    return {float(x) for m in PRINTED_RANGE.finditer(normalise(text or "")) for x in m.groups()}
+
+
+def check_range_narrowed(fact: dict) -> dict:
+    """A value stored as one bound (or equal bounds) that is an end of a range printed in its raw text."""
+    problems = []
+
+    def single(lo, hi, text, what):
+        if lo is None and hi is None:
+            return
+        if lo is not None and hi is not None and lo != hi:
+            return                                                       # both bounds stored
+        v = lo if lo is not None else hi
+        if _same(v, _range_ends(text)):
+            problems.append("%s %g from %r" % (what, v, text))
+
+    for name, text in (fact.get("raw") or {}).items():
+        if name.endswith("_min") or name.endswith("_max"):
+            base = name[:-4]
+            single(fact.get(base + "_min"), fact.get(base + "_max"), text, name)
+        else:
+            single(fact.get(name), None, text, name)
+    for s in fact["steps"]:
+        single(s.get("offset_min"), s.get("offset_max"), s.get("timing_raw"), "step %d offset" % s["order"])
+        for a in s["applies"]:
+            lo, hi = (a["value"], None) if a.get("value") is not None else (a.get("min"), a.get("max"))
+            single(lo, hi, a.get("raw"), "%s amount" % a["target_id"])
+        for c in s.get("conditions") or []:
+            if isinstance(c.get("value"), (int, float)):
+                single(c["value"], c.get("value_max"), c.get("raw"), c["variable"])
+    for cl in fact.get("clauses") or []:
+        single(cl["value"], None, cl.get("raw"), "clause %s" % cl["observation"])
+        for c in cl.get("conditions") or []:
+            if isinstance(c.get("value"), (int, float)):
+                single(c["value"], c.get("value_max"), c.get("raw"), c["variable"])
+    for c in fact.get("conditions") or []:
+        if isinstance(c.get("value"), (int, float)):
+            single(c["value"], c.get("value_max"), c.get("raw"), c["variable"])
+    if problems:
+        return result("fail", "%s: %s" % (NARROWED, "; ".join(problems)))
+    return result("pass")
+
+
 # --- running ---------------------------------------------------------------------------------
 
 def step9_runs(entry) -> dict:
@@ -277,6 +328,7 @@ def run(entry) -> dict:
             "alternatives": check_alternatives(fact, fertilizers),
             "ingredients": check_ingredients(fact, ais),
             "review_kept": check_review_kept(rec, step9["fact"]),
+            "range_narrowed": check_range_narrowed(fact),
         }
         reasons = ["%s: %s" % (k, c["reason"]) for k, c in checks.items() if c["status"] == "fail"]
         alt = checks["alternatives"]
