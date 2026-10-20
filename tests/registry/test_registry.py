@@ -168,13 +168,20 @@ def test_heading_fixes_and_their_review_status():
         (39, "restore", "1.3. Insect management: See Crop Protection Chapter", "approved"),
         (39, "restore", "1.4. Disease management: See Crop Protection Chapter", "approved"),
         (39, "restore", "1.5. Harvesting", "approved"),
-        (46, "restore", "3.9. Insect management: See Crop Protection Chapter", "proposed"),
-        (46, "restore", "3.10. Disease management: See Crop Protection Chapter", "proposed"),
-        (49, "restore", "4.10. Insect management: See Crop Protection Chapter", "proposed"),
-        (51, "restore", "5.12. Disease management: See Crop Protection Chapter", "proposed")]
-    [order] = entry.reading_order_fix
-    assert (order.pdf_page, order.first, order.after, order.status) == (
-        134, "Suitable Districts", "I. SEASON AND VARIETY", "approved")
+        (46, "restore", "3.9. Insect management: See Crop Protection Chapter", "approved"),
+        (46, "restore", "3.10. Disease management: See Crop Protection Chapter", "approved"),
+        (49, "restore", "4.10. Insect management: See Crop Protection Chapter", "approved"),
+        (51, "restore", "5.12. Disease management: See Crop Protection Chapter", "approved")]
+    assert [(o.pdf_page, o.first, o.after[:30], o.status) for o in entry.reading_order_fix] == [
+        (134, "Suitable Districts", "I. SEASON AND VARIETY", "approved"),
+        (134, "CROP IMPROVEMENT", "Tropical and Sub tropical cool", "proposed")]
+    [gap] = entry.acknowledged_gap
+    assert (gap.chapter, gap.under, gap.missing, gap.pdf_page) == ("WHEAT", "I. SEASON AND VARIETY", ["1"], 134)
+
+
+def test_acknowledged_gap_needs_missing_numbers(reg):
+    edit(reg, r'^missing = \["1"\]$', "missing = []")
+    assert "missing" in problems(reg)
 
 
 def test_restore_fix_heading_must_be_a_number_plus_the_match(reg):

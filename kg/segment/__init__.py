@@ -203,6 +203,22 @@ def numbering_gaps(built) -> list[dict]:
     return gaps
 
 
+def split_gaps(entry, gaps) -> tuple[list[dict], list[dict], list[dict]]:
+    """(open, acknowledged, stale). A gap is acknowledged only by an entry with the same chapter,
+    section and missing numbers; an entry that matches no gap is stale and reported."""
+    acks = {(a.chapter, a.under, tuple(a.missing)): a for a in entry.acknowledged_gap}
+    open_, acknowledged, used = [], [], set()
+    for g in gaps:
+        key = (g["chapter"], g["under"], tuple(g["missing"]))
+        if key in acks:
+            used.add(key)
+            acknowledged.append({**g, "pdf_page": acks[key].pdf_page, "note": acks[key].note})
+        else:
+            open_.append(g)
+    stale = [a.model_dump() for k, a in acks.items() if k not in used]
+    return open_, acknowledged, stale
+
+
 LOST_HEADING = re.compile(r"^(Insect|Disease|Nematode|Weed|Pest) management\s*:?\s*See\b", re.I)
 
 

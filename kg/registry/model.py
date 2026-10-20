@@ -127,6 +127,16 @@ class ReadingOrderFix(Model):
     note: str | None = None
 
 
+class AcknowledgedGap(Model):
+    """A numbering gap the printed book really has (checked on the page), so the report lists
+    it apart from open problems. `under` is the section heading text, as in the report."""
+    chapter: Text
+    under: Text
+    missing: list[Text] = Field(min_length=1)
+    pdf_page: PositiveInt
+    note: Text
+
+
 class Extraction(Model):
     """Conversion settings carried over from extraction/sources.toml."""
     ocr: Literal["auto", "force"] = "auto"
@@ -157,6 +167,7 @@ class RegistryEntry(Model):
     chapters: list[Chapter] = []
     heading_fix: list[HeadingFix] = []
     reading_order_fix: list[ReadingOrderFix] = []
+    acknowledged_gap: list[AcknowledgedGap] = []
     extraction: Extraction = Extraction()
     default_scope: list[DefaultScopeRule] = []
     section_scope: list[SectionScope] = []

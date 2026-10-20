@@ -238,6 +238,7 @@ No LLM. Input: the full `document.json`, with running-header headings dropped.
 - `[[heading_fix]]` `kind = "split"` (default): the heading `match` becomes `heading`, plus an inline sub-heading or a sub-section. A numbered sub-section ("I. SEASON AND VARIETIES") is placed by the numbering rules.
 - `[[heading_fix]]` `kind = "restore"`: an item whose number Docling dropped (often a list item) becomes the heading as printed, e.g. "Harvesting" → "1.5. Harvesting". The heading must be a number followed by `match`.
 - `[[reading_order_fix]]`: the items `first`..`last` on `pdf_page` move to just after `after`.
+- `[[acknowledged_gap]]` (no status; added after checking the page): a numbering gap the book really prints, e.g. wheat has no "1." before "2. Morphological Description of COW(W) 1". It matches only the same chapter, section heading and missing numbers. The report lists it under acknowledged gaps, not open ones, and lists any entry that matches no gap as stale.
 
 **Units**
 - One unit per leaf section, plus an "intro" unit for a section with its own text before its first child.
@@ -256,7 +257,7 @@ No LLM. Input: the full `document.json`, with running-header headings dropped.
 **Output:** `data/units/<source_id>/units.jsonl` and `report.json` (gitignored). The report lists:
 - the largest units and units without text;
 - headings that didn't parse;
-- numbering gaps, placeholders, late parents, duplicate numbers, promotions;
+- open numbering gaps, acknowledged and stale acknowledged gaps, placeholders, late parents, duplicate numbers, promotions;
 - heading-like list items;
 - every caps decision;
 - items before a chapter heading, and chapters whose heading wasn't found;
@@ -338,6 +339,8 @@ These were found in the committed TNAU conversion while building the schema test
 - **Fixed: the grain-drying sentence on p. 39.**
   - The printed page (printed 27) has "1.3. Insect management:", "1.4. Disease management:" and "1.5. Harvesting". Docling turned them into list items without numbers.
   - Approved restore fixes bring the headings back, so "Dry the grains to 12% moisture level for storage." sits in "… > 1. TRANSPLANTED PUDDLED LOWLAND RICE > 1.5. Harvesting".
-- **Proposed, not applied: the same pattern on pp. 46, 49 and 51** (3.9 and 3.10, 4.10, 5.12). Restore fixes are drafted in the registry with the printed text quoted.
-- **Open: wheat "I. SEASON AND VARIETY" sits under "CLIMATE REQUIREMENT".** Both are caps headings after "CROP IMPROVEMENT"; the printed page suggests it belongs under "CROP IMPROVEMENT".
+- **Fixed: the same pattern on pp. 46, 49 and 51** (3.9 and 3.10, 4.10, 5.12). Approved restore fixes; rice has no open numbering gaps.
+- **Proposed, not applied: wheat "I. SEASON AND VARIETY" sits under "CLIMATE REQUIREMENT".**
+  - PDF p. 134 prints "CROP IMPROVEMENT" (centred), then "CLIMATE REQUIREMENT" (left) with its table and paragraph, then "I. SEASON AND VARIETY" (centred). Rice p. 13 has the climate block first.
+  - A proposed `[[reading_order_fix]]` moves "CROP IMPROVEMENT" after the climate paragraph, giving "WHEAT > CROP IMPROVEMENT > I. SEASON AND VARIETY". The caps-heading rule is not changed for one book.
 - **Fixed: `table_ref`.** The new conversion gives every table a `#/tables/N` ref. The ETL table is two parts (p. 63 and p. 64), to be stitched in step 8.

@@ -249,28 +249,28 @@ kind = "restore"
 match = "Insect management: See Crop Protection Chapter"
 pdf_page = 46
 heading = "3.9. Insect management: See Crop Protection Chapter"
-status = "proposed"
+status = "approved"
 
 [[heading_fix]]   # PDF p. 46 prints "3.10. Disease management: See Crop Protection Chapter"
 kind = "restore"
 match = "Disease management: See Crop Protection Chapter"
 pdf_page = 46
 heading = "3.10. Disease management: See Crop Protection Chapter"
-status = "proposed"
+status = "approved"
 
 [[heading_fix]]   # PDF p. 49 (printed 37) prints "4.10. Insect management: See Crop Protection Chapter"
 kind = "restore"
 match = "Insect management: See Crop Protection Chapter"
 pdf_page = 49
 heading = "4.10. Insect management: See Crop Protection Chapter"
-status = "proposed"
+status = "approved"
 
 [[heading_fix]]   # PDF p. 51 (printed 39) prints "5.12. Disease management: See Crop Protection Chapter"
 kind = "restore"
 match = "Disease management: See Crop Protection Chapter"
 pdf_page = 51
 heading = "5.12. Disease management: See Crop Protection Chapter"
-status = "proposed"
+status = "approved"
 
 # --- reading-order fixes: applied only when approved; first, last and after must each be
 # found exactly once on pdf_page --------------------------------------------------------
@@ -282,3 +282,22 @@ first = "Suitable Districts"
 last = "3. SEED RATE: 100 kg/ha"
 after = "I. SEASON AND VARIETY"
 status = "approved"
+
+[[reading_order_fix]]   # PDF p. 134 prints, top to bottom: "CROP IMPROVEMENT" (centred), "CLIMATE REQUIREMENT"
+                        # (left) + table + paragraph, then "I. SEASON AND VARIETY" (centred). Rice (p. 13) has
+                        # the climate block first and "CROP IMPROVEMENT" directly above "I. SEASON AND VARIETIES".
+                        # Moving "CROP IMPROVEMENT" after the climate paragraph gives wheat the same tree.
+pdf_page = 134
+first = "CROP IMPROVEMENT"
+last = "CROP IMPROVEMENT"
+after = "Tropical and Sub tropical cool and dry climate. Grown during rabi season and has wide adaptability. Wheat can tolerate severe cold and snow and resume growth with the setting in warm weather in spring. Wheat needs cold and dry climate. Long day plant."
+status = "proposed"
+
+# --- numbering gaps the printed book really has: listed apart from open problems --------
+
+[[acknowledged_gap]]
+chapter = "WHEAT"
+under = "I. SEASON AND VARIETY"
+missing = ["1"]
+pdf_page = 134
+note = "The printed page has no '1.' before '2. Morphological Description of COW(W) 1' (checked on the rendered page)."

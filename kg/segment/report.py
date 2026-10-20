@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from . import (TOKEN_LIMIT, UNITS_DIR, build_tree, check_scopes, heading_like_list_items,
-               make_units, numbering_gaps, resolve_scopes)
+               make_units, numbering_gaps, resolve_scopes, split_gaps)
 
 AUDIT = ("caps_decisions", "placeholders", "late_parents", "duplicate_numbers", "promotions",
          "unparsed_headings", "before_chapter_heading", "chapter_heading_not_found",
@@ -19,6 +19,7 @@ def segment(entry, docling_dir: Path) -> tuple[list[dict], dict]:
     checks = check_scopes(entry, built, units)
     resolve_scopes(entry, units, checks)
     largest = sorted(units, key=lambda u: -u["approx_tokens"])
+    open_gaps, acknowledged, stale = split_gaps(entry, numbering_gaps(built))
     report = {
         "source_id": entry.id, "docling_dir": str(docling_dir),
         "units": len(units), "chapters": len(built),
@@ -28,7 +29,9 @@ def segment(entry, docling_dir: Path) -> tuple[list[dict], dict]:
         "over_token_limit": [u["section_path"] for u in units if u["approx_tokens"] > TOKEN_LIMIT],
         "units_without_text": [{"section_path": u["section_path"], "tables": len(u["table_refs"]),
                                 "pdf_pages": u["pdf_pages"]} for u in units if u["text_items"] == 0],
-        "numbering_gaps": numbering_gaps(built),
+        "numbering_gaps": open_gaps,                    # open problems only
+        "acknowledged_gaps": acknowledged,              # printed that way in the book
+        "stale_acknowledged_gaps": stale,               # registry entries that match no gap
         "heading_like_list_items": heading_like_list_items(units),
         "scope_checks": [{k: v for k, v in c.items() if not k.startswith("_")} for c in checks],
         **{k: log[k] for k in AUDIT},
@@ -74,6 +77,15 @@ def print_report(r: dict, focus: tuple[str, ...] = ("RICE", "WHEAT")) -> None:
     print("numbering gaps: %d (rice/wheat: %d)" % (len(r["numbering_gaps"]), len(gaps)))
     for g in gaps:
         print("   %s: missing %s under %r" % (g["chapter"], ", ".join(g["missing"]), g["under"][:60]))
+    print("acknowledged gaps (printed that way in the book): %d" % len(r["acknowledged_gaps"]))
+    for g in r["acknowledged_gaps"]:
+        print("   p.%s %s: missing %s under %r" % (g["pdf_page"], g["chapter"], ", ".join(g["missing"]),
+                                                  g["under"][:60]))
+    if r["stale_acknowledged_gaps"]:
+        print("STALE acknowledged gaps (match no gap in this run): %d" % len(r["stale_acknowledged_gaps"]))
+        for a in r["stale_acknowledged_gaps"]:
+            print("   p.%s %s: missing %s under %r" % (a["pdf_page"], a["chapter"], ", ".join(a["missing"]),
+                                                      a["under"][:60]))
     lists = [x for x in r["heading_like_list_items"] if in_focus(x["unit"])]
     print("heading-like list items: %d (rice/wheat: %d)" % (len(r["heading_like_list_items"]), len(lists)))
     for x in lists:

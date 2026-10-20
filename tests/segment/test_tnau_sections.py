@@ -79,11 +79,22 @@ def test_known_issue_2_grain_drying_lands_in_1_5_harvesting(seg):
     assert not [g for g in report["numbering_gaps"] if g["under"].startswith("1. TRANSPLANTED")]
 
 
-def test_proposed_restore_fixes_are_not_applied(seg):
+def test_restore_fixes_close_the_rice_gaps(seg):
     _, report = seg
-    applied = {(f["pdf_page"], f["kind"]) for f in report["heading_fixes_applied"]}
-    assert (39, "restore") in applied and not {(46, "restore"), (49, "restore"), (51, "restore")} & applied
-    assert {"3.9", "3.10"} <= {m for g in report["numbering_gaps"] for m in g["missing"]}
+    restored = {(f["pdf_page"], f["heading"]) for f in report["heading_fixes_applied"] if f["kind"] == "restore"}
+    assert {(46, "3.9. Insect management: See Crop Protection Chapter"),
+            (46, "3.10. Disease management: See Crop Protection Chapter"),
+            (49, "4.10. Insect management: See Crop Protection Chapter"),
+            (51, "5.12. Disease management: See Crop Protection Chapter")} <= restored
+    assert not [g for g in report["numbering_gaps"] if g["chapter"] == "RICE"]
+    assert not [x for x in report["heading_like_list_items"] if x["pdf_page"] in (46, 49, 51)]
+
+
+def test_proposed_reading_order_fix_is_not_applied(seg):
+    _, report = seg
+    proposed = [f for f in ENTRY.reading_order_fix if f.status == "proposed"]
+    assert [(f.pdf_page, f.first) for f in proposed] == [(134, "CROP IMPROVEMENT")]
+    assert "CROP IMPROVEMENT" not in {f["first"] for f in report["reading_order_fixes_applied"]}
 
 
 def test_main_field_section_ends_on_p69(seg):
@@ -129,6 +140,21 @@ def test_wheat_chapter_tree(seg):
     assert season + " > 2. Morphological Description of COW(W) 1" in wheat
     assert unit_with(units, "Variety : COW(W)1", "WHEAT")["section_path"] == season
     assert ("WHEAT", 134) not in {(x["chapter"], x["pdf_page"]) for x in report["before_chapter_heading"]}
-    # the book prints no "1." before "2. Morphological Description"; the gap is reported
-    gaps = [g for g in report["numbering_gaps"] if g["chapter"] == "WHEAT"]
-    assert [(g["under"], g["missing"]) for g in gaps] == [("I. SEASON AND VARIETY", ["1"])]
+    # the book prints no "1." before "2. Morphological Description": acknowledged, not open
+    assert not [g for g in report["numbering_gaps"] if g["chapter"] == "WHEAT"]
+    assert [(g["chapter"], g["under"], g["missing"], g["pdf_page"]) for g in report["acknowledged_gaps"]] == [
+        ("WHEAT", "I. SEASON AND VARIETY", ["1"], 134)]
+    assert report["stale_acknowledged_gaps"] == []
+
+
+@needs_full
+def test_approving_the_crop_improvement_fix_puts_season_under_it():
+    approved = ENTRY.model_copy(update={"reading_order_fix": [
+        f.model_copy(update={"status": "approved"}) for f in ENTRY.reading_order_fix]})
+    units, report = segment(approved, FULL)
+    wheat = {u["section_path"] for u in units if u["chapter"]["title"] == "WHEAT"}
+    assert "WHEAT > CROP IMPROVEMENT > I. SEASON AND VARIETY > 2. Morphological Description of COW(W) 1" in wheat
+    assert not [p for p in wheat if p.startswith("WHEAT > CLIMATE REQUIREMENT >")]
+    assert not report["failed"]
+    # the acknowledgement names the section, not its path, so it still matches
+    assert [g["under"] for g in report["acknowledged_gaps"]] == ["I. SEASON AND VARIETY"]
