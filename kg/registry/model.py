@@ -48,6 +48,20 @@ class SectionScope(Section):
     status: RuleStatus
 
 
+class PrintedPages(Model):
+    """A run of PDF pages whose printed page number is PDF page - offset."""
+    pdf_pages: tuple[PositiveInt, PositiveInt]
+    offset: int
+
+    @model_validator(mode="after")
+    def _order(self):
+        if self.pdf_pages[0] > self.pdf_pages[1]:
+            raise ValueError("pdf_pages start %d is after end %d" % self.pdf_pages)
+        if self.pdf_pages[0] - self.offset < 1:
+            raise ValueError("offset %d gives a printed page below 1" % self.offset)
+        return self
+
+
 class Extraction(Model):
     """Conversion settings carried over from extraction/sources.toml."""
     ocr: Literal["auto", "force"] = "auto"
@@ -73,6 +87,8 @@ class RegistryEntry(Model):
     doc_type: Text
     rights_note: str | None = None
     supersedes: SourceId | None = None  # an older edition of the same book
+    notes: list[str] = []               # known problems with the file, e.g. missing pages
+    printed_pages: list[PrintedPages] = []
     extraction: Extraction = Extraction()
     default_scope: list[DefaultScopeRule] = []
     section_scope: list[SectionScope] = []
@@ -91,9 +107,20 @@ class RegistryEntry(Model):
     def approved_section_scopes(self) -> list[SectionScope]:
         return [s for s in self.section_scope if s.status == "approved"]
 
+    def printed_page(self, pdf_page: int) -> str | None:
+        """The page number printed in the book, or None outside the printed_pages runs."""
+        for run in self.printed_pages:
+            if run.pdf_pages[0] <= pdf_page <= run.pdf_pages[1]:
+                return str(pdf_page - run.offset)
+        return None
+
     @model_validator(mode="after")
     def _source_fields(self):
         self.to_source()                # url, sha256, language and edition checks live on Source
         if self.supersedes == self.id:
             raise ValueError("a source cannot supersede itself")
+        runs = sorted(r.pdf_pages for r in self.printed_pages)
+        for (_, end), (start, _) in zip(runs, runs[1:]):
+            if start <= end:
+                raise ValueError("printed_pages runs overlap at PDF page %d" % start)
         return self

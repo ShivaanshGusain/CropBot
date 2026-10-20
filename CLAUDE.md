@@ -23,7 +23,7 @@ There are two separate uv projects:
 
 | Project | Python | Purpose |
 |---|---|---|
-| repo root (`pyproject.toml`) | 3.13 | Knowledge-graph pipeline: docling, neo4j, pydantic, python-dotenv, requests; pytest as a dev dependency |
+| repo root (`pyproject.toml`) | 3.13 | Knowledge-graph pipeline: docling pinned to 2.140.0 (same as `extraction/` and the committed `converted/`), easyocr, neo4j, pydantic, python-dotenv, requests; pytest as a dev dependency |
 | `extraction/` (`extraction/pyproject.toml`) | 3.12 | PDF → Markdown extraction. On Linux it pulls CUDA 13 torch for the team's GX10 (ARM64, GB10); it also adds easyocr, rapidfuzz, pypdf |
 
 ```bash
@@ -36,6 +36,9 @@ uv run python -m kg.load.seed --counts    # node/relationship counts, no writes
 uv run python -m kg.load.seed             # id constraints + MERGE concepts/ into Neo4j
 uv run python -m kg.registry              # validate registry/ and check each PDF's sha256
 uv run python -m kg.load.sources          # MERGE Source nodes and SUPERSEDES edges
+uv run python -m kg.convert source:tnau_agriculture_2020                # full Docling conversion (cached)
+uv run python -m kg.convert source:tnau_agriculture_2020 --pages 13-76  # trial run on a page range
+uv run python -m pytest -m slow           # the real 2-page conversion test (skipped by default)
 
 uv run --project extraction python extraction/extract.py --list   # registry check: included, duplicate, unregistered PDFs
 uv run --project extraction python extraction/extract.py --all --source tnau_agriculture
@@ -73,8 +76,7 @@ Local development runs Neo4j 2026.09.0 Enterprise. Which edition to deploy is a 
 **The committed `converted/*.index.json` files are lossy.**
 - They store no bboxes, no OCR confidence and no Docling JSON. Tables are Markdown strings only, and footnotes were dropped. So they cannot supply `SourceSpan.bbox` or `table_ref` (`#/tables/N`).
 - The schema's convert stage needs the lossless DoclingDocument JSON. That means a new conversion.
-- The full conversion runs on the GX10. Its cache lives in `data/docling/`, keyed by the PDF's sha256. That folder is gitignored, so anyone can regenerate it from the registry.
-- Until then, prototype segmentation on the committed rice text in `converted/tnau_agriculture.index.json`.
+- `kg/convert` does that conversion (see "Conversion" below). The full book is meant to run on the GX10.
 
 **Heading structure is not in the heading levels.**
 - 96–99% of Docling headings come out at level 1, depending on the book. The section hierarchy ("1.8.3.1.Seed rate") is only in the heading text.
@@ -115,7 +117,7 @@ registry/            one hand-written TOML file per book: url, sha256, state_id,
 concepts/            hand-curated concept and label files (crops, regions with LGD codes, pests, ingredients); the only way concepts are created
 kg/
   registry/          load and validate the registry; check each PDF's sha256 against it
-  convert/           Docling → DoclingDocument JSON in data/docling/<sha256>/ (gitignored)
+  convert/           Docling → DoclingDocument JSON in data/docling/<source_id>/ (gitignored)
   segment/           heading tree from the numbering text → one unit per section (heading path, text, tables, pages, scope)
   tables/            join tables split across pages, rotate variety tables, check header and row counts against the page
   schema/            Pydantic models mirroring the schema, plus fixed vocabularies (units, basis, condition variables)
@@ -183,6 +185,26 @@ data/gold/           hand-annotated sections (committed)
 - **TNAU:**
   - 2 approved default-scope rules, both section-scoped: per ha unless stated, p. 63; nursery area 800 m² per ha, p. 62.
   - 11 proposed section scopes, in integrated farming systems, agrometeorology and sorghum.
+
+## Conversion (`kg/convert`)
+
+- **Setup:** Docling 2.140.0 with EasyOCR and accurate TableFormer, ported from `extraction/extract.py` (`extraction/` itself is untouched).
+- **Settings come from the registry entry's `[extraction]` table,** never from `sources.toml`.
+  - `ocr = "auto"` uses `OcrMode.DEFAULT`: OCR runs only on layout regions without PDF text cells.
+  - `ocr = "force"` uses `OcrMode.FULL_PAGE`.
+- **Output in `data/docling/<source_id>/` (gitignored):**
+  - `document.json`: the lossless DoclingDocument, with pictures as PNGs in `images/`;
+  - `document.md`: a readable copy, one block per page, with `<!-- PDF p. N | printed p. M -->` markers and running headers removed;
+  - `meta.json`: versions, settings, sha256, cache key, timing and OCR pages;
+  - `report.json`.
+- **Cache:** a run is skipped if `meta.json` has the same cache key (sha256 + Docling package versions + settings). `meta.json` is written last, so an interrupted run never counts as cached. `--force` re-runs anyway.
+- **Trial runs** (`--pages a-b`) write to `trial_p<a>-<b>/` and never replace the full conversion.
+- **The running-header filter** applies to the Markdown copy and segmentation only; the JSON is never filtered.
+- **Tables are referenced as `table_ref = "#/tables/N"`** (the Docling `self_ref`).
+- **Page numbers:**
+  - `pdf_page` is always set.
+  - `printed_page` comes from the registry's `printed_pages` runs (printed = PDF page − offset) and is null outside them.
+  - The TNAU PDF has no embedded page labels; its runs were found from the printed number at the top of every page.
 
 ## Scope rules for extraction and normalisation
 

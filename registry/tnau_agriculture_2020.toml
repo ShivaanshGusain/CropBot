@@ -19,6 +19,24 @@ region_scope = ["state:33"]
 authority_tier = 1
 doc_type = "practice_guide"
 rights_note = "State extension publication; portal footer says All Rights Reserved. Attribute TNAU."
+notes = [
+    "Printed p. 135 is missing: PDF p. 146 is printed 134 and PDF p. 147 is printed 136 (pulses chapter). Numbering slip or missing page; outside the first slice.",
+    "Printed pp. 370-384 are missing: PDF p. 380 is printed 369 and PDF p. 381 is printed 385. Per the contents table this is inside Sericulture (printed 363-384); outside the first slice.",
+]
+
+# Printed page = PDF page - offset (first text line of each page, checked on all 460 pages).
+# PDF pp. 1-12 (cover, contents, forewords) and p. 460 (blank) have no printed number.
+[[printed_pages]]
+pdf_pages = [13, 146]
+offset = 12
+
+[[printed_pages]]
+pdf_pages = [147, 380]
+offset = 11
+
+[[printed_pages]]
+pdf_pages = [381, 459]
+offset = -4
 
 [extraction]   # carried over from extraction/sources.toml; used by convert, not loaded into the graph
 ocr = "auto"

@@ -111,3 +111,23 @@ def test_every_section_matches_exactly_one_heading():
     sections = [r.section for r in entry.default_scope if r.section] + entry.section_scope
     counts = {s.heading: heading_matches(s, items) for s in sections}
     assert all(n == 1 for n in counts.values()), counts
+
+
+# --- printed pages -------------------------------------------------------------------------
+
+@pytest.mark.parametrize("pdf_page, printed", [
+    (12, None), (13, "1"), (64, "52"), (146, "134"), (147, "136"), (380, "369"),
+    (381, "385"), (459, "463"), (460, None)])
+def test_printed_page_mapping(pdf_page, printed):
+    [entry] = read_registry()
+    assert entry.printed_page(pdf_page) == printed
+
+
+def test_overlapping_printed_page_runs_fail(reg):
+    edit(reg, r"pdf_pages = \[147, 380\]", "pdf_pages = [140, 380]")
+    assert "printed_pages runs overlap at PDF page 140" in problems(reg)
+
+
+def test_gaps_are_recorded_as_notes():
+    [entry] = read_registry()
+    assert any("135" in n for n in entry.notes) and any("370-384" in n for n in entry.notes)
