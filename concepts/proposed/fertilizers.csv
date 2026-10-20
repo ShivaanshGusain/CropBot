@@ -1,0 +1,3 @@
+id,name_en,n_pct,p2o5_pct,k2o_pct,other,review_status,source
+fertilizer:znso4,Zinc sulphate (ZnSO4),0,0,0,TODO,needs_review,"TNAU 2020 PDF pp. 30, 74 name it as ZnSO4; Zn percentage depends on the grade and needs an official source"
+fertilizer:feso4,Ferrous sulphate (FeSO4),0,0,0,TODO,needs_review,"TNAU 2020 PDF p. 74 names it as FeSO4; Fe percentage needs an official source"

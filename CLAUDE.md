@@ -173,6 +173,9 @@ data/gold/           hand-annotated sections (committed)
   - a LocalSeason needs `state_id`;
   - Season, Purpose and OperationType must equal the schema's closed lists.
 - **needs_review concepts are loaded,** with `review_status: needs_review`.
+- **`concepts/proposed/`** holds drafted rows (pests, active ingredients, organic inputs, fertilizers, labels) for review. They validate against the models (`PROPOSED_FILES`) but are not loaded and not used for linking until they're approved and moved into `concepts/`.
+  - Active ingredients keep `reg_status: unknown`, which comes only from the CIB&RC list.
+  - Labels marked `REVIEW:` (brand names, book misspellings) need an explicit decision.
 - **Review rule for linking and loading (steps 10 and 13):**
   - Linking may use needs_review concepts, but any fact linked to a needs_review concept must itself be needs_review.
   - The rice and wheat crop rows are approved; their labels are still needs_review.
