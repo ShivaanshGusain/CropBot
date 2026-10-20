@@ -49,6 +49,9 @@ uv run python -m kg.normalize source:tnau_agriculture_2020        # step 10 -> d
 uv run python -m kg.validate source:tnau_agriculture_2020         # step 11 -> data/validated/<id>/, data/review/validation.csv
 uv run python -m kg.verify source:tnau_agriculture_2020 --dry-run # step 12: claims and request sizes, sends nothing
 uv run python -m kg.verify source:tnau_agriculture_2020           # step 12: asks Jev what is not answered yet
+uv run python -m kg.load.facts source:tnau_agriculture_2020 --check   # step 13: build and check every row, no database
+uv run python -m kg.load.facts source:tnau_agriculture_2020           # step 13: one write transaction
+uv run python -m kg.load.facts --snapshot                             # hash of the whole graph (idempotency proof)
 
 uv run --project extraction python extraction/extract.py --list   # registry check: included, duplicate, unregistered PDFs
 uv run --project extraction python extraction/extract.py --all --source tnau_agriculture
@@ -153,7 +156,7 @@ data/gold/           hand-annotated sections (committed)
   - Their rows are drafted in `concepts/proposed/` (`PROPOSED_FILES`) and are not loaded until approved.
   - Fertilizer keeps `n_pct`, `p2o5_pct` and `k2o_pct` as properties. The schema's `other{}` (Zn, Fe, S, …) is stored as `(:Fertilizer)-[:CONTAINS {pct, raw}]->(:Nutrient)` edges. In the seed CSV it's the `contains` column, a JSON list of `{nutrient_id, pct, raw}`. Rows with TODO percentages are pending and get no edges.
 - **Neo4j properties are never maps**, only primitives or flat arrays.
-  - Anything map-shaped becomes edges, or flat properties when that's decided: `raw{}` → `raw_<field>`, `coefficients{}` → `coef_<name>`, Variety `cells{}` → opaque `cells_json` (all built in step 13).
+  - Anything map-shaped becomes edges, or flat properties when that's decided: `raw{}` → `raw_<field>`, `coefficients{}` → `coef_<name>`, Variety `cells{}` → opaque `cells_json`, `excluded_regions` → `excluded_region_ids[]` + `excluded_region_raws[]` (all built in step 13, `kg/load/facts.py`).
   - A concept's `edges()` gives (relationship, target label, target id, relationship properties) for the loader.
   - The loader refuses a node whose properties aren't primitives.
   - The loader MERGEs every node and edge and reports what each run created; a second run creates nothing.
@@ -162,7 +165,7 @@ data/gold/           hand-annotated sections (committed)
 ## IDs and loading
 
 - Every node label has a uniqueness constraint on `id`, including Step, Condition, ThresholdClause, Label and the 16 subtype labels (`kg/load/constraints.py`). Every write is `MERGE` on `id`.
-- **Step, Condition and ThresholdClause IDs** are derived from their parent Recommendation's ID. The exact format is decided with the fact loader.
+- **Step, Condition and ThresholdClause IDs** are derived from their parent Recommendation's ID (`rec:<h>`): `step:<h>:<i>`, `clause:<h>:<i>`, `cond:<h>:<r | s<i> | c<i>>:<j>` (owner: the recommendation, step i or clause i). A changed value gives a new rec id, so new children.
 - **Label IDs** are `label:` plus a hash of the concept ID, kind, language and NFC-normalised text (`kg.schema.ids.label_id`). Kind is part of the key, so the same text can be both an alias and a vernacular name.
 - Labels are words farmers and books actually use. Scientific names go in `Crop.scientific_name`, never in a Label.
 - Every concept has `name_en`, regions included (schema Conventions: "name_en on every concept").
@@ -505,6 +508,27 @@ Input: the step 11 facts (`data/validated/<id>/facts.jsonl`). The URL and model 
 - **Per fact:** `verifier`, `verifier_score` (the lowest P(yes) of its non-control claims), and its claims with P(yes) and the response file.
 - **Threshold:** `auto_verified_threshold` in `config/verify.toml` has **no default**. Without it nothing becomes auto_verified; calibration is step 15. With it, only an `extracted` fact with claims can become auto_verified; needs_review stays needs_review.
 
+## Loading facts (`kg/load/facts.py`)
+
+Step 13. Input: step 12's facts (status, verifier), step 11's (the fact, review reasons), step 10's (purpose origins) and step 8's `varieties.jsonl`. Held facts are never loaded. `--check` needs no database; a load is one write transaction, so a refusal writes nothing. Report: `data/loaded/<id>/report.json` (gitignored).
+- **Writes:**
+  - `(:Recommendation:<Subtype>)` with the core and subtype fields, `raw_<field>`, `review_reasons[]`, `verifier`, `verifier_score`, `verifier_claims[]` + `verifier_claim_p_yes[]` (controls excluded), `verifier_notes[]`, `conflict_key`, `value_key`, and `created_at` set on create only;
+  - Steps, APPLIES, ThresholdClauses and Conditions (WHEN);
+  - FOR_CROP, `IN_REGION {origin}`, `FOR_PURPOSE {origin}` and the other applicability and identity edges (FOR_PEST, TARGETS, CONCERNS);
+  - `EVIDENCED_BY` → SourceSpan → `IN_SOURCE` → Source (Source nodes are MERGEd from the registry first);
+  - Variety records (`:Concept:Variety`, needs_review) with VARIETY_OF and EVIDENCED_BY.
+- **Refused before writing:** a fact with no IN_REGION, SourceSpan or FOR_CROP (or failing the schema model); an edge to a concept not in `concepts/`; any non-primitive property, or a mixed-type array; one span id with different properties; a duplicate id; `approved` from code; an unanswered claim. During the write, any edge whose ends don't match aborts the transaction.
+- **Revisions** (matched on `fact_key`):
+  - same id: the node is kept, and a human status (approved, rejected) or `reviewed_by` is never overwritten; code statuses are refreshed;
+  - a new id for a known fact_key: a needs_review node with `(new)-[:REVISION_OF]->(old)`;
+  - every fact of the source not in this load gets `missing_in_latest_run = true`, never deleted. `superseded_by` stays reserved for a newer edition.
+- **Conflicts:**
+  - `conflict_key` = subtype + applicability + identity + step slots (order, alt group/option, operation, method, anchor, targets with formulation) + storage window; `value_key` = the values.
+  - Same conflict_key and a different value_key (not on one REVISION_OF chain) → one `CONFLICTS_WITH {origin: "detected"}` per pair, smaller id → larger, and both needs_review. Detection runs over the whole graph, so other books compare.
+  - Registry `[[conflict]]` (sides: subtype, pdf_page, quote) is for what detection can't find, e.g. across subtypes. Each side must match exactly one loaded fact, proposed or not; approved ones add `{origin: "review"}`.
+  - TNAU: 0 detected. One proposed entry, the rice seed long-term storage conflict: DryingSpec 8-9 % (p. 74, C2#18) vs StorageRule more than 15 months at less than 8 % (p. 75, C2#24).
+- **Idempotency:** the first TNAU load created 336 nodes and 664 relationships. The second created none, and the `--snapshot` hash was identical before and after it.
+
 ## Scope rules for extraction and normalisation
 
 - **The p. 63 per-ha rule applies only to its section.** Elsewhere, a dose with no stated basis gets `basis_inferred: true` and goes to review.
@@ -534,14 +558,14 @@ Found in step 10; until v1.3, normalisation holds the affected facts with the re
 - APPLIES has no target type for inputs that aren't nutrients, fertilizers, organic inputs or active ingredients: seed, biocontrol agents (Trichogramma), traps, salts, chemicals (HNO3, KCl, NaCl).
 - No concentration or ratio quantities: "%" with no basis, "0.1 N", "80 µM", "1 part … with 49 parts".
 - ThresholdClause sampling units outside `Basis`: "/25 net sweeps", "/100 earheads", "in 12 passes".
-- `FOR_PURPOSE` needs `{origin}` (text or section); normalisation keeps the origin beside the fact for now.
+- `FOR_PURPOSE` needs `{origin}` (text or section). **Built ahead of v1.3** (approved 2026-10-20): step 13 writes `FOR_PURPOSE {origin}`, a list, since the quote and the section can both give the purpose (`["section", "text"]`).
 - ActiveIngredient `use_class` needs an `acaricide` value (Dicofol, PDF p. 67); until then `use_class` is empty.
 - Soil-test conditions as applicability: "Zinc deficient soils" (PDF p. 74) is a soil condition, not a soil type. The fact stays held.
 - ActiveIngredient groups: "synthetic pyrethroids" (PDF pp. 63, 68) names a class of ingredients, not one. The cautions concerning it stay held.
 - GrowthStage seeds for rice, needed for stage timing: "flowering", "tillering stage", "boot leaf stage", "vegetative phase", "from milky stage to grain maturity". Today these stay only in `timing_raw`/`raw`, and the fact needs review.
 - Properties are never maps: Neo4j rejects them, which the 2026-10-20 seed load showed.
   - `Fertilizer.other{}` is now `CONTAINS {pct, raw}` edges to Nutrient.
-  - Decided 2026-10-20, to build in step 13 when the fact and Variety loaders exist:
+  - Decided 2026-10-20 and built in step 13 (`kg/load/facts.py`):
     - `raw{}` on subtypes and Variety → flat properties `raw_<field>`;
     - DoseFormula `coefficients{}` → flat properties `coef_<name>`;
     - Variety `cells{}` → one JSON string property `cells_json`, opaque provenance that is never queried in Cypher.

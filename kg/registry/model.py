@@ -154,6 +154,23 @@ class ReviewNote(Model):
     status: RuleStatus
 
 
+class ConflictSide(Model):
+    """One fact of a reviewer conflict: its subtype and its quote exactly as stored, on its PDF page."""
+    subtype: Text
+    pdf_page: PositiveInt
+    quote: Text                 # the fact's SourceSpan quote (compared normalised)
+
+
+class Conflict(Model):
+    """A contradiction a reviewer links by hand, e.g. across subtypes, which load-time detection
+    (same subtype and applicability) cannot find. Approved entries become CONFLICTS_WITH {origin: review};
+    each side must match exactly one loaded fact."""
+    a: ConflictSide
+    b: ConflictSide
+    note: Text
+    status: RuleStatus
+
+
 class Extraction(Model):
     """Conversion settings carried over from extraction/sources.toml."""
     ocr: Literal["auto", "force"] = "auto"
@@ -186,6 +203,7 @@ class RegistryEntry(Model):
     reading_order_fix: list[ReadingOrderFix] = []
     acknowledged_gap: list[AcknowledgedGap] = []
     review_note: list[ReviewNote] = []
+    conflict: list[Conflict] = []
     extraction: Extraction = Extraction()
     default_scope: list[DefaultScopeRule] = []
     section_scope: list[SectionScope] = []

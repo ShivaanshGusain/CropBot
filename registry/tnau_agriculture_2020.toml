@@ -336,3 +336,19 @@ pdf_page = 67
 match = "Imidacloprid 70% WG 30-35 kg"
 note = "inconsistent units for the same product in the source: g/ha on pp. 287–288, kg/ha on pp. 66, 67 and once on p. 288"
 status = "approved"
+
+# --- reviewer conflicts: CONFLICTS_WITH {origin: "review"} once approved; each side must match exactly one loaded fact ---
+
+[[conflict]]   # rice seed: the drying section calls 8-9 % "long term"; the storage section's long term (> 15 months) is < 8 %
+note = "rice seed long term storage: dried to 8-9 % moisture (p. 74) vs stored at less than 8 % for more than 15 months (p. 75)"
+status = "proposed"
+
+[conflict.a]
+subtype = "DryingSpec"
+pdf_page = 74
+quote = "Dry the seeds to 12 - 13 % moisture content for short term storage and 8-9 % moisture for long term storage."
+
+[conflict.b]
+subtype = "StorageRule"
+pdf_page = 75
+quote = "Store the seeds in 700 gauge polythene bag for long term storage (more than 15 months) with a seed moisture content less than 8 %."
