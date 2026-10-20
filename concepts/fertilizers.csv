@@ -1,4 +1,4 @@
-id,name_en,n_pct,p2o5_pct,k2o_pct,other,review_status,source
+id,name_en,n_pct,p2o5_pct,k2o_pct,contains,review_status,source
 fertilizer:urea,Urea,46,0,0,,needs_review,N implied by docs/schema_v1.1.md alternatives example (16 kg urea = 7.4 kg N); P and K not stated there
 fertilizer:dap,Diammonium phosphate (DAP),18,46,0,,needs_review,N and P2O5 implied by docs/schema_v1.1.md alternatives example (40 kg DAP = 7.2 kg N and 18.4 kg P2O5); K not stated there
 fertilizer:ssp,Single super phosphate (SSP),0,16,0,,needs_review,P2O5 implied by docs/schema_v1.1.md alternatives example (120 kg super phosphate = 19.2 kg P2O5); N and K not stated there

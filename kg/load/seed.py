@@ -10,7 +10,7 @@ written unless every other row validates.
 
 import argparse
 import csv
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -84,24 +84,41 @@ def read_seed(directory: Path = CONCEPTS_DIR) -> Seed:
     return Seed(nodes, pending)
 
 
-def load(driver, seed: Seed) -> None:
-    """MERGE every node on id, then MERGE its edges. Safe to run any number of times."""
+def is_primitive(value) -> bool:
+    """What Neo4j accepts as a property: a primitive or a flat array of them, never a map."""
+    if isinstance(value, list):
+        return all(isinstance(v, (str, int, float, bool)) for v in value)
+    return value is None or isinstance(value, (str, int, float, bool))
+
+
+def load(driver, seed: Seed) -> Counter:
+    """MERGE every node on id, then MERGE its edges (with their properties). Safe to run any
+    number of times: a second run creates nothing. Returns what this run created."""
     by_label = defaultdict(list)
     edges = defaultdict(list)
     for n in seed.nodes:
-        by_label[n.LABEL].append({"id": n.id, "props": n.props()})
-        for field, (rel, target_label) in n.EDGES.items():
-            if getattr(n, field) is not None:
-                edges[(n.LABEL, rel, target_label)].append({"src": n.id, "dst": getattr(n, field)})
+        props = n.props()
+        bad = {k: v for k, v in props.items() if not is_primitive(v)}
+        if bad:
+            raise SeedError(["%s: property %s is not a Neo4j primitive: %r" % (n.id, k, v) for k, v in bad.items()])
+        by_label[n.LABEL].append({"id": n.id, "props": props})
+        for rel, target_label, target, rel_props in n.edges():
+            edges[(n.LABEL, rel, target_label)].append({"src": n.id, "dst": target, "props": rel_props})
+    created = Counter()
+
+    def run(query, rows):
+        summary = driver.execute_query(query, rows=rows).summary.counters
+        created["nodes"] += summary.nodes_created
+        created["relationships"] += summary.relationships_created
+
     for label, rows in by_label.items():
         labels = label if label == "Label" else "Concept:" + label
-        driver.execute_query("UNWIND $rows AS row MERGE (n:%s {id: row.id}) SET n += row.props"
-                             % labels, rows=rows)
+        run("UNWIND $rows AS row MERGE (n:%s {id: row.id}) SET n += row.props" % labels, rows)
     for (src, rel, dst), rows in edges.items():
-        scheme = " SET r.scheme = b.scheme" if rel == "IN_ZONE" else ""
-        driver.execute_query("UNWIND $rows AS row MATCH (a:%s {id: row.src}) "
-                             "MATCH (b:%s {id: row.dst}) MERGE (a)-[r:%s]->(b)%s"
-                             % (src, dst, rel, scheme), rows=rows)
+        scheme = ", r.scheme = b.scheme" if rel == "IN_ZONE" else ""
+        run("UNWIND $rows AS row MATCH (a:%s {id: row.src}) MATCH (b:%s {id: row.dst}) "
+            "MERGE (a)-[r:%s]->(b) SET r += row.props%s" % (src, dst, rel, scheme), rows)
+    return created
 
 
 def print_counts(driver) -> None:
@@ -139,7 +156,8 @@ def main():
         return
     with get_driver() as driver:
         print("id uniqueness constraints:", ensure_constraints(driver))
-        load(driver, seed)
+        created = load(driver, seed)
+        print("this run created: %d nodes, %d relationships" % (created["nodes"], created["relationships"]))
         print_counts(driver)
 
 

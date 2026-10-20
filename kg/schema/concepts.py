@@ -51,7 +51,14 @@ class Concept(Model):
         return [(f, getattr(self, f), label) for f, label in targets.items()
                 if getattr(self, f) is not None]
 
+    def edges(self) -> list[tuple[str, str, str, dict]]:
+        """(relationship type, target label, target id, relationship properties) for the loader."""
+        return [(rel, label, getattr(self, f), {}) for f, (rel, label) in self.EDGES.items()
+                if getattr(self, f) is not None]
+
     def props(self) -> dict:
+        """Node properties. Neo4j properties are primitives or arrays of them, never maps:
+        anything map-shaped is an edge (see Fertilizer.contains)."""
         return self.model_dump(mode="json", exclude={"id", *self.EDGES})
 
 
@@ -144,26 +151,45 @@ class Nutrient(Concept):
     symbol: Text                        # as the schema writes it: N, P2O5, K2O, ...
 
 
+class NutrientShare(Model):
+    """One (:Fertilizer)-[:CONTAINS {pct, raw}]->(:Nutrient) edge."""
+    nutrient_id: NutrientId
+    pct: float = Field(ge=0, le=100)
+    raw: Text                           # the percentage as the source states it
+
+
 class Fertilizer(Concept):
+    """N, P2O5 and K2O stay properties (code turns "50 kg N" into kg of fertilizer with them);
+    schema other{} (Zn, Fe, S, ...) is stored as CONTAINS edges, since a property is never a map."""
     LABEL = "Fertilizer"
     id: FertilizerId
     n_pct: float = Field(ge=0, le=100)
     p2o5_pct: float = Field(ge=0, le=100)
     k2o_pct: float = Field(ge=0, le=100)
-    other: dict[str, float] = {}        # schema other{}: e.g. {"zn": ...} (percent); JSON in a seed CSV
+    contains: list[NutrientShare] = []  # seed CSV: a JSON list of {nutrient_id, pct, raw}
     source: Text                        # required: where the percentages come from
 
-    @field_validator("other", mode="before")
+    @field_validator("contains", mode="before")
     @classmethod
     def _json(cls, v):
         return json.loads(v) if isinstance(v, str) else v
 
     @model_validator(mode="after")
-    def _other_pct(self):
-        bad = {k: v for k, v in self.other.items() if not 0 <= v <= 100}
-        if bad:
-            raise ValueError("other percentages must be 0-100: %s" % bad)
+    def _one_share_per_nutrient(self):
+        ids = [s.nutrient_id for s in self.contains]
+        if len(ids) != len(set(ids)):
+            raise ValueError("a nutrient appears twice in contains")
         return self
+
+    def references(self):
+        return super().references() + [("contains", s.nutrient_id, "Nutrient") for s in self.contains]
+
+    def edges(self):
+        return super().edges() + [("CONTAINS", "Nutrient", s.nutrient_id, {"pct": s.pct, "raw": s.raw})
+                                  for s in self.contains]
+
+    def props(self) -> dict:
+        return self.model_dump(mode="json", exclude={"id", "contains", *self.EDGES})
 
 
 class OrganicInput(Concept):
@@ -276,6 +302,9 @@ class Label(Model):
 
     def references(self) -> list[tuple[str, str, str]]:
         return [("concept_id", self.concept_id, "Concept")]
+
+    def edges(self) -> list[tuple[str, str, str, dict]]:
+        return [("LABEL_OF", "Concept", self.concept_id, {})]
 
     def props(self) -> dict:
         return self.model_dump(mode="json", exclude={"id", "concept_id"})

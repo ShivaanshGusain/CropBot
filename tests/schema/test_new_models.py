@@ -59,11 +59,26 @@ def test_new_concepts_check_their_ids_and_vocabularies():
         OrganicInput(id="organic_input:x", name_en="x", kind="manure", review_status="needs_review")
 
 
-def test_fertilizer_other_reads_json_and_checks_percent():
+ZN = '[{"nutrient_id": "nutrient:zn", "pct": 21, "raw": "21% Zn"}]'
+
+
+def test_fertilizer_contains_is_edges_not_a_map_property():
     f = Fertilizer(id="fertilizer:znso4", name_en="Zinc sulphate", n_pct=0, p2o5_pct=0, k2o_pct=0,
-                   other='{"zn": 21}', review_status="needs_review", source="x")
-    assert f.other == {"zn": 21}
-    with pytest.raises(ValidationError, match="0-100"):
-        Fertilizer(id="fertilizer:x", name_en="x", n_pct=0, p2o5_pct=0, k2o_pct=0, other={"zn": 210},
+                   contains=ZN, review_status="needs_review", source="x")
+    assert f.edges() == [("CONTAINS", "Nutrient", "nutrient:zn", {"pct": 21.0, "raw": "21% Zn"})]
+    assert ("contains", "nutrient:zn", "Nutrient") in f.references()
+    assert "contains" not in f.props() and f.props()["n_pct"] == 0
+
+
+@pytest.mark.parametrize("contains, message", [
+    ('[{"nutrient_id": "nutrient:zn", "pct": 210, "raw": "x"}]', "less than or equal to 100"),
+    ('[{"nutrient_id": "fertilizer:x", "pct": 2, "raw": "x"}]', "is not a nutrient id"),
+    ('[{"nutrient_id": "nutrient:zn", "pct": 2}]', "raw"),
+    ('[{"nutrient_id": "nutrient:zn", "pct": 2, "raw": "x"}, {"nutrient_id": "nutrient:zn", "pct": 3, "raw": "y"}]',
+     "appears twice"),
+])
+def test_fertilizer_contains_is_checked(contains, message):
+    with pytest.raises(ValidationError, match=message):
+        Fertilizer(id="fertilizer:x", name_en="x", n_pct=0, p2o5_pct=0, k2o_pct=0, contains=contains,
                    review_status="needs_review", source="x")
 

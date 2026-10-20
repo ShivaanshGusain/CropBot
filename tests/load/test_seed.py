@@ -41,6 +41,61 @@ def test_committed_seed_files_validate():
     assert {"country:in", "state:33", "crop:rice", "crop:wheat", "zone:tn_cauvery_delta"} <= ids
 
 
+def test_every_seed_property_is_a_neo4j_primitive():
+    from kg.load.seed import is_primitive
+    for n in read_seed().nodes:
+        bad = {k: v for k, v in n.props().items() if not is_primitive(v)}
+        assert not bad, (n.id, bad)
+
+
+def test_contains_rows_become_contains_edges_with_pct_and_raw(seed_dir):
+    from kg.load.seed import load
+    replace(seed_dir, "fertilizers.csv", 'fertilizer:mop,Muriate of potash (MOP),0,0,60,,',
+            'fertilizer:mop,Muriate of potash (MOP),0,0,60,"[{""nutrient_id"": ""nutrient:s"", ""pct"": 1, '
+            '""raw"": ""1%""}]",')
+    driver = FakeDriver()
+    load(driver, read_seed(seed_dir))
+    assert any("[r:CONTAINS]" in q and "MATCH (b:Nutrient" in q for q in driver.queries)
+
+
+def test_fertilizer_contains_must_point_at_a_loaded_nutrient(seed_dir):
+    replace(seed_dir, "fertilizers.csv", 'fertilizer:mop,Muriate of potash (MOP),0,0,60,,',
+            'fertilizer:mop,Muriate of potash (MOP),0,0,60,"[{""nutrient_id"": ""nutrient:cl"", ""pct"": 47, '
+            '""raw"": ""47%""}]",')
+    assert "contains nutrient:cl is not a loaded Nutrient" in problems(seed_dir)
+
+
+class FakeDriver:
+    """Records every query; MERGE creates a node or relationship only the first time it is seen."""
+
+    def __init__(self):
+        self.seen, self.queries = set(), []
+
+    def execute_query(self, query, rows):
+        from types import SimpleNamespace
+        self.queries.append(query)
+        made = 0
+        for row in rows:
+            key = (query.split("MERGE", 1)[1].split(")", 1)[0], row["id"]) if "row.src" not in query else \
+                (query, row["src"], row["dst"])
+            if key not in self.seen:
+                self.seen.add(key)
+                made += 1
+        nodes = made if "row.src" not in query else 0
+        counters = SimpleNamespace(nodes_created=nodes, relationships_created=made - nodes)
+        return SimpleNamespace(summary=SimpleNamespace(counters=counters))
+
+
+def test_load_merges_everything_and_a_second_run_creates_nothing():
+    from kg.load.seed import load
+    seed, driver = read_seed(), FakeDriver()
+    first, second = load(driver, seed), load(driver, seed)
+    assert first["nodes"] == len(seed.nodes) and first["relationships"] > 0
+    assert second == {"nodes": 0, "relationships": 0}
+    assert all("MERGE" in q and "CREATE" not in q for q in driver.queries)
+    assert any("[r:LABEL_OF]" in q and "SET r += row.props" in q for q in driver.queries)
+
+
 def test_todo_rows_are_pending_not_loaded():
     seed = read_seed()
     assert "states.csv:3" in seed.pending                      # pilot state

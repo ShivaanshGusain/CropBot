@@ -148,7 +148,11 @@ data/gold/           hand-annotated sections (committed)
 - **Subtypes:** all 16 are modelled. The 9 first-slice subtypes and the other 7 from the v1.2 table (SeedRate, Spacing, SeedTreatment, IrrigationRule, DoseFormula, WeatherRule, QualitySpec) are in `ALL_SUBTYPES`/`FACT`.
 - **Concept models:** Pest, Disease, Weed, ActiveIngredient (`reg_status` defaults to unknown and comes only from the CIB&RC list) and OrganicInput are modelled.
   - Their rows are drafted in `concepts/proposed/` (`PROPOSED_FILES`) and are not loaded until approved.
-  - `Fertilizer.other` is a JSON map of percentages, e.g. `{"zn": 21}`.
+  - Fertilizer keeps `n_pct`, `p2o5_pct` and `k2o_pct` as properties. The schema's `other{}` (Zn, Fe, S, …) is stored as `(:Fertilizer)-[:CONTAINS {pct, raw}]->(:Nutrient)` edges. In the seed CSV it's the `contains` column, a JSON list of `{nutrient_id, pct, raw}`. Rows with TODO percentages are pending and get no edges.
+- **Neo4j properties are never maps**, only primitives or flat arrays.
+  - Anything map-shaped becomes edges. A concept's `edges()` gives (relationship, target label, target id, relationship properties) for the loader.
+  - The loader refuses a node whose properties aren't primitives.
+  - The loader MERGEs every node and edge and reports what each run created; a second run creates nothing.
 - **`per_cent_nursery`:** value is the amount per one cent of nursery, and `area_cents` is the nursery area the source stated. "40 kg DAP per 20 cents" is value 2, area_cents 20.
 
 ## IDs and loading
@@ -458,6 +462,9 @@ Found in step 10; until v1.3, normalisation holds the affected facts with the re
 - ThresholdClause sampling units outside `Basis`: "/25 net sweeps", "/100 earheads", "in 12 passes".
 - `FOR_PURPOSE` needs `{origin}` (text or section); normalisation keeps the origin beside the fact for now.
 - ActiveIngredient `use_class` needs an `acaricide` value (Dicofol, PDF p. 67); until then `use_class` is empty.
+- Properties are never maps: Neo4j rejects them, which the 2026-10-20 seed load showed.
+  - `Fertilizer.other{}` is now `CONTAINS {pct, raw}` edges to Nutrient.
+  - v1.2 still has map properties that need a decision before facts or varieties are loaded: `raw{}` on every subtype and on Variety, Variety `cells{}`, and DoseFormula `coefficients{}`.
 
 Candidate for prompt v3: a flag `scope_from_heading` for applicability taken from a sub-heading rather than the quote. For example, the soil "saline soil condition" comes from the p. 74 sub-heading "Recommendation for planting under saline soil condition", and "Zinc deficient soils" comes the same way. v2 has no flag for this.
 
