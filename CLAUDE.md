@@ -587,8 +587,15 @@ Approved 2026-10-20. `kg.query.answer(driver, template, FarmContext)` returns a 
   - rejected and superseded facts are never fetched, nor non-approved facts flagged missing.
 - **Active ingredients fail closed:** a step applying an ingredient whose `reg_status` isn't `registered` is dropped, whatever the fact's status (approved 2026-10-20; stricter than v1.2, see the v1.3 list).
 - **Cross-state:** only when the farmer's own regions return nothing, only for DryingSpec, StorageRule, PestThreshold and HarvestRule (labelled "From a <state> source"), plus QualitySpec and Caution (unlabelled). Others: "No local guidance available".
-- **Citations:** every served fact carries quote, PDF and printed page, source title, status, verifier_score and `missing_in_latest_run`.
-- **Fixtures:** `tests/query/fixtures/*.json` hold a context and the expected answer: Q8 (spiders unknown / none), Q12 (seed medium / grain), Q14, Q15, Q16, storage months unknown, 10 months, outside Tamil Nadu (`state:test_other` is a placeholder, not an LGD code). All 10 matched on 2026-10-20.
+- **Citations:** every served fact carries quote, PDF and printed page, source title, status, verifier_score and `missing_in_latest_run`. Hidden facts and conflict partners carry their quote too.
+- **Schema v1.3 in answers:**
+  - StorageRule serves `min_moisture_pct` beside `max_moisture_pct`;
+  - threshold clauses carry `sampling_count`/`sampling_object`;
+  - the farm context has a `Zn` soil rating (`soil_Zn_rating`);
+  - safety joins also reach Cautions that concern an AI group the step's ingredient is a `MEMBER_OF`.
+- **Fixtures:** `tests/query/fixtures/*.json` hold a context and the expected answer: Q8 (spiders unknown / none), Q12 (seed medium / grain), Q14, Q15, Q16, storage months unknown, 10 months, outside Tamil Nadu (`state:test_other` is a placeholder, not an LGD code).
+  - Facts are named by a quote snippet (plus `duration_group`, or `"exact": true`, where one quote contains another), never by rec id, so re-extraction doesn't break them.
+  - All 10 matched on 2026-10-20 with the v2 runs under schema v1.3.
   - Rice seed storage C2#22/#23 are served as "at most 13 %" and "at most 9 %", labelled unverified. The book prints "12 - 13 %" and "8 - 9 %" (range_narrowed, pending v1.3 `min_moisture_pct`).
 
 ## Scope rules for extraction and normalisation

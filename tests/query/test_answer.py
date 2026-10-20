@@ -79,7 +79,7 @@ def test_ranking_per_slot_keeps_the_whole_top_group_and_shows_disagreement():
     out = answer(FakeDriver([zone, state_a]), "drying_target",
                  ctx(purpose="purpose:grain", zones=["zone:tn_cauvery_delta"]))
     assert [f["id"] for s in out["slots"] for f in s["facts"]] == ["rec:zone"]
-    assert {"fact": "rec:a", "reason": "outranked in its answer slot"} in out["hidden"]
+    assert {"fact": "rec:a", "quote": "q", "reason": "outranked in its answer slot"} in out["hidden"]
     state_b = row("rec:b", "DryingSpec", purposes=["purpose:grain"], target_moisture_pct_max=14.0)
     tie = answer(FakeDriver([state_a, state_b]), "drying_target", ctx(purpose="purpose:grain"))
     (s,) = tie["slots"]
@@ -171,7 +171,8 @@ def test_conservative_unknown_withholds_an_action():
     rain = {"variable": "forecast_rain_mm_24h", "op": "<", "value": 5.0, "any_of_group": 1, "raw": "no rain"}
     r = row("rec:dry", "DryingSpec", purposes=["purpose:grain"], target_moisture_pct_max=12.0, conditions=[rain])
     out = answer(FakeDriver([r]), "drying_target", ctx(purpose="purpose:grain"))
-    assert out["slots"] == [] and out["hidden"] == [{"fact": "rec:dry", "reason": "withheld: forecast_rain_mm_24h unknown"}]
+    assert out["slots"] == [] and out["hidden"] == [{"fact": "rec:dry", "quote": "q",
+                                                     "reason": "withheld: forecast_rain_mm_24h unknown"}]
 
 
 def test_cross_state_fallback_only_when_nothing_local_and_labelled():
@@ -187,6 +188,20 @@ def test_cross_state_fallback_only_when_nothing_local_and_labelled():
     with pytest.raises(ValueError, match="never crosses state lines"):
         query(Template("NutrientDose", ()), "fallback")
     assert "LIMIT" not in query(Template("DryingSpec", ()), "local")
+
+
+def test_v13_fields_are_served():
+    store = row("rec:s", "StorageRule", purposes=["purpose:seed"], storage_months_min=8.0, storage_months_max=9.0,
+                min_moisture_pct=12.0, max_moisture_pct=13.0, min_moisture_pct_inclusive=True,
+                max_moisture_pct_inclusive=True)
+    (f,) = answer(FakeDriver([store]), "storage", ctx(purpose="purpose:seed", storage_months=8))["slots"][0]["facts"]
+    assert (f["values"]["min_moisture_pct"], f["values"]["max_moisture_pct"]) == (12.0, 13.0)
+    sweeps = row("rec:t", "PestThreshold", clauses=[{"observation": "bugs", "value": 5, "unit": "count",
+                                                    "sampling_count": 25, "sampling_object": "net_sweep",
+                                                    "raw": "5/25 net sweeps", "conditions": []}])
+    (t,) = answer(FakeDriver([sweeps]), "threshold", ctx(pest="pest:earhead_bug"))["slots"][0]["facts"]
+    assert (t["clauses"][0]["sampling_count"], t["clauses"][0]["sampling_object"]) == (25, "net_sweep")
+    assert ctx(soil={"Zn": "low"}).value("soil_Zn_rating") == "low"
 
 
 def test_approved_but_missing_is_served_with_the_flag():

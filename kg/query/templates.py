@@ -25,7 +25,8 @@ TEMPLATES = {
         "method"), window=True),
     "storage": Template("StorageRule", (
         "storage_months_min", "storage_months_max", "storage_months_min_inclusive", "storage_months_max_inclusive",
-        "max_moisture_pct", "max_moisture_pct_inclusive", "structure"), window=True, safety=True),
+        "min_moisture_pct", "min_moisture_pct_inclusive", "max_moisture_pct", "max_moisture_pct_inclusive",
+        "structure"), window=True, safety=True),
     "harvest_readiness": Template("HarvestRule", (
         "maturity_signs", "harvest_moisture_pct_min", "harvest_moisture_pct_max", "threshing_moisture_pct_min",
         "threshing_moisture_pct_max", "duration_group")),
@@ -65,10 +66,14 @@ RETURN r {.*} AS fact,
   [(r)-[e]->(cl) WHERE type(e) = 'HAS_CLAUSE' | cl {.*, conditions: [(cl)-[w]->(c) WHERE type(w) = 'WHEN' | c {.*}]}]
       AS clauses,
   [(r)-[k]-(o) WHERE type(k) = 'CONFLICTS_WITH' | {id: o.id, subtype: o.subtype, status: o.status, origin: k.origin,
-                                                   summary_en: o.summary_en}] AS conflicts,
+                                                   summary_en: o.summary_en,
+                                                   quote: head([(o)-[:EVIDENCED_BY]->(os) | os.quote])}] AS conflicts,
   [(r)-[:EVIDENCED_BY]->(s)-[:IN_SOURCE]->(src) | {span: s {.*}, source: src {.id, .title, .authority_tier,
                                                    .edition_year, .state_id}}] AS evidence,
   [(r)-[:HAS_STEP]->()-[:APPLIES]->(:ActiveIngredient)<-[e]-(c:Caution) WHERE type(e) = 'CONCERNS' |
+      c {.id, .summary_en, .text_en, .kind, .status}]
+  + [(r)-[:HAS_STEP]->()-[:APPLIES]->(:ActiveIngredient)-[m]->(:AIGroup)<-[e]-(c:Caution)
+     WHERE type(m) = 'MEMBER_OF' AND type(e) = 'CONCERNS' |
       c {.id, .summary_en, .text_en, .kind, .status}] AS cautions
 """
 STATE_NAMES = "MATCH (s:State) RETURN s.id AS id, s.name_en AS name"

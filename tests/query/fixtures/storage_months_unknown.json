@@ -2,5 +2,5 @@
  "template": "storage",
  "context": {"crop": "crop:rice", "state": "state:33", "purpose": "purpose:seed"},
  "expect": {"scope": "local", "asks": ["storage_months"],
-            "visible": ["rec:9871337ebe4328c6", "rec:2ca9ca3c89710945", "rec:5425b01c22569ffa"],
-            "hidden": ["rec:8516c77ef7a6849e"]}}
+            "visible": ["gunny or cloth bags", "polylined gunny bag", "700 gauge polythene bag"],
+            "hidden": ["Treat the seeds with carbendazim"]}}

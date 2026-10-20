@@ -33,8 +33,13 @@ NO_LOCAL = "No local guidance available"
 NO_VERIFIED = "No verified guidance available"
 WINDOW = ("storage_months_min", "storage_months_max", "storage_months_min_inclusive", "storage_months_max_inclusive")
 VALUE_SKIP = {"id", "status", "verifier", "verifier_score", "verifier_claims", "verifier_claim_p_yes",
-              "verifier_notes", "review_reasons", "created_at", "missing_in_latest_run", "summary_en",
-              "conflict_key", "value_key", "fact_key", "extraction_model", "reviewed_by"}
+              "verifier_notes", "review_reasons", "review_notes", "extraction_flags", "created_at",
+              "missing_in_latest_run", "summary_en", "conflict_key", "value_key", "fact_key", "extraction_model",
+              "reviewed_by"}
+
+
+def quote_of(row: dict) -> str | None:
+    return row["evidence"][0]["span"].get("quote") if row.get("evidence") else None
 
 
 def num(v) -> str:
@@ -107,7 +112,8 @@ def candidates(rows: list[dict], ctx, t) -> tuple[list[dict], list[dict], list[d
         if state == FALSE:
             continue
         if state == UNKNOWN and f["subtype"] != "Caution" and any(policy(v) is OnUnknown.CONSERVATIVE for v in cvars):
-            withheld.append({"fact": f["id"], "reason": "withheld: %s unknown" % ", ".join(cvars)})
+            withheld.append({"fact": f["id"], "quote": quote_of(row),
+                             "reason": "withheld: %s unknown" % ", ".join(cvars)})
             continue
         if t.window:
             w = window_state(f, ctx.storage_months)
@@ -188,7 +194,8 @@ def render(c: dict, ctx, t, scope: str, label_fallback: str | None, asks: dict) 
         for v in cvars:
             asks.setdefault(v, question(v))
         clauses.append({"observation": cl.get("observation"), "value": cl.get("value"), "unit": cl.get("unit"),
-                        "sampling_unit": cl.get("sampling_unit"), "raw": cl.get("raw"),
+                        "sampling_unit": cl.get("sampling_unit"), "sampling_count": cl.get("sampling_count"),
+                        "sampling_object": cl.get("sampling_object"), "raw": cl.get("raw"),
                         "conditions": [{"raw": x["raw"], "state": combine([x], ctx)[0]} for x in cl["conditions"]]})
     # an inclusive flag is shown only beside its bound; on its own it is not an answer
     values = {k: f[k] for k in t.fields if f.get(k) not in (None, [])
@@ -200,7 +207,8 @@ def render(c: dict, ctx, t, scope: str, label_fallback: str | None, asks: dict) 
     labels = [x for x in (LABEL_AUTO if status == "auto_verified" else LABEL_UNREVIEWED if unreviewed else None,
                           label_fallback) if x]
     return {
-        "id": f["id"], "subtype": f["subtype"], "summary_en": f.get("summary_en"), "labels": labels,
+        "id": f["id"], "subtype": f["subtype"], "summary_en": f.get("summary_en"),
+        "duration_group": f.get("duration_group"), "labels": labels,
         "branch": c["unknown"], "values": values, "clauses": clauses, "steps": shown_steps,
         "hidden_steps": hidden_steps, "conflicts": row["conflicts"],
         "cautions": [{**k, "labels": [LABEL_UNREVIEWED] if k.get("status") in UNREVIEWED else []}
@@ -256,7 +264,8 @@ def answer(driver, template_name: str, ctx, database=None) -> dict:
     for key, members in slots.items():
         best = max(rank(c, ctx, scope) for c in members)
         top = [c for c in members if rank(c, ctx, scope) == best]
-        out["hidden"] += [{"fact": c["row"]["fact"]["id"], "reason": "outranked in its answer slot"}
+        out["hidden"] += [{"fact": c["row"]["fact"]["id"], "quote": quote_of(c["row"]),
+                           "reason": "outranked in its answer slot"}
                           for c in members if c not in top]
         facts = []
         for c in top:
@@ -265,7 +274,8 @@ def answer(driver, template_name: str, ctx, database=None) -> dict:
                      if scope == "fallback" and t.subtype in FALLBACK_ONLY else None)
             served, reasons = render(c, ctx, t, scope, label, asks)
             if served is None:
-                out["hidden"] += [{"fact": c["row"]["fact"]["id"], "reason": r} for r in reasons]
+                out["hidden"] += [{"fact": c["row"]["fact"]["id"], "quote": quote_of(c["row"]), "reason": r}
+                                  for r in reasons]
             else:
                 facts.append(served)
         if facts:

@@ -2,5 +2,5 @@
  "template": "threshold",
  "context": {"crop": "crop:rice", "state": "state:33", "pest": "pest:brown_planthopper",
              "observations": {"spider_count_per_hill": 0}},
- "expect": {"scope": "local", "asks": [], "visible": ["rec:4e07a5cfc3db2851"],
-            "clauses": {"rec:4e07a5cfc3db2851": [1.0]}}}
+ "expect": {"scope": "local", "asks": [], "visible": ["1 hopper/ tiller in the absence of predatory spider"],
+            "clauses": {"1 hopper/ tiller in the absence of predatory spider": [1.0]}}}

@@ -16,6 +16,7 @@ class Soil(Model):
     N: Rating | None = None
     P: Rating | None = None
     K: Rating | None = None
+    Zn: Rating | None = None              # schema v1.3: soil_Zn_rating ("zinc deficient soils" = low)
     pH: float | None = None
 
 

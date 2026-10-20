@@ -21,29 +21,60 @@ FIXTURES = sorted((Path(__file__).parent / "fixtures").glob("*.json"))
 
 
 def summarise(out: dict) -> dict:
-    """The parts of an answer the fixtures compare."""
+    """The parts of an answer the fixtures compare. Facts are named by their quote, which survives
+    re-extraction (rec ids change whenever fact_key or a value does)."""
     facts = [f for s in out["slots"] for f in s["facts"]]
     return {"scope": out["scope"], "asks": sorted(a["variable"] for a in out["asks"]),
-            "visible": sorted(f["id"] for f in facts), "hidden": sorted({h["fact"] for h in out["hidden"]}),
-            "message": out["message"],
-            "labels": {f["id"]: f["labels"] for f in facts},
-            "clauses": {f["id"]: [c["value"] for c in f["clauses"]] for f in facts if f["clauses"]},
-            "conflicts": {f["id"]: sorted(c["id"] for c in f["conflicts"]) for f in facts if f["conflicts"]}}
+            "visible": [{"quote": f["citation"]["quote"], "duration_group": f["duration_group"]} for f in facts],
+            "hidden": [{"quote": h.get("quote")} for h in out["hidden"]], "message": out["message"],
+            "facts": [{"quote": f["citation"]["quote"], "labels": f["labels"],
+                       "clauses": [c["value"] for c in f["clauses"]],
+                       "conflicts": [c.get("quote") or "" for c in f["conflicts"]]} for f in facts]}
+
+
+def matches(entry, fact: dict) -> bool:
+    """A fixture entry: a snippet of the quote, or {"quote": snippet, "duration_group": …} or
+    {"quote": full quote, "exact": true} where one quote is contained in another."""
+    entry = {"quote": entry} if isinstance(entry, str) else entry
+    if entry.get("exact"):
+        ok = fact["quote"] == entry["quote"]
+    else:
+        ok = entry["quote"] in (fact["quote"] or "")
+    return ok and all(fact.get(k) == v for k, v in entry.items() if k not in ("quote", "exact"))
+
+
+def one_to_one(entries: list, facts: list[dict]) -> bool:
+    """Every entry matches a different fact, and every fact is matched."""
+    if len(entries) != len(facts):
+        return False
+    if not entries:
+        return True
+    return any(matches(entries[0], f) and one_to_one(entries[1:], facts[:i] + facts[i + 1:])
+               for i, f in enumerate(facts))
 
 
 def check(expect: dict, got: dict) -> list[str]:
-    """Differences between a fixture's expectation and the summary (hidden: listed ones must be hidden)."""
+    """Differences between a fixture's expectation and the summary. `hidden` entries must each be hidden;
+    `labels`, `clauses` and `conflicts` are keyed by a snippet that names exactly one served fact."""
     problems = []
     for key, want in expect.items():
-        have = got[key]
-        if key in ("asks", "visible"):
-            ok = sorted(want) == have
+        if key == "asks":
+            ok, have = sorted(want) == got["asks"], got["asks"]
+        elif key == "visible":
+            ok, have = one_to_one(want, got["visible"]), [f["quote"] for f in got["visible"]]
         elif key == "hidden":
-            ok = set(want) <= set(have)
+            ok, have = all(any(matches(e, h) for h in got["hidden"]) for e in want), got["hidden"]
         elif key in ("labels", "clauses", "conflicts"):
-            ok = all(have.get(k) == v for k, v in want.items())
+            ok, have = True, {}
+            for snippet, value in want.items():
+                named = [f for f in got["facts"] if snippet in (f["quote"] or "")]
+                have[snippet] = [f[key] for f in named]
+                if key == "conflicts":
+                    ok &= len(named) == 1 and all(any(s in q for q in named[0][key]) for s in value)
+                else:
+                    ok &= len(named) == 1 and named[0][key] == value
         else:
-            ok = want == have
+            ok, have = want == got[key], got[key]
         if not ok:
             problems.append("%s: expected %r, got %r" % (key, want, have))
     return problems
