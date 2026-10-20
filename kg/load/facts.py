@@ -23,7 +23,8 @@ a newer edition.
 Conflicts: facts with the same conflict_key (subtype, applicability, identity, step slots and the storage
 window) and a different value_key get one CONFLICTS_WITH {origin: "detected"} per pair, from the smaller id
 to the larger, and become needs_review. Approved registry [[conflict]] entries add {origin: "review"}.
-Writes data/loaded/<id>/report.json (gitignored).
+Writes data/loaded/<id>/report.json and, for the home database, the review queue of approved facts missing
+from the latest run, data/review/missing_approved.csv (both gitignored).
 """
 
 import argparse
@@ -45,6 +46,7 @@ from .sources import load_sources
 
 TABLES_DIR = ROOT / "data" / "tables"
 LOADED_DIR = ROOT / "data" / "loaded"
+MISSING_APPROVED_CSV = ROOT / "data" / "review" / "missing_approved.csv"
 HUMAN_STATUSES = ["approved", "rejected"]
 APPLICABILITY = (("crop_ids", "FOR_CROP"), ("variety_ids", "FOR_VARIETY"), ("season_ids", "IN_SEASON"),
                  ("system_ids", "UNDER_SYSTEM"), ("soil_ids", "ON_SOIL"), ("purpose_ids", "FOR_PURPOSE"),
@@ -407,6 +409,24 @@ def snapshot(driver, database=None) -> dict:
             "relationships": len(rels)}
 
 
+def missing_approved(driver, database=None) -> list[dict]:
+    """Approved facts absent from their source's latest load: still served, flagged, and queued for review."""
+    rows, _, _ = driver.execute_query(
+        "MATCH (r:Recommendation {status: 'approved', missing_in_latest_run: true})-[:EVIDENCED_BY]->(s:SourceSpan)"
+        "-[:IN_SOURCE]->(src:Source) RETURN r.id AS fact_id, r.subtype AS subtype, src.id AS source_id, "
+        "s.pdf_page AS pdf_page, s.quote AS quote, r.reviewed_by AS reviewed_by ORDER BY fact_id", database_=database)
+    return [r.data() for r in rows]
+
+
+def write_missing_approved(rows: list[dict], path=MISSING_APPROVED_CSV) -> None:
+    import csv
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["fact_id", "subtype", "source_id", "pdf_page", "quote", "reviewed_by"])
+        w.writeheader()
+        w.writerows(rows)
+
+
 def load(driver, entry, built: dict, database=None) -> dict:
     """Constraints, the Source node, then one write transaction; snapshots before and after."""
     ensure_constraints(driver, database)
@@ -455,6 +475,11 @@ def main(argv=None) -> int:
             rep |= load(driver, entry, built, a.database)
         except LoadError as e:
             raise SystemExit("refused, transaction rolled back:\n  " + "\n  ".join(e.problems))
+        queue = missing_approved(driver, a.database)
+    rep["missing_approved"] = queue
+    if a.database is None:                       # the review queue follows the main database only
+        write_missing_approved(queue)
+        print("review queue %s: %d approved facts missing from the latest run" % (MISSING_APPROVED_CSV, len(queue)))
     out = LOADED_DIR / entry.id.split(":", 1)[1]
     out.mkdir(parents=True, exist_ok=True)
     (out / "report.json").write_text(json.dumps(rep, indent=2, ensure_ascii=False, default=str), encoding="utf-8")

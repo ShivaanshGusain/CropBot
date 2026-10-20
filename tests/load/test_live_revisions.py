@@ -15,10 +15,9 @@ import hashlib
 import pytest
 
 from kg.load import facts as lf
-from kg.load.seed import load as load_seed
-from kg.load.seed import read_seed
 from kg.registry import read_registry
 from kg.validate import VALIDATED_DIR
+from tests.conftest import reset_and_seed
 
 ENTRY = read_registry()[0]
 APPROVED = ("f5b06c9fd3f8", 23)          # StorageRule: 12-15 months at <= 9 %
@@ -26,28 +25,11 @@ REMOVED = ("e63c6fbba0e4", 29)           # ControlMeasure: phenthoate against ca
 
 
 @pytest.fixture(scope="module")
-def db(request):
-    name = request.config.getoption("--neo4j-test-db")
-    if not name:
-        pytest.skip("live test: pass --neo4j-test-db <database>")
+def db(neo4j_test_db):
     if not (VALIDATED_DIR / "tnau_agriculture_2020" / "facts.jsonl").exists():
         pytest.skip("needs data/validated and data/verified for the TNAU guide")
-    driver = lf.get_driver()
-    homes, _, _ = driver.execute_query("SHOW DATABASES YIELD name, home WHERE home RETURN name", database_="system")
-    found, _, _ = driver.execute_query("SHOW DATABASES YIELD name WHERE name = $n RETURN name", n=name,
-                                       database_="system")
-    if "test" not in name or name in {r["name"] for r in homes} | {"neo4j", "system"}:
-        driver.close()
-        raise pytest.UsageError("refusing %r: the live test needs a separate database whose name contains 'test'" % name)
-    if not found:
-        driver.close()
-        pytest.fail("database %r does not exist; create it first (CREATE DATABASE %s)" % (name, name))
-    driver.execute_query("MATCH (n) DETACH DELETE n", database_=name)          # the test database only
-    seed = read_seed()
-    lf.ensure_constraints(driver, name)
-    load_seed(driver, seed, name)
-    yield driver, name, {n.id for n in seed.nodes}
-    driver.close()
+    driver, name = neo4j_test_db
+    return driver, name, reset_and_seed(driver, name)          # the test database only
 
 
 def short(rec):
@@ -82,8 +64,8 @@ def test_approved_facts_survive_a_changed_value_and_removed_facts_are_flagged(db
     assert first["write"]["created"]["nodes"] > 0 and first["write"]["revisions"] == []
     removed_id = next(r["fact"]["id"] for r in inputs["validated"] if short(r) == REMOVED)
     changed, old_id, new_id = modified(inputs)
-    driver.execute_query("MATCH (r:Recommendation {id: $id}) SET r.status = 'approved', r.reviewed_by = 'live test'",
-                         id=old_id, database_=name)
+    driver.execute_query("MATCH (r:Recommendation) WHERE r.id IN $ids SET r.status = 'approved', "
+                         "r.reviewed_by = 'live test'", ids=[old_id, removed_id], database_=name)
     approved_before = node(driver, name, old_id)
 
     second = lf.load(driver, ENTRY, lf.build(ENTRY, changed, concepts), name)
@@ -101,6 +83,8 @@ def test_approved_facts_survive_a_changed_value_and_removed_facts_are_flagged(db
                                       database_=name)
     assert rows[0]["n"] > 0                                                         # its edges are kept
     assert second["write"]["missing_in_latest_run"] == [removed_id]
+    assert gone["status"] == "approved"                                             # approved and missing:
+    assert [r["fact_id"] for r in lf.missing_approved(driver, name)] == [removed_id]  # served, and queued
 
     third = lf.load(driver, ENTRY, lf.build(ENTRY, changed, concepts), name)
     assert third["write"]["created"] == {"nodes": 0, "relationships": 0} and not third["changed"]

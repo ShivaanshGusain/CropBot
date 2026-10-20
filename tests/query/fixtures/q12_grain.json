@@ -1,0 +1,4 @@
+{"question": "Q12: How do I know my paddy is ready? (grain crop; the book's harvest rules are for seed)",
+ "template": "harvest_readiness",
+ "context": {"crop": "crop:rice", "state": "state:33", "purpose": "purpose:grain", "duration_group": "medium"},
+ "expect": {"scope": "none", "asks": [], "visible": [], "message": "No local guidance available"}}

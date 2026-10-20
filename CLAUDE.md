@@ -43,6 +43,8 @@ uv run python -m kg.convert source:tnau_agriculture_2020                # full D
 uv run python -m kg.convert source:tnau_agriculture_2020 --pages 13-76  # trial run on a page range
 uv run python -m pytest -m slow           # the real 2-page conversion test (skipped by default)
 uv run python -m pytest tests/load/test_live_revisions.py --neo4j-test-db cropbot-test   # live revision rules (skipped without the flag)
+uv run python -m pytest tests/query/test_live_fixtures.py --neo4j-test-db cropbot-test   # step 14 fixtures on the TNAU facts
+uv run python -m kg.query drying_target --context tests/query/fixtures/q15_grain_drying.json --database cropbot-test
 uv run python -m kg.segment source:tnau_agriculture_2020   # section units -> data/units/<id>/ (exit 1 on scope failures)
 uv run python -m kg.tables source:tnau_agriculture_2020    # rice + wheat tables -> data/tables/<id>/, data/review/tables.csv
 uv run python -m kg.extract report source:tnau_agriculture_2020   # extraction checks (see "Extraction")
@@ -529,7 +531,32 @@ Step 13. Input: step 12's facts (status, verifier), step 11's (the fact, review 
   - Registry `[[conflict]]` (sides: subtype, pdf_page, quote) is for what detection can't find, e.g. across subtypes. Each side must match exactly one loaded fact, proposed or not; approved ones add `{origin: "review"}`.
   - TNAU: 0 detected. One approved entry (2026-10-20), the rice seed long-term storage conflict: DryingSpec 8-9 % (p. 74, C2#18) vs StorageRule more than 15 months at less than 8 % (p. 75, C2#24). It is one `{origin: "review"}` link, and C2#24 is needs_review.
 - **Idempotency:** the first TNAU load created 336 nodes and 664 relationships. The second created none, and the `--snapshot` hash was identical before and after it. After the conflict approval it was the same: one relationship created, then a third load changed nothing.
-- **Live test database:** `cropbot-test` on the local Enterprise server. Neo4j database names allow no underscores. `--database` on `kg.load.facts` targets it. The live test refuses the home database (`neo4j`) and any name without "test", and empties the test database before it runs.
+- **Live test database:** `cropbot-test` on the local Enterprise server. Neo4j database names allow no underscores. `--database` on `kg.load.facts` targets it. The live tests (`neo4j_test_db` in `tests/conftest.py`) refuse the home database (`neo4j`) and any name without "test", and empty the test database before they run.
+- **Review queue** `data/review/missing_approved.csv` (gitignored): approved facts flagged `missing_in_latest_run`. They are still served, with the flag in their citation. It is rewritten by every load of the home database, never by `--database` loads.
+
+## Query templates (`kg/query`, step 14)
+
+Approved 2026-10-20. `kg.query.answer(driver, template, FarmContext)` returns a structured answer: scope (local | fallback | none), the questions to ask, answer slots with their facts, hidden facts and steps with reasons, notes, and a message. Writing the farmer-facing text is a later step. The Cypher is fixed per template (`kg/query/templates.py`, no LIMIT); everything else is in `kg/query/answer.py`.
+- **Templates:**
+  - `drying_target`: DryingSpec (Q15, Q16).
+  - `storage`: StorageRule, with Cautions on its ingredients (Q17).
+  - `harvest_readiness`: HarvestRule (Q12, Q14).
+  - `threshold`: PestThreshold for `context.pest` (Q8).
+- **Applicability:** a missing optional edge matches anything. A value the farmer hasn't given (purpose, variety, season, system, soil type, stage, duration group, storage months) is UNKNOWN: the answer asks and branches on the facts' values.
+  - Storage terms without months ("short term") are never mapped to months.
+  - A storage period between the source's windows (10 months between 8–9 and 12–15) gets a question back, not a guess.
+- **Conditions:** three-valued, top-down (`kg/query/logic.py`), with each variable's `on_unknown` policy. Conservative unknowns withhold actions (Cautions still fire).
+- **Ranking per answer slot:** a slot is subtype + identity + storage window or term + which values the fact gives + the branch. Within a slot, rank by region level, variety match, explicit season/system/soil/purpose matches, authority_tier, edition_year. The whole top-ranked group is kept; differing values are flagged as a disagreement, and CONFLICTS_WITH links are shown.
+- **Visibility:**
+  - approved is served;
+  - auto_verified is labelled "checked automatically against the source";
+  - extracted is treated exactly like needs_review (unreviewed). DryingSpec, StorageRule, HarvestRule, PestThreshold and Caution are shown labelled "not yet verified by an expert". Doses (any APPLIES), inferred bases and inherited amounts are hidden, and dose subtypes are hidden entirely;
+  - rejected and superseded facts are never fetched, nor non-approved facts flagged missing.
+- **Active ingredients fail closed:** a step applying an ingredient whose `reg_status` isn't `registered` is dropped, whatever the fact's status (approved 2026-10-20; stricter than v1.2, see the v1.3 list).
+- **Cross-state:** only when the farmer's own regions return nothing, only for DryingSpec, StorageRule, PestThreshold and HarvestRule (labelled "From a <state> source"), plus QualitySpec and Caution (unlabelled). Others: "No local guidance available".
+- **Citations:** every served fact carries quote, PDF and printed page, source title, status, verifier_score and `missing_in_latest_run`.
+- **Fixtures:** `tests/query/fixtures/*.json` hold a context and the expected answer: Q8 (spiders unknown / none), Q12 (seed medium / grain), Q14, Q15, Q16, storage months unknown, 10 months, outside Tamil Nadu (`state:test_other` is a placeholder, not an LGD code). All 10 matched on 2026-10-20.
+  - Rice seed storage C2#22/#23 are served as "at most 13 %" and "at most 9 %", labelled unverified. The book prints "12 - 13 %" and "8 - 9 %" (range_narrowed, pending v1.3 `min_moisture_pct`).
 
 ## Scope rules for extraction and normalisation
 
@@ -562,6 +589,7 @@ Found in step 10; until v1.3, normalisation holds the affected facts with the re
 - ThresholdClause sampling units outside `Basis`: "/25 net sweeps", "/100 earheads", "in 12 passes".
 - `FOR_PURPOSE` needs `{origin}` (text or section). **Built ahead of v1.3** (approved 2026-10-20): step 13 writes `FOR_PURPOSE {origin}`, a list, since the quote and the section can both give the purpose (`["section", "text"]`).
 - ActiveIngredient `use_class` needs an `acaricide` value (Dicofol, PDF p. 67); until then `use_class` is empty.
+- **Active ingredients fail closed** (approved 2026-10-20, built in step 14): any step applying an ingredient whose `reg_status` isn't `registered` (unknown, restricted, banned, or not seeded) is dropped from answers. v1.2's "Safety joins" only drops banned and attaches a caution to restricted; v1.3 should adopt the stricter rule.
 - Soil-test conditions as applicability: "Zinc deficient soils" (PDF p. 74) is a soil condition, not a soil type. The fact stays held.
 - ActiveIngredient groups: "synthetic pyrethroids" (PDF pp. 63, 68) names a class of ingredients, not one. The cautions concerning it stay held.
 - GrowthStage seeds for rice, needed for stage timing: "flowering", "tillering stage", "boot leaf stage", "vegetative phase", "from milky stage to grain maturity". Today these stay only in `timing_raw`/`raw`, and the fact needs review.

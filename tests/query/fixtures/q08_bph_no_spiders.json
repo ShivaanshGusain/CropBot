@@ -1,0 +1,6 @@
+{"question": "Q8: When is brown planthopper bad enough to spray? (no spiders seen)",
+ "template": "threshold",
+ "context": {"crop": "crop:rice", "state": "state:33", "pest": "pest:brown_planthopper",
+             "observations": {"spider_count_per_hill": 0}},
+ "expect": {"scope": "local", "asks": [], "visible": ["rec:4e07a5cfc3db2851"],
+            "clauses": {"rec:4e07a5cfc3db2851": [1.0]}}}

@@ -1,0 +1,5 @@
+{"question": "Q14: At what moisture should I thresh? (seed crop, duration not given)",
+ "template": "harvest_readiness",
+ "context": {"crop": "crop:rice", "state": "state:33", "purpose": "purpose:seed"},
+ "expect": {"scope": "local", "asks": ["duration_group"],
+            "visible": ["rec:773308bdfd49b337", "rec:f50e2de8a154a971", "rec:7492dce0e8c3658f", "rec:c37c296466a9db7c"]}}
