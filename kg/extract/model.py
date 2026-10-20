@@ -20,6 +20,17 @@ Pct = Annotated[float, Field(ge=0, le=100)]
 NonNeg = Annotated[float, Field(ge=0)]
 TableRef = Annotated[str, StringConstraints(pattern=r"^#/tables/\d+$")]
 
+# Prompt v2: how a fact was read when the page alone does not settle it. Step 11 sends every
+# flagged fact to needs_review.
+ExtractionFlag = Literal[
+    "line_order_pairing",       # a value is matched to its label only by the order of lines
+    "spans_table_rows",         # the quote runs across two table rows
+    "split_from_shared_line",   # one line was split into several facts
+    "shared_amount",            # one printed amount applies to several targets ("1 kg each")
+    "target_from_heading",      # no target printed; taken from a heading
+    "anchor_from_context",      # the timing anchor is not printed in the quote
+]
+
 
 class RawCondition(Model):
     """A runtime check, only for a variable in the fixed registry."""
@@ -96,7 +107,7 @@ class RawStep(Model):
     month_start: int | None = Field(default=None, ge=1, le=12)
     month_end: int | None = Field(default=None, ge=1, le=12)
     timing_raw: Text | None = None
-    instruction_en: Text
+    instruction_en: Text | None = None          # prompt v1 only; from v2 code writes it (kg.extract.versions)
     applies: list[RawQuantity] = []
     conditions: list[RawCondition] = []
 
@@ -162,6 +173,7 @@ class RawFact(Model):
     regions: list[Text] = []                    # only regions the text names as this fact's scope
     excluded_regions: list[RawExcludedRegion] = []
     unmapped: list[Text] = []                   # source phrases with no slot
+    extraction_flags: list[ExtractionFlag] = []  # prompt v2
     raw: dict[str, Text] = {}
     steps: list[RawStep] = []
     conditions: list[RawCondition] = []
@@ -352,4 +364,12 @@ assert {m.model_fields["subtype"].annotation.__args__[0] for m in SUBTYPES} == s
 
 Fact = Annotated[Union[SUBTYPES], Field(discriminator="subtype")]
 FACT = TypeAdapter(Fact)
+
+
+class NotExtracted(Model):
+    """Prompt v2: a passage that is not a fact, with the reason. Its quote is checked too."""
+    quote: Text
+    reason: Text
+
+
 NESTED = (RawStep, RawQuantity, RawCondition, RawThresholdClause, RawExcludedRegion)

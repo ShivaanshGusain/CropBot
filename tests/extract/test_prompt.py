@@ -1,4 +1,4 @@
-"""Offline tests for prompt v1, rendering, caching and ingest (kg.extract)."""
+"""Offline tests for the prompts, rendering, caching, ingest and compare (kg.extract)."""
 
 import json
 import re
@@ -6,7 +6,7 @@ import re
 import pytest
 
 import kg.extract as ex
-from kg.extract.model import NESTED, SUBTYPES
+from kg.extract.versions import field_names
 from kg.registry import read_registry
 
 ENTRY = read_registry()[0]
@@ -19,6 +19,8 @@ UNIT = {
          "subheading": "Nutrient management"},
         {"ref": "#/texts/2", "kind": "text", "text": "Apply 40 kg of DAP before the last puddling.",
          "pdf_page": 30, "printed_page": "18", "subheading": "Nutrient management"},
+        {"ref": "#/texts/3", "kind": "text", "text": "DAP is a good source of P. It is cheap.",
+         "pdf_page": 30, "printed_page": "18", "subheading": "Nutrient management"},
         {"ref": "#/tables/53", "kind": "table", "text": None, "pdf_page": 63, "printed_page": "51"},
         {"ref": "#/tables/54", "kind": "table", "text": None, "pdf_page": 64, "printed_page": "52"},
     ],
@@ -29,26 +31,36 @@ ETL = {"table_refs": ["#/tables/53", "#/tables/54"], "pdf_pages": [63, 64], "hea
        "rows": [[{"text": "Stem borer", "part_ref": "#/tables/53", "row": 1},
                  {"text": "10% dead hearts", "part_ref": "#/tables/53", "row": 1}],
                 [{"text": "Brown planthopper", "part_ref": "#/tables/54", "row": 0},
-                 {"text": "1 hopper/ tiller", "part_ref": "#/tables/54", "row": 0}]]}
+                 {"text": "1 hopper/ tiller", "part_ref": "#/tables/54", "row": 0,
+                  "continued_from": [{"part_ref": "#/tables/55", "row": 0, "col": 1, "text": "x"}]}]]}
 TABLES = {ref: ETL for ref in ETL["table_refs"]}
 
 
-def field_names():
-    names = set()
-    for m in SUBTYPES + NESTED:
-        names |= set(m.model_fields)
-    return names
+@pytest.fixture
+def store(tmp_path, monkeypatch):
+    monkeypatch.setattr(ex, "EXTRACTED_DIR", tmp_path)
+    monkeypatch.setattr(ex, "load_tables", lambda entry: TABLES)
+    return tmp_path
 
 
-def test_prompt_field_reference_matches_the_raw_model():
-    text, _ = ex.prompt_template()
+@pytest.mark.parametrize("version", ["v1", "v2"])
+def test_prompt_field_reference_matches_the_raw_model(version):
+    text, _ = ex.prompt_template(version)
     section = text.split("## Field reference", 1)[1].split("\n## ", 1)[0]
     listed = set(re.findall(r"`([a-z_0-9]+)`", section))
-    assert listed == field_names(), (sorted(field_names() - listed), sorted(listed - field_names()))
+    assert listed == field_names(version), (sorted(field_names(version) - listed),
+                                            sorted(listed - field_names(version)))
 
 
-def test_prompt_has_each_slot_once_and_vocabularies_come_from_code():
-    text, _ = ex.prompt_template()
+def test_v2_drops_instruction_en_and_adds_flags():
+    assert "instruction_en" in field_names("v1") and "instruction_en" not in field_names("v2")
+    assert "extraction_flags" in field_names("v2") and "extraction_flags" not in field_names("v1")
+    assert {"facts", "not_extracted", "reason"} <= field_names("v2")
+
+
+@pytest.mark.parametrize("version", ["v1", "v2"])
+def test_prompt_has_each_slot_once_and_vocabularies_come_from_code(version):
+    text, _ = ex.prompt_template(version)
     assert all(text.count(s) == 1 for s in ex.SLOTS)
     vocab = ex.render_vocabularies()
     assert "last_puddling" in vocab and "spider_count_per_hill (count, number)" in vocab
@@ -58,9 +70,10 @@ def test_render_unit_and_segments():
     text, segments = ex.render_unit(ENTRY, UNIT, TABLES)
     assert "[p.30] ## Nutrient management" in text
     assert "[p.63-64] TABLE #/tables/53 + #/tables/54" in text and text.count("TABLE") == 1
-    assert "[#/tables/54 row 0] Brown planthopper | 1 hopper/ tiller" in text
-    row = next(s for s in segments if s["ref"] == "#/tables/54 row 0")
-    assert (row["pdf_page"], row["printed_page"]) == (64, "52")
+    assert "[#/tables/54 row 0 + #/tables/55 row 0] Brown planthopper | 1 hopper/ tiller" in text
+    row = next(s for s in segments if s["ref"] == "#/tables/54 row 0 + #/tables/55 row 0")
+    assert (row["kind"], row["pdf_page"], row["printed_page"]) == ("row", 64, "52")
+    assert [s["kind"] for s in segments] == ["subheading", "text", "text", "header", "row", "row"]
 
 
 def test_missing_table_fails_loudly():
@@ -74,51 +87,107 @@ def test_default_scope_rule_is_shown_with_its_quote():
     assert ex.render_default_scope(ENTRY, {**UNIT, "default_scope": []}) == "none"
 
 
-def test_cache_key_depends_on_unit_text_and_model():
+def test_cache_key_depends_on_unit_text_model_and_prompt_version():
     a = ex.build(ENTRY, UNIT, "model-a", TABLES)
-    assert a["cache_key"] == ex.build(ENTRY, UNIT, "model-a", TABLES)["cache_key"]
+    assert a["version"] == "v2" and a["cache_key"] == ex.build(ENTRY, UNIT, "model-a", TABLES)["cache_key"]
     assert a["cache_key"] != ex.build(ENTRY, UNIT, "model-b", TABLES)["cache_key"]
+    assert a["cache_key"] != ex.build(ENTRY, UNIT, "model-a", TABLES, version="v1")["cache_key"]
     changed = {**UNIT, "items": UNIT["items"][:2]}
     assert a["cache_key"] != ex.build(ENTRY, changed, "model-a", TABLES)["cache_key"]
     assert "{{" not in a["prompt"] and "Apply 40 kg of DAP" in a["prompt"]
 
 
-GOOD = {"subtype": "NutrientDose", "dose_basis": "blanket", "summary_en": "DAP before last puddling",
-        "quote": "Apply 40 kg of DAP before the last puddling.",
-        "steps": [{"order": 1, "operation": "fertilizer_application", "anchor": "last_puddling",
-                   "timing_raw": "before the last puddling", "instruction_en": "Apply DAP.",
-                   "applies": [{"target": "DAP", "value": 40, "unit": "kg", "basis": "per 20 cents",
-                                "basis_inferred": True, "raw": "40 kg of DAP"}]}]}
+STEP = {"order": 1, "operation": "fertilizer_application", "anchor": "last_puddling",
+        "timing_raw": "before the last puddling",
+        "applies": [{"target": "DAP", "value": 40, "unit": "kg", "basis": "per 20 cents",
+                     "basis_inferred": True, "raw": "40 kg of DAP"}]}
+FACT = {"subtype": "NutrientDose", "dose_basis": "blanket", "summary_en": "DAP before last puddling",
+        "quote": "Apply 40 kg of DAP before the last puddling."}
+V1_GOOD = {**FACT, "steps": [{**STEP, "instruction_en": "Apply DAP."}]}
+V2_GOOD = {**FACT, "steps": [STEP]}
+ETL_FACT = {"subtype": "PestThreshold", "pests": ["Stem borer"], "summary_en": "Stem borer ETL",
+            "quote": "Stem borer | 10% dead hearts", "table_ref": "#/tables/53", "table_row": 1,
+            "clauses": [{"observation": "dead hearts", "value": 10, "unit": "%", "raw": "10% dead hearts"}]}
+BPH_FACT = {**ETL_FACT, "pests": ["Brown planthopper"], "quote": "1 hopper/ tiller", "table_ref": "#/tables/54",
+            "table_row": 0, "table_col": 1,
+            "clauses": [{"observation": "hoppers", "value": 1, "sampling_unit": "/ tiller", "raw": "1 hopper/ tiller"}]}
+SKIP = {"quote": "DAP is a good source of P. It is cheap.", "reason": "statement; advises nothing"}
 
 
-def test_ingest_stores_failures_without_fixing_them(tmp_path, monkeypatch):
-    monkeypatch.setattr(ex, "EXTRACTED_DIR", tmp_path)
-    monkeypatch.setattr(ex, "load_tables", lambda entry: TABLES)
-    bad_quote = {**GOOD, "quote": "Apply 40 kg DAP before the last puddling."}
-    bad_parse = {**GOOD, "dose_basis": "per_ha"}
-    answer = json.dumps([GOOD, bad_quote, bad_parse])
-    path, rec = ex.ingest(ENTRY, UNIT, "model-a", answer)
+def v2(facts, skipped=(SKIP,)):
+    return json.dumps({"facts": list(facts), "not_extracted": list(skipped)})
+
+
+def test_v1_answers_still_check_as_v1(store):
+    bad_quote = {**V1_GOOD, "quote": "Apply 40 kg DAP before the last puddling."}
+    bad_parse = {**V1_GOOD, "dose_basis": "per_ha"}
+    answer = json.dumps([V1_GOOD, bad_quote, bad_parse])
+    path, rec = ex.ingest(ENTRY, UNIT, "model-a", answer, version="v1")
     s = rec["summary"]
+    assert path.parent.name == "v1" and rec["coverage"] is None
     assert not rec["ok"] and [f["index"] for f in s["quote_failures"]] == [1]
     assert [f["index"] for f in s["parse_failures"]] == [2]
-    assert s["basis_inferred"][0]["target"] == "DAP"
     assert s["by_subheading"] == {"Nutrient management": 2, "(none)": 1}   # an unfound quote has no place
     stored = json.loads(path.read_text(encoding="utf-8"))
     assert stored["answer"] == answer and stored["facts"][1]["answer"]["quote"] == bad_quote["quote"]
-    assert stored["extraction_model"] == "model-a" and stored["prompt_version"] == "v1"
     with pytest.raises(ex.ExtractError, match="already holds an answer"):
-        ex.ingest(ENTRY, UNIT, "model-a", answer)
+        ex.ingest(ENTRY, UNIT, "model-a", answer, version="v1")
+    _, rec = ex.ingest(ENTRY, UNIT, "model-a", json.dumps([V2_GOOD]), force=True, version="v1")
+    assert rec["summary"]["parse_failures"][0]["errors"] == ["steps.0.instruction_en: required by prompt v1"]
 
 
-def test_answer_that_is_not_a_json_list(tmp_path, monkeypatch):
-    monkeypatch.setattr(ex, "EXTRACTED_DIR", tmp_path)
-    monkeypatch.setattr(ex, "load_tables", lambda entry: TABLES)
-    _, rec = ex.ingest(ENTRY, UNIT, "model-a", "Here are the facts: []")
-    assert not rec["ok"] and rec["parse_error"].startswith("not JSON")
-    _, rec = ex.ingest(ENTRY, UNIT, "model-a", json.dumps(GOOD), force=True)
-    assert rec["parse_error"] == "the answer must be a JSON list of facts"
-    _, rec = ex.ingest(ENTRY, UNIT, "model-a", json.dumps([GOOD]), force=True)
-    assert rec["ok"]
+def test_v2_answer_with_every_line_accounted_for(store):
+    path, rec = ex.ingest(ENTRY, UNIT, "model-a", v2([V2_GOOD, ETL_FACT, BPH_FACT]))
+    assert rec["ok"] and path.parent.name == "v2", rec["summary"]
+    assert rec["coverage"] == {"uncovered": [], "sentences_outside_quotes": []}
+    assert rec["summary"]["not_extracted"] == [{"index": 0, "quote": SKIP["quote"], "reason": SKIP["reason"], "ok": True}]
+
+
+def test_v2_uncovered_lines_and_partly_quoted_lines(store):
+    part = {"quote": "It is cheap.", "reason": "statement"}
+    _, rec = ex.ingest(ENTRY, UNIT, "model-a", v2([V2_GOOD, ETL_FACT], [part]))
+    cov = rec["coverage"]
+    assert not rec["ok"] and [u["ref"] for u in cov["uncovered"]] == ["#/tables/54 row 0 + #/tables/55 row 0"]
+    assert cov["sentences_outside_quotes"] == [{"ref": "#/texts/3", "sentence": "DAP is a good source of P."}]
+
+
+def test_v2_rejects_instruction_en_unknown_flags_and_the_v1_envelope(store):
+    with_text = {**V2_GOOD, "steps": [{**STEP, "instruction_en": "Apply DAP."}]}
+    _, rec = ex.ingest(ENTRY, UNIT, "model-a", v2([with_text, ETL_FACT, BPH_FACT]))
+    assert rec["summary"]["parse_failures"][0]["errors"] == ["steps.0.instruction_en: not part of prompt v2"]
+    flagged = {**V2_GOOD, "extraction_flags": ["guessed"]}
+    _, rec = ex.ingest(ENTRY, UNIT, "model-a", v2([flagged, ETL_FACT, BPH_FACT]), force=True)
+    assert "extraction_flags.0" in rec["summary"]["parse_failures"][0]["errors"][0]
+    _, rec = ex.ingest(ENTRY, UNIT, "model-a", json.dumps([V2_GOOD]), force=True)
+    assert rec["parse_error"].startswith('the answer must be {"facts"')
+
+
+def test_v2_flags_and_a_bad_not_extracted_quote_are_reported(store):
+    flagged = {**V2_GOOD, "extraction_flags": ["anchor_from_context"]}
+    _, rec = ex.ingest(ENTRY, UNIT, "model-a", v2([flagged, ETL_FACT, BPH_FACT],
+                                                  [SKIP, {"quote": "DAP is cheap", "reason": "x"}]))
+    s = rec["summary"]
+    assert s["extraction_flags"] == [{"index": 0, "flags": ["anchor_from_context"]}]
+    assert s["not_extracted_failures"] == [1] and not rec["ok"]
+
+
+def test_count_unit_and_indian_digit_grouping_keep_their_raw_text():
+    from kg.extract.model import RawQuantity
+    q = RawQuantity(target="Trichogramma japonicum", value=100000, unit="count", basis="/ha",
+                    raw="@ 1,00,000/ha each release")
+    assert q.value == 100000 and q.raw == "@ 1,00,000/ha each release"
+
+
+def test_compare_matches_by_subtype_and_quote_and_ignores_instruction_en(store):
+    _, a = ex.ingest(ENTRY, UNIT, "model-a", json.dumps([V1_GOOD, {**ETL_FACT, "steps": []}]), version="v1")
+    longer = {**V2_GOOD, "quote": "Apply 40 kg of DAP before the last puddling. DAP is a good source of P.",
+              "extraction_flags": ["anchor_from_context"]}
+    _, b = ex.ingest(ENTRY, UNIT, "model-a", v2([longer, BPH_FACT]))
+    c = ex.compare(a, b)
+    assert (c["matched"], len(c["only_from"]), len(c["only_to"])) == (1, 1, 1)
+    diff = c["changed"][0]["diff"]
+    assert set(diff) == {"quote", "extraction_flags", "extraction_flags[0]"}
+    assert not any("instruction_en" in k for k in diff)
 
 
 def test_file_stem_has_no_colon():

@@ -317,10 +317,13 @@ No model is called from this repo. `prepare` writes the filled prompt, a runner 
 
 ```bash
 uv run python -m kg.extract find    source:tnau_agriculture_2020 "Wet nursery"          # unit ids
-uv run python -m kg.extract prepare source:tnau_agriculture_2020 --unit <unit_id> --model <name>
+uv run python -m kg.extract prepare source:tnau_agriculture_2020 --unit <unit_id> --model <name> [--prompt v2]
 uv run python -m kg.extract ingest  source:tnau_agriculture_2020 --unit <unit_id> --model <name> --response <file>
-uv run python -m kg.extract report  source:tnau_agriculture_2020
+uv run python -m kg.extract report  source:tnau_agriculture_2020 [--prompt v2]
+uv run python -m kg.extract compare source:tnau_agriculture_2020 --unit <unit_id> --from v1 --to v2
 ```
+
+`--prompt` defaults to the latest version (v2).
 
 - **Raw model** (`kg/extract/model.py`), separate from `kg/schema`:
   - all 16 subtypes with the v1.2 fields;
@@ -329,18 +332,37 @@ uv run python -m kg.extract report  source:tnau_agriculture_2020
   - A step's `operation` may be empty when no type fits.
   - A quantity's `basis` may be empty when none is printed and the section gives none.
   - Crop and the book's regions come from code, never the model.
-- **Prompt** `kg/extract/prompts/v1.md`, model-agnostic.
+- **Prompts** `kg/extract/prompts/v1.md` and `v2.md`, model-agnostic. `kg/extract/versions.py` says what each version's answer looks like, so stored v1 answers still check as v1.
   - Code fills `{{subtypes}}`, `{{vocabularies}}` (from `kg/schema/vocab.py`), `{{default_scope}}` (approved rules with their quotes) and `{{unit}}`.
-  - Units are rendered as `[p.N] text`, `[p.N] ## Sub-heading`, and stitched tables as `[#/tables/N row R] cell | cell`.
-  - A test fails if the prompt's field reference and the raw model disagree.
-  - Never edit a prompt that has been used: make `v2.md`.
-- **Output** `data/extracted/<source>/<hash>.json` (gitignored). Unit IDs contain ':', so files are named by the hash.
+  - Units are rendered as `[p.N] text`, `[p.N] ## Sub-heading`, and stitched tables as `[#/tables/N row R] cell | cell`. A row merged across a page break is `[#/tables/A row R + #/tables/B row S]`.
+  - A test fails if a prompt's field reference and its version's fields disagree.
+  - Never edit a prompt that has been used: make a new version.
+- **v1:** a JSON list of facts; every step has `instruction_en`.
+- **v2:**
+  - **Envelope:** `{"facts": [...], "not_extracted": [{quote, reason}]}`, and every text line and table row must be quoted by a fact or listed (the coverage check).
+  - **Flags:** `extraction_flags` from a fixed list: line_order_pairing, spans_table_rows, split_from_shared_line, shared_amount, target_from_heading, anchor_from_context.
+  - **Table quotes:** a quote may be a passage within one cell.
+  - **Purpose:** `purposes` only when the quote states what the produce is for. Seed before sowing is planting material, not a purpose, and a section's purpose comes from the registry.
+  - **Numbers and units:** unit "count" for organisms, eggs or items with no printed unit; Indian digit grouping ("1,00,000" = 100000, `kg/extract/numbers.py`) with `raw` as printed.
+  - **instruction_en:** no longer written by the model; code writes it later.
+- **Output** `data/extracted/<source>/<prompt version>/<hash>.json`, plus `prompts/` and `responses/` there (all gitignored). Unit IDs contain ':', so files are named by the hash.
   - Each file records the prompt version and sha256, `extraction_model`, the unit text sha256, the time, the raw answer, every fact and its check results.
   - Cache key: unit text + prompt version + prompt hash + model.
   - `ingest` refuses to replace an answer with the same key unless given `--force`.
-- **Checks here only:** the answer parses into the raw model (fact by fact), and each quote is found in the unit text after both are normalised (NFKC, soft hyphens, dashes, whitespace). Code, not the model, finds the quote's page.
+  - Runs under different versions sit side by side. `compare` matches facts by subtype and quote (then by one quote containing the other) and ignores `instruction_en`.
+- **Hand-runs:** the JSON answer is written directly from the rendered prompt; no template generates any field.
+- **Checks here only:**
+  - the answer parses into the raw model under its version, fact by fact;
+  - each fact and not-extracted quote is found in the unit text after both are normalised (NFKC, soft hyphens, dashes, whitespace);
+  - (v2) no text line or table row is left uncovered. Sentences outside every quote are listed as a warning only.
+  - Code, not the model, finds the quote's page.
   - Failures are saved and reported, never fixed, and `ingest`/`report` exit 1.
-  - Everything else (numbers in quotes, vocabularies, alternatives, banned list) is step 11.
+  - Everything else is step 11.
+- **Step 11 (validate, not built yet) must also:**
+  - send every fact with `extraction_flags` to needs_review;
+  - flag a quote found in more than one place in its unit. "Narrow bund maintenance (45 x 30 cms)" appears in both the rat row and the IPM module, so the location can't be told apart.
+  - check a fact's `table_ref`/`table_row` against where its quote was found;
+  - check numbers in quotes with `kg.extract.numbers` (Indian grouping included), plus vocabularies, alternatives and the banned list.
 
 ## Scope rules for extraction and normalisation
 
@@ -359,6 +381,11 @@ Decisions on gaps that don't change the doc:
 - `soil_pH` is the only soil value variable; add others when a source needs them.
 - Every NutrientDose step has `APPLIES` quantities, and a ControlMeasure has at least one Step.
 - `CONFLICTS_WITH` is recorded on both facts. Conflict detection must never create duplicate links: one link per pair of facts, however often detection runs.
+
+Pending for schema v1.3. These were found in the step 9 hand-run; until v1.3 is written, extraction keeps the phrases in `unmapped`:
+- StorageRule needs `min_moisture_pct` (+ `_inclusive`), so "12 - 13 %" keeps its lower bound (it has only `max_moisture_pct` now).
+- Repeat schedules ("thrice (at weekly interval from 37 DAT)", "twice, 15 and 30 days after transplanting") have no fields.
+- A Caution cannot name the pest it is about (the resurgence lists, p. 69: "BPH, Nilaparvata lugens : acephate, …").
 
 ## Known issues for segmentation and tables (steps 6–7)
 

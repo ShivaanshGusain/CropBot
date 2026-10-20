@@ -5,7 +5,14 @@ from pathlib import Path
 
 from kg.registry import read_registry
 
-from . import (ExtractError, build, cached, file_stem, get_unit, ingest, load_units, out_dir)
+from . import (ExtractError, build, cached, compare, file_stem, get_unit, ingest, load_units, out_dir,
+               out_path)
+from .versions import LATEST, VERSIONS
+
+KEYS = ("parse_failures", "quote_failures", "quotes_found_more_than_once", "not_extracted",
+        "not_extracted_failures", "uncovered", "sentences_outside_quotes", "extraction_flags", "unmapped",
+        "purposes", "basis_inferred", "basis_missing", "basis_from_rule", "quantity_ref",
+        "steps_without_operation")
 
 
 def _entry(source_id):
@@ -24,11 +31,27 @@ def print_summary(record: dict) -> None:
         print("  answer did not parse:", record["parse_error"])
     print("  facts: %d  by subtype: %s" % (s["facts"], s["by_subtype"]))
     print("  by sub-heading: %s" % s["by_subheading"])
-    for key in ("parse_failures", "quote_failures", "quotes_found_more_than_once", "unmapped",
-                "basis_inferred", "basis_missing", "basis_from_rule", "quantity_ref", "steps_without_operation"):
-        print("  %s: %d" % (key, len(s[key])))
-        for x in s[key]:
-            print("    ", x)
+    for key in KEYS:
+        if key in s:
+            print("  %s: %d" % (key, len(s[key])))
+            for x in s[key]:
+                print("    ", x)
+
+
+def print_compare(c: dict) -> None:
+    print("=== compare %s -> %s: facts %s, matched %d (unchanged %d, changed %d), only in %s: %d, only in %s: %d"
+          % (c["from"], c["to"], c["facts"], c["matched"], c["unchanged"], len(c["changed"]), c["from"],
+             len(c["only_from"]), c["to"], len(c["only_to"])))
+    print("  by subtype: %s -> %s" % tuple(c["by_subtype"]))
+    for ch in c["changed"]:
+        print("  changed %s #%d -> #%d:" % (ch["subtype"], ch["from"], ch["to"]))
+        for k, (x, y) in ch["diff"].items():
+            print("      %s: %r -> %r" % (k, x, y))
+    for key, run in (("only_from", c["from"]), ("only_to", c["to"])):
+        for x in c[key]:
+            print("  only in %s: #%d %s %r" % (run, x["index"], x["subtype"], x["quote"][:110]))
+    for x in c["not_extracted_to"]:
+        print("  not extracted in %s: %r -- %s" % (c["to"], (x["quote"] or "")[:90], x["reason"]))
 
 
 def main(argv=None) -> int:
@@ -42,11 +65,18 @@ def main(argv=None) -> int:
         q.add_argument("source_id")
         q.add_argument("--unit", required=True)
         q.add_argument("--model", required=True, help="the model that answers, recorded as extraction_model")
+        q.add_argument("--prompt", default=LATEST, choices=sorted(VERSIONS))
         if name == "ingest":
             q.add_argument("--response", required=True, type=Path, help="file holding the model's answer")
             q.add_argument("--force", action="store_true", help="replace an answer with the same cache key")
-    r = sub.add_parser("report", help="summaries of every stored answer")
+    r = sub.add_parser("report", help="summaries of every stored answer for one prompt version")
     r.add_argument("source_id")
+    r.add_argument("--prompt", default=LATEST, choices=sorted(VERSIONS))
+    c = sub.add_parser("compare", help="two runs of one unit")
+    c.add_argument("source_id")
+    c.add_argument("--unit", required=True)
+    c.add_argument("--from", dest="a", required=True, choices=sorted(VERSIONS))
+    c.add_argument("--to", dest="b", required=True, choices=sorted(VERSIONS))
     a = p.parse_args(argv)
     entry = _entry(a.source_id)
     try:
@@ -57,29 +87,39 @@ def main(argv=None) -> int:
                                                           u["section_path"]))
             return 0
         if a.cmd == "report":
-            records = [json.loads(x.read_text(encoding="utf-8")) for x in sorted(out_dir(entry).glob("*.json"))
+            d = out_dir(entry, a.prompt)
+            records = [json.loads(x.read_text(encoding="utf-8")) for x in sorted(d.glob("*.json"))
                        if x.name != "report.json"]
             for rec in records:
                 print_summary(rec)
-            (out_dir(entry) / "report.json").write_text(json.dumps(
+            (d / "report.json").write_text(json.dumps(
                 [{k: rec[k] for k in ("unit_id", "section_path", "extraction_model", "prompt_version",
                                       "ok", "summary")} for rec in records], indent=2, ensure_ascii=False),
                 encoding="utf-8")
             return 0 if all(rec["ok"] for rec in records) else 1
+        if a.cmd == "compare":
+            runs = []
+            for version in (a.a, a.b):
+                path = out_path(entry, a.unit, version)
+                if not path.exists():
+                    raise ExtractError("no %s run for %s (%s)" % (version, a.unit, path))
+                runs.append(json.loads(path.read_text(encoding="utf-8")))
+            print_compare(compare(*runs))
+            return 0
         unit = get_unit(entry, a.unit)
         if a.cmd == "prepare":
-            built = build(entry, unit, a.model)
+            built = build(entry, unit, a.model, version=a.prompt)
             hit = cached(entry, unit, built)
             if hit:
                 print("cached: %s (same unit text, prompt and model)" % hit)
                 return 0
-            path = out_dir(entry) / "prompts" / ("%s.md" % file_stem(unit["id"]))
+            path = out_dir(entry, a.prompt) / "prompts" / ("%s.md" % file_stem(unit["id"]))
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(built["prompt"], encoding="utf-8")
             print("prompt written: %s (%d chars, %d quote segments)" % (path, len(built["prompt"]),
                                                                         len(built["segments"])))
             return 0
-        path, record = ingest(entry, unit, a.model, a.response.read_text(encoding="utf-8"), a.force)
+        path, record = ingest(entry, unit, a.model, a.response.read_text(encoding="utf-8"), a.force, a.prompt)
         print_summary(record)
         print("written:", path)
         return 0 if record["ok"] else 1
