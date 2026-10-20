@@ -101,6 +101,12 @@ class Anchor(StrEnum):
     STORAGE_START = "storage_start"
 
 
+class OffsetUnit(StrEnum):
+    """Pending schema v1.2: unit of Step.offset_min/offset_max."""
+    DAYS = "days"
+    HOURS = "hours"
+
+
 class OperationType(StrEnum):
     SOWING = "sowing"
     TRANSPLANTING = "transplanting"
@@ -324,6 +330,9 @@ CONDITION_VARIABLES: dict[str, ConditionVariable] = {
     "forecast_rain_mm_24h": ConditionVariable(_N, ConditionOnlyUnit.MM, _CONS),
     "forecast_rain_days_3d": ConditionVariable(_N, Unit.DAYS, _CONS),
     "tmax_c": ConditionVariable(_N, ConditionOnlyUnit.DEGC, _CONS),
+    # sowing_date, variety and purpose are here for their on_unknown policy only.
+    # Whether a fact applies to a variety or purpose is an edge (FOR_VARIETY,
+    # FOR_PURPOSE), never a Condition.
     "sowing_date": ConditionVariable(ValueType.DATE, None, _ATB),
     "das": ConditionVariable(_N, Unit.DAYS, _ATB),
     "variety": ConditionVariable(ValueType.VARIETY, None, _ATB),
@@ -332,7 +341,7 @@ CONDITION_VARIABLES: dict[str, ConditionVariable] = {
     "soil_N_rating": ConditionVariable(_R, None, _ATB),
     "soil_P_rating": ConditionVariable(_R, None, _ATB),
     "soil_K_rating": ConditionVariable(_R, None, _ATB),
-    "soil_pH": ConditionVariable(_N, None, _ATB),
+    "soil_pH": ConditionVariable(_N, None, _ATB),   # other soil values: add when a source needs them
     "grain_moisture_pct": ConditionVariable(_N, Unit.PCT, _ATB),
     "pest_count": ConditionVariable(_N, Unit.COUNT, _ASK),
     "spider_count_per_hill": ConditionVariable(_N, Unit.COUNT, _ASK),

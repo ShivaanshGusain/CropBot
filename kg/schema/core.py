@@ -16,8 +16,8 @@ from .ids import (AppliesTargetId, CropId, PurposeId, RecId, RegionId, SeasonRef
                   SoilId, SourceId, SpanId, StageId, StateId, SystemId, VarietyId,
                   _matcher)
 from .vocab import (CONDITION_VARIABLES, Anchor, AuthorityTier, Basis, ConditionOnlyUnit,
-                    ConditionOp, DurationGroup, ExtractionMethod, OperationType, Purpose,
-                    Rating, RegionOrigin, Status, Subtype, Unit, ValueType)
+                    ConditionOp, DurationGroup, ExtractionMethod, OffsetUnit, OperationType,
+                    Purpose, Rating, RegionOrigin, Status, Subtype, Unit, ValueType)
 
 # at least one non-space character; source text is never stripped or rewritten
 Text = Annotated[str, StringConstraints(pattern=r"\S")]
@@ -27,10 +27,24 @@ class Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+def check_bound(obj, name: str) -> None:
+    """A bound marked exclusive (`<name>_inclusive = False`) must have a value."""
+    if not getattr(obj, name + "_inclusive", True) and getattr(obj, name) is None:
+        raise ValueError("%s_inclusive is false but %s is empty" % (name, name))
+
+
 def check_range(obj, low: str, high: str) -> None:
+    """low <= high, and an equal pair must include both ends (else the range is empty)."""
+    check_bound(obj, low)
+    check_bound(obj, high)
     lo, hi = getattr(obj, low), getattr(obj, high)
-    if lo is not None and hi is not None and lo > hi:
+    if lo is None or hi is None:
+        return
+    if lo > hi:
         raise ValueError("%s (%s) is greater than %s (%s)" % (low, lo, high, hi))
+    both_inclusive = getattr(obj, low + "_inclusive", True) and getattr(obj, high + "_inclusive", True)
+    if lo == hi and not both_inclusive:
+        raise ValueError("%s and %s are equal but not both inclusive: empty range" % (low, high))
 
 
 def check_groups(conditions: list["Condition"]) -> None:
@@ -135,6 +149,8 @@ class Applies(Model):
     value: float | None = Field(default=None, ge=0)
     min: float | None = Field(default=None, ge=0)
     max: float | None = Field(default=None, ge=0)
+    min_inclusive: bool = True                 # pending schema v1.2: false for "more than"
+    max_inclusive: bool = True                 # pending schema v1.2: false for "less than"
     unit: Unit | None = None
     basis: Basis | None = None
     formulation: str | None = None
@@ -176,8 +192,11 @@ class Step(Model):
     operation: OperationType
     method: str | None = None
     anchor: Anchor | None = None
-    offset_min: float | None = None             # days relative to anchor; negative = before
+    offset_min: float | None = None             # relative to anchor; negative = before
     offset_max: float | None = None
+    offset_min_inclusive: bool = True           # pending schema v1.2
+    offset_max_inclusive: bool = True           # pending schema v1.2
+    offset_unit: OffsetUnit = OffsetUnit.DAYS   # pending schema v1.2: days | hours
     stage_id: StageId | None = None
     month_start: int | None = Field(default=None, ge=1, le=12)
     month_end: int | None = Field(default=None, ge=1, le=12)
@@ -194,7 +213,9 @@ class Step(Model):
             raise ValueError("step timing needs timing_raw")
         offsets = self.offset_min is not None or self.offset_max is not None
         if offsets and self.anchor in (None, Anchor.CALENDAR):
-            raise ValueError("day offsets need a non-calendar anchor")
+            raise ValueError("offsets need a non-calendar anchor")
+        if self.offset_unit is not OffsetUnit.DAYS and not offsets:
+            raise ValueError("offset_unit %s set without offsets" % self.offset_unit.value)
         check_range(self, "offset_min", "offset_max")
         if (self.anchor is Anchor.CALENDAR) != (self.month_start is not None):
             raise ValueError("a calendar anchor and month_start go together")
@@ -234,7 +255,8 @@ class Source(Model):
     id: SourceId
     title: Text
     publisher: Text
-    edition_year: int | None = None
+    edition_year: int | None = None       # start year, used for ranking ("2021-22" -> 2021)
+    edition_label: str | None = None      # pending schema v1.2: the edition as written, e.g. "2021-22"
     language: Annotated[str, StringConstraints(pattern=r"^[a-z]{2,3}$")]
     url: Annotated[str, StringConstraints(pattern=r"^https?://\S+$")]
     sha256: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
@@ -242,6 +264,14 @@ class Source(Model):
     region_scope: list[RegionId] = Field(min_length=1)
     authority_tier: AuthorityTier
     default_scope: str | None = None      # book-wide rules, e.g. "dose basis = per_ha unless stated"
+
+    @model_validator(mode="after")
+    def _edition(self):
+        if self.edition_label is not None:
+            if self.edition_year is None or not self.edition_label.startswith(str(self.edition_year)):
+                raise ValueError("edition_year must be the start year of edition_label %r"
+                                 % self.edition_label)
+        return self
 
 
 # --- Recommendation core ----------------------------------------------------------------

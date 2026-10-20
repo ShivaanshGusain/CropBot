@@ -135,3 +135,21 @@ Build to these, but don't edit `docs/schema_v1.1.md`; the schema owner is updati
    - Each subtype gets a `raw` map from field name to source text, required for every non-null numeric field (for example `DryingSpec.raw["target_moisture_pct_max"] = "12 - 13 %"`).
    - `APPLIES.raw` covers the whole quantity phrase, including `water_l_per_ha` and `area_cents`.
 3. **Condition-only units.** `mm` (`forecast_rain_mm_24h`) and `degC` (`tmax_c`) are allowed only in Conditions, as `ConditionOnlyUnit`. Dose units stay as listed in the doc.
+4. **Strict bounds.** Every bound has a `<field>_inclusive` flag (default true): each min/max pair, `APPLIES.min`/`max`, `Step.offset_min`/`offset_max`, and `StorageRule.max_moisture_pct`. "Less than 8 %" is stored as `max_moisture_pct: 8, max_moisture_pct_inclusive: false`.
+5. **Hour offsets.** `Step.offset_unit` is `days` (default) or `hours`, so "18 to 24 hrs after sowing" can be stored.
+6. **Editions.** `Source.edition_year` is the integer start year, used for ranking. `edition_label` keeps the edition as written ("2021-22").
+7. **IDs are prefixed and lowercase everywhere** (`season:rabi`, `nutrient:p2o5`). v1.2 fixes the doc's farm context (`"season": "rabi"`) and its uppercase Nutrient IDs. The prefixes the doc doesn't name are the ones in `kg/schema/ids.py`.
+8. **Worked example 2 is wrong.** The book gives short-term seed storage as 8–9 months, not 0–9. Follow the book.
+
+Decisions on gaps that don't change the doc:
+- `sowing_date`, `variety` and `purpose` are in the condition-variable registry only for their `on_unknown` policy. Applicability to a variety or purpose is always an edge.
+- `soil_pH` is the only soil value variable; add others when a source needs them.
+- Every NutrientDose step has `APPLIES` quantities, and a ControlMeasure has at least one Step.
+- `CONFLICTS_WITH` is recorded on both facts. Conflict detection must never create duplicate links: one link per pair of facts, however often detection runs.
+
+## Known issues for segmentation and tables (steps 6–7)
+
+Found in the committed TNAU conversion while building the schema tests:
+- **Rice seed sub-headings are missing on pp. 74–75.** The harvest, drying, seed-treatment and storage sub-headings of `RICE - VARIETAL SEED PRODUCTION` are absent, so those bullets sit under "Roguing space". The tests use the chapter heading as `section_path`.
+- **The grain-drying sentence is under the wrong heading.** "Dry the grains to 12% moisture level for storage." (p. 39) sits under "Non-Puddled machine Transplanted Rice (NPTR)".
+- **No `table_ref`.** Table facts such as the BPH threshold (p. 64) can't get a `#/tables/N` pointer until the full Docling JSON conversion exists.

@@ -101,6 +101,7 @@ STORAGE_LONG = fact(
          "with a seed moisture content less than 8 %."),
     purpose_ids=["purpose:seed"],
     storage_months_min=15, max_moisture_pct=8, structure="700 gauge polythene bag",
+    storage_months_min_inclusive=False, max_moisture_pct_inclusive=False,
     raw={"storage_months_min": "more than 15 months", "max_moisture_pct": "less than 8 %"},
     status="needs_review", conflicts_with=["rec:tnau_rice_seed_drying_long"],
 )

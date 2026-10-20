@@ -1,7 +1,9 @@
 """First-slice Recommendation subtypes (schema v1.1, "Deferred and open decisions").
 
 Each subtype adds only its own fields to the core. Numeric subtype fields are
-listed in NUMERIC_FIELDS so the core can require their raw text.
+listed in NUMERIC_FIELDS so the core can require their raw text. Every bound
+has a `<field>_inclusive` flag (pending schema v1.2, default true): false
+stores "less than 8 %" or "more than 15 months" exactly.
 """
 
 import re
@@ -9,7 +11,7 @@ from typing import Annotated, Literal, Union
 
 from pydantic import Field, TypeAdapter, model_validator
 
-from .core import Recommendation, Text, ThresholdClause, check_range
+from .core import Recommendation, Text, ThresholdClause, check_bound, check_range
 from .ids import ActiveIngredientId, ControlTargetId, PestOrDiseaseId, StorageTargetId, VarietyId
 from .vocab import CautionKind, ControlClass, DoseBasis
 
@@ -70,6 +72,10 @@ class HarvestRule(Recommendation):
     harvest_moisture_pct_max: Pct | None = None
     threshing_moisture_pct_min: Pct | None = None
     threshing_moisture_pct_max: Pct | None = None
+    harvest_moisture_pct_min_inclusive: bool = True
+    harvest_moisture_pct_max_inclusive: bool = True
+    threshing_moisture_pct_min_inclusive: bool = True
+    threshing_moisture_pct_max_inclusive: bool = True
 
     @model_validator(mode="after")
     def _ranges(self):
@@ -86,6 +92,10 @@ class DryingSpec(Recommendation):
     target_moisture_pct_max: Pct | None = None
     storage_months_min: Months | None = None
     storage_months_max: Months | None = None
+    target_moisture_pct_min_inclusive: bool = True
+    target_moisture_pct_max_inclusive: bool = True
+    storage_months_min_inclusive: bool = True
+    storage_months_max_inclusive: bool = True
     storage_term_raw: Text | None = None
     method: str | None = None
 
@@ -106,12 +116,16 @@ class StorageRule(Recommendation):
     storage_months_min: Months | None = None
     storage_months_max: Months | None = None
     max_moisture_pct: Pct | None = None
+    storage_months_min_inclusive: bool = True
+    storage_months_max_inclusive: bool = True
+    max_moisture_pct_inclusive: bool = True
     structure: str | None = None
     target_ids: list[StorageTargetId] = []   # TARGETS storage pests (context checked against concepts)
 
     @model_validator(mode="after")
     def _ranges(self):
         check_range(self, "storage_months_min", "storage_months_max")
+        check_bound(self, "max_moisture_pct")
         return self
 
 
