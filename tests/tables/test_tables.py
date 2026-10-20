@@ -84,17 +84,29 @@ def test_unmapped_labels_go_to_review(result):
     assert any(r["detail"].startswith("unmapped row label") for r in result["review"])
 
 
-def test_every_variety_is_needs_review_and_crop_waits_for_chapter_approval(result):
+def test_every_variety_is_needs_review_and_gets_its_approved_chapters_crop(result):
     assert result["varieties"] and all(v.review_status == "needs_review" for v in result["varieties"])
-    assert all(v.crop_id is None for v in result["varieties"])            # chapters still proposed
+    crops = {v.id: v.crop_id for v in result["varieties"]}
+    assert crops["variety:co_51"] == "crop:rice" and crops["variety:cow_w_1"] == "crop:wheat"
+    assert None not in crops.values()                                       # rice and wheat approved
+    assert not [r for r in result["review"] if r["detail"].startswith("crop_id pending")]
     assert len({v.id for v in result["varieties"]}) == len(result["varieties"])
+
+
+def test_crop_waits_for_chapter_approval(result):
+    from kg.tables.varieties import pivot
+    t = table(result, "#/tables/9")
+    proposed = next(c for c in ENTRY.chapters if c.title == "RICE").model_copy(update={"status": "proposed"})
+    records, _ = pivot(t, ENTRY, proposed, "short")
+    assert all(v.crop_id is None for v in records)
 
 
 def test_cow_box_varieties_are_pivoted_and_flagged(result):
     for vid in ("variety:cow_w_1", "variety:cow_w_2"):
         assert variety(result, vid).evidence[0].pdf_page == 134
-        assert any(r.get("variety_id") == vid and r["detail"] == "variety box before the chapter heading"
-                   for r in result["review"])
+        assert any(r.get("variety_id") == vid and r["detail"] ==
+                   "Docling reading order: content of 'I. SEASON AND VARIETY' placed before the chapter "
+                   "heading (corrected by an approved reading-order fix)" for r in result["review"])
     assert any("Variety : COW(W)1" in (c["text"] or "") for c in result["cow_box_context"])
 
 

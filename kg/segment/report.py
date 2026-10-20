@@ -8,7 +8,7 @@ from . import (TOKEN_LIMIT, UNITS_DIR, build_tree, check_scopes, heading_like_li
 
 AUDIT = ("caps_decisions", "placeholders", "late_parents", "duplicate_numbers", "promotions",
          "unparsed_headings", "before_chapter_heading", "chapter_heading_not_found",
-         "heading_fixes_applied", "running_headers_dropped")
+         "heading_fixes_applied", "reading_order_fixes_applied", "running_headers_dropped")
 
 
 def segment(entry, docling_dir: Path) -> tuple[list[dict], dict]:
@@ -87,6 +87,13 @@ def print_report(r: dict, focus: tuple[str, ...] = ("RICE", "WHEAT")) -> None:
     print("chapter heading not found:", [x["chapter"] for x in r["chapter_heading_not_found"]])
     print("running headers dropped: %d" % len(r["running_headers_dropped"]))
     print("heading fixes applied: %d" % len(r["heading_fixes_applied"]))
+    for f in r["heading_fixes_applied"]:
+        print("   p.%s %-7s %r%s" % (f["pdf_page"], f["kind"], f["match"][:60],
+                                     " -> %r" % f["heading"] if f.get("heading") else ""))
+    print("reading-order fixes applied: %d" % len(r["reading_order_fixes_applied"]))
+    for f in r["reading_order_fixes_applied"]:
+        print("   p.%s moved %d items (%r .. %r) after %r" % (f["pdf_page"], f["moved"], f["first"][:30],
+                                                            f["last"][:30], f["after"]))
     print("scope checks:")
     for c in r["scope_checks"]:
         print("  %-4s %-8s %-13s %r PDF %s -> %d match(es), section spans PDF %s" % (

@@ -15,6 +15,7 @@ from collections import defaultdict
 from kg.convert.headers import doc_items, norm, running_headings
 from kg.registry import ROOT
 
+from .fixes import FixError, apply_fixes
 from .tree import Builder, Node
 
 UNITS_DIR = ROOT / "data" / "units"
@@ -61,7 +62,8 @@ def build_tree(doc, entry) -> tuple[list[tuple], dict]:
     fixes = [f for f in entry.heading_fix if f.status == "approved"]
     built, builder, idx = [], None, -1
     seen_heading = False
-    for it in _items(doc, entry, running, log):
+    items = apply_fixes(list(_items(doc, entry, running, log)), entry, log)
+    for it in items:
         page = it["pdf_page"] or 0
         while idx + 1 < len(chapters) and page >= chapters[idx + 1].pdf_page:
             idx += 1

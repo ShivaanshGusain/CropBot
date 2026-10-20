@@ -30,13 +30,13 @@ notes = [
 # and Forage crops. Group rows (MILLETS, PULSES, ...) are kept as group. Segmentation uses every chapter for
 # boundaries; extraction uses approved chapters only.
 chapters = [
-  { number = "1", title = "RICE", printed_page = 1, pdf_page = 13, status = "proposed", crop_id = "crop:rice" },
+  { number = "1", title = "RICE", printed_page = 1, pdf_page = 13, status = "approved", crop_id = "crop:rice" },
   { number = "2.1", title = "Sorghum", group = "MILLETS", printed_page = 65, pdf_page = 77, status = "proposed" },
   { number = "2.2", title = "Cumbu", group = "MILLETS", printed_page = 81, pdf_page = 93, status = "proposed" },
   { number = "2.3", title = "Ragi", group = "MILLETS", printed_page = 92, pdf_page = 104, status = "proposed" },
   { number = "2.4", title = "Maize", group = "MILLETS", printed_page = 103, pdf_page = 115, status = "proposed" },
   { number = "2.5", title = "Small Millets", group = "MILLETS", printed_page = 117, pdf_page = 129, status = "proposed" },
-  { number = "3", title = "WHEAT", printed_page = 122, pdf_page = 134, status = "proposed", crop_id = "crop:wheat" },
+  { number = "3", title = "WHEAT", printed_page = 122, pdf_page = 134, status = "approved", crop_id = "crop:wheat" },
   { number = "4.1", title = "Redgram", group = "PULSES", printed_page = 125, pdf_page = 137, status = "proposed" },
   { number = "4.2", title = "Blackgram", group = "PULSES", printed_page = 134, pdf_page = 146, status = "proposed" },
   { number = "4.3", title = "Greengram", group = "PULSES", printed_page = 145, pdf_page = 156, status = "proposed" },
@@ -128,7 +128,7 @@ rule = "nursery doses are for 800 m2 (20 cents) of nursery per ha of main field"
 quote = "An area of 800 sq.m. (20 cents) nursery is required for planting one ha of main field."
 pdf_page = 62
 status = "approved"
-section = { heading = "Nursery", pdf_pages = [62, 63] }   # needs heading_fix 2 (proposed) to match
+section = { heading = "Nursery", pdf_pages = [62, 63] }
 
 # --- section scopes: proposed, not used until approved --------------------------------
 
@@ -199,18 +199,86 @@ pdf_pages = [431, 432]
 regions = ["zone:tn_western"]
 status = "proposed"
 
-# --- heading fixes: proposed, applied by segmentation only once approved --------------
+# --- heading fixes: applied by segmentation only when approved; each match must be found
+# exactly once on its pdf_page, or segmentation fails. Checked against the rendered pages. ---
 
 [[heading_fix]]   # the heading runs into an inline sub-heading
 match = "1.1.1. Wet nursery Nursery area"
 pdf_page = 29
 heading = "1.1.1. Wet nursery"
 inline_subheading = "Nursery area"
-status = "proposed"
+status = "approved"
 
 [[heading_fix]]   # "Nursery" is the first sub-section of A), sibling of "ii) Main field"; no number is invented
 match = "A) Pest management Nursery"
 pdf_page = 62
 heading = "A) Pest management"
 subsection = "Nursery"
+status = "approved"
+
+[[heading_fix]]   # PDF p. 13 prints "CROP IMPROVEMENT" and "I. SEASON AND VARIETIES" on separate lines
+match = "CROP IMPROVEMENT I. SEASON AND VARIETIES"
+pdf_page = 13
+heading = "CROP IMPROVEMENT"
+subsection = "I. SEASON AND VARIETIES"
+status = "approved"
+
+[[heading_fix]]   # PDF p. 39 (printed 27) prints "1.3. Insect management: See Crop Protection Chapter"
+kind = "restore"
+match = "Insect management: See Crop Protection Chapter"
+pdf_page = 39
+heading = "1.3. Insect management: See Crop Protection Chapter"
+status = "approved"
+
+[[heading_fix]]   # PDF p. 39 prints "1.4. Disease management: See Crop Protection Chapter"
+kind = "restore"
+match = "Disease management: See Crop Protection Chapter"
+pdf_page = 39
+heading = "1.4. Disease management: See Crop Protection Chapter"
+status = "approved"
+
+[[heading_fix]]   # PDF p. 39 prints "1.5. Harvesting"; its bullets include the grain-drying sentence
+kind = "restore"
+match = "Harvesting"
+pdf_page = 39
+heading = "1.5. Harvesting"
+status = "approved"
+
+[[heading_fix]]   # PDF p. 46 (printed 34) prints "3.9. Insect management: See Crop Protection Chapter"
+kind = "restore"
+match = "Insect management: See Crop Protection Chapter"
+pdf_page = 46
+heading = "3.9. Insect management: See Crop Protection Chapter"
 status = "proposed"
+
+[[heading_fix]]   # PDF p. 46 prints "3.10. Disease management: See Crop Protection Chapter"
+kind = "restore"
+match = "Disease management: See Crop Protection Chapter"
+pdf_page = 46
+heading = "3.10. Disease management: See Crop Protection Chapter"
+status = "proposed"
+
+[[heading_fix]]   # PDF p. 49 (printed 37) prints "4.10. Insect management: See Crop Protection Chapter"
+kind = "restore"
+match = "Insect management: See Crop Protection Chapter"
+pdf_page = 49
+heading = "4.10. Insect management: See Crop Protection Chapter"
+status = "proposed"
+
+[[heading_fix]]   # PDF p. 51 (printed 39) prints "5.12. Disease management: See Crop Protection Chapter"
+kind = "restore"
+match = "Disease management: See Crop Protection Chapter"
+pdf_page = 51
+heading = "5.12. Disease management: See Crop Protection Chapter"
+status = "proposed"
+
+# --- reading-order fixes: applied only when approved; first, last and after must each be
+# found exactly once on pdf_page --------------------------------------------------------
+
+[[reading_order_fix]]   # PDF p. 134 (printed 122) prints this block below "I. SEASON AND VARIETY";
+                        # Docling read it before the chapter heading "3. WHEAT"
+pdf_page = 134
+first = "Suitable Districts"
+last = "3. SEED RATE: 100 kg/ha"
+after = "I. SEASON AND VARIETY"
+status = "approved"

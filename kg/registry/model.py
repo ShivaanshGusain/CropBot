@@ -78,26 +78,53 @@ class Chapter(Model):
 
 
 class HeadingFix(Model):
-    """A reviewed correction to one Docling heading (nothing is auto-corrected).
+    """A reviewed correction to one Docling item (nothing is auto-corrected).
 
-    `match` (the heading text as converted, on `pdf_page`) becomes `heading`; the
-    rest becomes an inline sub-heading of it, or a new unnumbered sub-section.
+    `match` is the item text as converted, found exactly once on `pdf_page`.
+      kind = "split":   the heading `match` becomes `heading`; the rest becomes an inline
+                        sub-heading of it, or a sub-section (numbered or not).
+      kind = "restore": the item `match` (often a list item whose number Docling dropped)
+                        becomes the heading `heading` as printed, e.g.
+                        "Harvesting" -> "1.5. Harvesting".
     """
+    kind: Literal["split", "restore"] = "split"
     match: Text
     pdf_page: PositiveInt
     heading: Text
     inline_subheading: str | None = None
     subsection: str | None = None
     status: RuleStatus
+    note: str | None = None
 
     @model_validator(mode="after")
-    def _split(self):
+    def _shape(self):
         rest = [x for x in (self.inline_subheading, self.subsection) if x]
+        if self.kind == "restore":
+            from kg.segment.numbering import parse
+            if rest:
+                raise ValueError("a restore fix has no inline_subheading or subsection")
+            number, title = parse(self.heading)
+            if number is None or title != self.match:
+                raise ValueError("restore heading %r must be a number followed by the match %r"
+                                 % (self.heading, self.match))
+            return self
         if len(rest) != 1:
-            raise ValueError("a heading_fix needs exactly one of inline_subheading or subsection")
+            raise ValueError("a split heading_fix needs exactly one of inline_subheading or subsection")
         if self.match != "%s %s" % (self.heading, rest[0]):
             raise ValueError("match %r must equal heading + ' ' + %r" % (self.match, rest[0]))
         return self
+
+
+class ReadingOrderFix(Model):
+    """A reviewed correction to Docling's reading order on one page: the items from `first`
+    to `last` (inclusive, as converted) move to just after the item `after`. Each text must
+    be found exactly once on `pdf_page`."""
+    pdf_page: PositiveInt
+    first: Text
+    last: Text
+    after: Text
+    status: RuleStatus
+    note: str | None = None
 
 
 class Extraction(Model):
@@ -129,6 +156,7 @@ class RegistryEntry(Model):
     printed_pages: list[PrintedPages] = []
     chapters: list[Chapter] = []
     heading_fix: list[HeadingFix] = []
+    reading_order_fix: list[ReadingOrderFix] = []
     extraction: Extraction = Extraction()
     default_scope: list[DefaultScopeRule] = []
     section_scope: list[SectionScope] = []

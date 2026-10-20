@@ -158,9 +158,10 @@ class Builder:
     # --- events -------------------------------------------------------------------------
 
     def heading(self, text: str, ref: str, page: int):
-        fix = next((f for f in self.fixes if f.match == text and f.pdf_page == page), None)
+        fix = next((f for f in self.fixes if f.kind == "split" and f.match == text
+                    and f.pdf_page == page), None)
         if fix:
-            self.log["heading_fixes_applied"].append({"match": fix.match, "pdf_page": page})
+            self.log["heading_fixes_applied"].append({"kind": "split", "match": fix.match, "pdf_page": page})
             text = fix.heading
         number, _ = parse(text)
         if not number and LOOKS_NUMBERED.match(text):
@@ -185,6 +186,10 @@ class Builder:
         if fix and fix.inline_subheading:
             self.inline(fix.inline_subheading, ref, page, label="heading_fix")
         if fix and fix.subsection:
+            if parse(fix.subsection)[0]:      # numbered ("I. SEASON AND VARIETIES"): normal placement
+                self.last_was_heading = True
+                self.heading(fix.subsection, ref, page)
+                return
             sub = Node("subsection", fix.subsection, heading_ref=ref, pdf_page=page)
             self._place(sub, self.ctx, node, node.level + 1)
             self.current = sub

@@ -142,7 +142,10 @@ def test_chapters_follow_the_printed_page_mapping():
     [entry] = read_registry()
     rice, wheat = (next(c for c in entry.chapters if c.title == t) for t in ("RICE", "WHEAT"))
     assert (rice.pdf_page, rice.printed_page, wheat.pdf_page, wheat.printed_page) == (13, 1, 134, 122)
-    assert len(entry.chapters) == 63 and all(c.status == "proposed" for c in entry.chapters)
+    assert (rice.status, rice.crop_id, wheat.status, wheat.crop_id) == (
+        "approved", "crop:rice", "approved", "crop:wheat")
+    others = [c for c in entry.chapters if c.title not in ("RICE", "WHEAT")]
+    assert len(entry.chapters) == 63 and all(c.status == "proposed" for c in others)
 
 
 def test_chapter_page_that_disagrees_with_the_mapping_fails(reg):
@@ -156,7 +159,29 @@ def test_heading_fix_must_split_its_match_exactly(reg):
     assert "must equal heading" in problems(reg)
 
 
-def test_heading_fixes_are_proposed():
+def test_heading_fixes_and_their_review_status():
     [entry] = read_registry()
-    assert [(f.match, f.status) for f in entry.heading_fix] == [
-        ("1.1.1. Wet nursery Nursery area", "proposed"), ("A) Pest management Nursery", "proposed")]
+    assert [(f.pdf_page, f.kind, f.heading, f.status) for f in entry.heading_fix] == [
+        (29, "split", "1.1.1. Wet nursery", "approved"),
+        (62, "split", "A) Pest management", "approved"),
+        (13, "split", "CROP IMPROVEMENT", "approved"),
+        (39, "restore", "1.3. Insect management: See Crop Protection Chapter", "approved"),
+        (39, "restore", "1.4. Disease management: See Crop Protection Chapter", "approved"),
+        (39, "restore", "1.5. Harvesting", "approved"),
+        (46, "restore", "3.9. Insect management: See Crop Protection Chapter", "proposed"),
+        (46, "restore", "3.10. Disease management: See Crop Protection Chapter", "proposed"),
+        (49, "restore", "4.10. Insect management: See Crop Protection Chapter", "proposed"),
+        (51, "restore", "5.12. Disease management: See Crop Protection Chapter", "proposed")]
+    [order] = entry.reading_order_fix
+    assert (order.pdf_page, order.first, order.after, order.status) == (
+        134, "Suitable Districts", "I. SEASON AND VARIETY", "approved")
+
+
+def test_restore_fix_heading_must_be_a_number_plus_the_match(reg):
+    edit(reg, r'^heading = "1.5. Harvesting"$', 'heading = "1.5. Harvest"')
+    assert "must be a number followed by the match" in problems(reg)
+
+
+def test_restore_fix_takes_no_subheading(reg):
+    edit(reg, r'^heading = "1.5. Harvesting"$', 'heading = "1.5. Harvesting"\ninline_subheading = "x"')
+    assert "a restore fix has no inline_subheading" in problems(reg)

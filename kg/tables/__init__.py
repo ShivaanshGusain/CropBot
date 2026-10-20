@@ -22,7 +22,9 @@ TABLES_DIR = ROOT / "data" / "tables"
 REVIEW_CSV = ROOT / "data" / "review" / "tables.csv"
 REVIEW_FIELDS = ("source_id", "chapter", "table_ref", "pdf_page", "printed_page", "check", "detail",
                  "docling", "page", "variety_id")
-COW_BOX_PAGE = 134       # the COW(W)1 variety box before the wheat chapter heading
+COW_BOX_PAGE = 134       # the COW(W)1 block in "I. SEASON AND VARIETY" of the wheat chapter
+COW_BOX_REASON = ("Docling reading order: content of 'I. SEASON AND VARIETY' placed before "
+                  "the chapter heading")
 
 
 def run(entry, docling_dir, units_path, chapters: tuple[str, ...]) -> dict:
@@ -63,9 +65,12 @@ def run(entry, docling_dir, units_path, chapters: tuple[str, ...]) -> dict:
             seen[v.id] = t.parts[0].ref
             varieties.append(v)
             if t.parts[0].pdf_page == COW_BOX_PAGE:
+                fixed = any(f.status == "approved" and f.pdf_page == COW_BOX_PAGE
+                            for f in entry.reading_order_fix)
                 review.append({"chapter": t.chapter, "check": "variety", "table_ref": t.parts[0].ref,
                                "pdf_page": COW_BOX_PAGE, "variety_id": v.id,
-                               "detail": "variety box before the chapter heading"})
+                               "detail": COW_BOX_REASON + (" (corrected by an approved reading-order fix)"
+                                                           if fixed else "")})
             if v.crop_id is None:
                 review.append({"chapter": t.chapter, "check": "variety", "table_ref": t.parts[0].ref,
                                "pdf_page": t.parts[0].pdf_page, "variety_id": v.id,

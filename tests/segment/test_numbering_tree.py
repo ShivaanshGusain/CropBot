@@ -122,6 +122,16 @@ FIXES = [HeadingFix(match="1.1.1. Wet nursery Nursery area", pdf_page=1, heading
                     subsection="Nursery", status="approved")]
 
 
+def test_split_fix_with_a_numbered_subsection():
+    fix = HeadingFix(match="CROP IMPROVEMENT I. SEASON AND VARIETIES", pdf_page=1, heading="CROP IMPROVEMENT",
+                     subsection="I. SEASON AND VARIETIES", status="approved")
+    root, _ = run([("h", "CLIMATE REQUIREMENT"), ("t", "x"), ("h", "CROP IMPROVEMENT I. SEASON AND VARIETIES"),
+                   ("t", "zone table")], [fix])
+    season = find(root, "I. SEASON AND VARIETIES")
+    assert path(season) == ["CROP IMPROVEMENT", "I. SEASON AND VARIETIES"]
+    assert season.number.scheme == "roman" and season.items[0]["text"] == "zone table"
+
+
 def test_approved_heading_fixes():
     root, log = run([("h", "1.1.1. Wet nursery Nursery area"), ("t", "Select 20 cents"),
                      ("h", "CROP PROTECTION"), ("t", "x"), ("h", "A) Pest management Nursery"), ("t", "seed"),

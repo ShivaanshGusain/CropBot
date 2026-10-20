@@ -4,6 +4,7 @@ from pathlib import Path
 from kg.convert import output_dir
 from kg.registry import RegistryError, read_registry
 
+from .fixes import FixError
 from .report import print_report, segment, write
 
 
@@ -23,7 +24,11 @@ def main():
     if not (docling_dir / "document.json").exists():
         raise SystemExit("no conversion at %s; run uv run python -m kg.convert %s"
                          % (docling_dir, entry.id))
-    units, report = segment(entry, docling_dir)
+    try:
+        units, report = segment(entry, docling_dir)
+    except FixError as e:
+        raise SystemExit("approved fixes do not match the conversion; nothing written:\n  "
+                         + "\n  ".join(e.problems))
     out = write(entry, units, report)
     print_report(report)
     print("written:", out)

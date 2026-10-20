@@ -221,7 +221,7 @@ No LLM. Input: the full `document.json`, with running-header headings dropped.
 **Chapters**
 - They come from the registry's `chapters` list (63 entries drafted from the contents table, PDF pp. 3–5).
 - A chapter starts on its PDF page. Its own heading there ("1. RICE (Oryza sativa L.)") is its title, never a section number.
-- Segmentation uses every chapter for boundaries; extraction uses approved chapters only.
+- Segmentation uses every chapter for boundaries; extraction uses approved chapters only. RICE and WHEAT are approved (checked against the rendered contents table and chapter pages); the rest are proposed.
 
 **The tree is rebuilt from heading numbers,** never from Docling heading levels.
 - `1.8.3.1` nests under `1.8.3`. "1.8.3.1.Seed rate" is split into number and title.
@@ -234,7 +234,10 @@ No LLM. Input: the full `document.json`, with running-header headings dropped.
 - otherwise it starts a major section at chapter level;
 - numbering continues across a major section ("3." goes next to "2." even with "RAINFED RICE" in between).
 
-**Heading fixes:** only `status = "approved"` `[[heading_fix]]` entries are applied (`match` + `pdf_page` → heading + inline sub-heading or sub-section).
+**Registry fixes**, applied only when `status = "approved"`. Each is checked against the rendered PDF page before approval. Its text must be found **exactly once** on its `pdf_page`; otherwise segmentation stops with every problem listed and writes nothing.
+- `[[heading_fix]]` `kind = "split"` (default): the heading `match` becomes `heading`, plus an inline sub-heading or a sub-section. A numbered sub-section ("I. SEASON AND VARIETIES") is placed by the numbering rules.
+- `[[heading_fix]]` `kind = "restore"`: an item whose number Docling dropped (often a list item) becomes the heading as printed, e.g. "Harvesting" → "1.5. Harvesting". The heading must be a number followed by `match`.
+- `[[reading_order_fix]]`: the items `first`..`last` on `pdf_page` move to just after `after`.
 
 **Units**
 - One unit per leaf section, plus an "intro" unit for a section with its own text before its first child.
@@ -294,7 +297,10 @@ A part without rulings is "not verifiable". Every mismatch goes to `data/review/
 - `duration_group` comes from the section heading. Varieties whose duration is nearer another group's reference are reported; the reference values come from the book's "Stages | Short (105) | Medium (135) | Long (150)" table.
 - `crop_id` comes from the chapter entry, and only once the chapter is approved.
 
-**COW(W)1 box (PDF p. 134):** its table is pivoted (COW (W) 1, COW (W) 2), each flagged "variety box before the chapter heading". Its text lines are listed in the report as context for step 9.
+**COW(W)1 block (PDF p. 134):**
+- The printed page has it inside "I. SEASON AND VARIETY", after the "3. WHEAT" heading. Docling read it before the heading.
+- An approved `[[reading_order_fix]]` restores the order. Its table is pivoted (COW (W) 1, COW (W) 2), and each is flagged "Docling reading order: …" for review.
+- Its text lines are listed in the report as context for step 9.
 
 **Damaged by conversion (rice, pp. 23–26):**
 - "Imp. White Ponni ADT (R) 46" is one name cell holding two varieties;
@@ -329,7 +335,9 @@ These were found in the committed TNAU conversion while building the schema test
   - The old conversion's filter had deleted them.
   - The new conversion keeps "Harvesting", "Threshing", "Drying", "Pre-storage seed treatment" and "Storage", and segmentation records them as each item's `subheading`.
   - The schema test examples still use the chapter heading as `section_path`.
-- **Reported, not fixed: the grain-drying sentence on p. 39.**
-  - "Dry the grains to 12% moisture level for storage." follows the list items "Insect management: See Crop Protection Chapter", "Disease management: …" and "Harvesting". These look like the lost sections 1.3–1.5.
-  - Segmentation reports both the gap (1.3–1.5 missing under "1. TRANSPLANTED PUDDLED LOWLAND RICE") and the heading-like list items. Until a `heading_fix` from the printed book (printed p. 27) is approved, the sentence sits in the "1.2.5. Water management" unit.
+- **Fixed: the grain-drying sentence on p. 39.**
+  - The printed page (printed 27) has "1.3. Insect management:", "1.4. Disease management:" and "1.5. Harvesting". Docling turned them into list items without numbers.
+  - Approved restore fixes bring the headings back, so "Dry the grains to 12% moisture level for storage." sits in "… > 1. TRANSPLANTED PUDDLED LOWLAND RICE > 1.5. Harvesting".
+- **Proposed, not applied: the same pattern on pp. 46, 49 and 51** (3.9 and 3.10, 4.10, 5.12). Restore fixes are drafted in the registry with the printed text quoted.
+- **Open: wheat "I. SEASON AND VARIETY" sits under "CLIMATE REQUIREMENT".** Both are caps headings after "CROP IMPROVEMENT"; the printed page suggests it belongs under "CROP IMPROVEMENT".
 - **Fixed: `table_ref`.** The new conversion gives every table a `#/tables/N` ref. The ETL table is two parts (p. 63 and p. 64), to be stitched in step 8.
