@@ -44,7 +44,7 @@ def store(tmp_path, monkeypatch):
     return tmp_path
 
 
-@pytest.mark.parametrize("version", ["v1", "v2"])
+@pytest.mark.parametrize("version", ["v1", "v2", "v3"])
 def test_prompt_field_reference_matches_the_raw_model(version):
     text, _ = ex.prompt_template(version)
     section = text.split("## Field reference", 1)[1].split("\n## ", 1)[0]
@@ -59,7 +59,7 @@ def test_v2_drops_instruction_en_and_adds_flags():
     assert {"facts", "not_extracted", "reason"} <= field_names("v2")
 
 
-@pytest.mark.parametrize("version", ["v1", "v2"])
+@pytest.mark.parametrize("version", ["v1", "v2", "v3"])
 def test_prompt_has_each_slot_once_and_vocabularies_come_from_code(version):
     text, _ = ex.prompt_template(version)
     assert all(text.count(s) == 1 for s in ex.SLOTS)

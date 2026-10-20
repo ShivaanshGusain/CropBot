@@ -3,6 +3,8 @@ envelope and the fields it requires or forbids, so answers stored under v1 still
 
 from typing import NamedTuple
 
+from kg.schema.vocab import ExtractionFlag
+
 from .model import NESTED, SUBTYPES, NotExtracted
 
 
@@ -12,12 +14,24 @@ class Version(NamedTuple):
     forbidden: frozenset        # fields the answer must not contain
     step_requires: frozenset    # fields every step must have
     coverage: bool              # every text line and table row must be quoted somewhere
+    flags: frozenset = frozenset()   # extraction flags the version may use
 
+
+# fields prompt v3 adds for schema v1.3; v1 and v2 answers never have them
+V3_FIELDS = frozenset({"conc_value", "conc_min", "conc_max", "conc_unit", "conc_raw", "ratio_part", "ratio_rest",
+                       "ratio_raw", "share_pct", "share_raw", "repeat_raw", "about", "seedlings_per_hill_min",
+                       "seedlings_per_hill_max", "seedlings_per_hill_min_inclusive",
+                       "seedlings_per_hill_max_inclusive", "min_moisture_pct", "min_moisture_pct_inclusive"})
+V2_FLAGS = frozenset({"line_order_pairing", "spans_table_rows", "split_from_shared_line", "shared_amount",
+                      "target_from_heading", "anchor_from_context"})
 
 VERSIONS = {
-    "v1": Version("v1", "list", frozenset({"extraction_flags"}), frozenset({"instruction_en"}), False),
-    "v2": Version("v2", "object", frozenset({"instruction_en"}), frozenset(), True),
+    "v1": Version("v1", "list", frozenset({"extraction_flags"}) | V3_FIELDS, frozenset({"instruction_en"}), False),
+    "v2": Version("v2", "object", frozenset({"instruction_en"}) | V3_FIELDS, frozenset(), True, V2_FLAGS),
+    "v3": Version("v3", "object", frozenset({"instruction_en", "seedlings_per_hill"}), frozenset(), True,
+                  frozenset(f.value for f in ExtractionFlag)),
 }
+# the default for prepare/report and the runs step 10 reads; v3 becomes latest once its hand-runs exist
 LATEST = "v2"
 
 
@@ -40,6 +54,9 @@ def version_problems(item, version: str) -> list[str]:
         return out
     for name in v.forbidden & set(item):
         out.append("%s: not part of prompt %s" % (name, version))
+    for flag in set(item.get("extraction_flags") or []) - v.flags:
+        if "extraction_flags" not in v.forbidden:
+            out.append("extraction_flags: %r is not a flag of prompt %s" % (flag, version))
     for i, step in enumerate(item.get("steps") or []):
         if not isinstance(step, dict):
             continue
@@ -47,4 +64,8 @@ def version_problems(item, version: str) -> list[str]:
             out.append("steps.%d.%s: not part of prompt %s" % (i, name, version))
         for name in v.step_requires - set(step):
             out.append("steps.%d.%s: required by prompt %s" % (i, name, version))
+        for j, q in enumerate(step.get("applies") or []):
+            if isinstance(q, dict):
+                for name in v.forbidden & set(q):
+                    out.append("steps.%d.applies.%d.%s: not part of prompt %s" % (i, j, name, version))
     return out

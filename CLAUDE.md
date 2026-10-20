@@ -362,7 +362,7 @@ uv run python -m kg.extract report  source:tnau_agriculture_2020 [--prompt v2]
 uv run python -m kg.extract compare source:tnau_agriculture_2020 --unit <unit_id> --from v1 --to v2
 ```
 
-`--prompt` defaults to the latest version (v2).
+`--prompt` defaults to the latest version (v2). Prompt v3 (schema v1.3) is written but not yet run; pass `--prompt v3` to use it. It becomes the latest once its hand-runs exist.
 
 - **Raw model** (`kg/extract/model.py`), separate from `kg/schema`:
   - all 16 subtypes with the v1.2 fields;
@@ -384,6 +384,15 @@ uv run python -m kg.extract compare source:tnau_agriculture_2020 --unit <unit_id
   - **Purpose:** `purposes` only when the quote states what the produce is for. Seed before sowing is planting material, not a purpose, and a section's purpose comes from the registry.
   - **Numbers and units:** unit "count" for organisms, eggs or items with no printed unit; Indian digit grouping ("1,00,000" = 100000, `kg/extract/numbers.py`) with `raw` as printed.
   - **instruction_en:** no longer written by the model; code writes it later.
+- **v3** (schema v1.3), same envelope and coverage as v2:
+  - **Strength, mixing and share** on a quantity, as printed: `conc_value`/`conc_min`/`conc_max` + `conc_unit` ("%", "N", "µM") + `conc_raw`; `ratio_part` and `ratio_rest` (1 and 49, never added up; code computes the whole); `share_pct` + `share_raw`.
+  - **Repeats:** `repeat_raw` holds the printed repeat words; code reads count and interval from the word table. Stated times ("15 and 30 DAT") are separate steps.
+  - **New fields:** `min_moisture_pct` on StorageRule; `seedlings_per_hill_min`/`_max` on Spacing; `about` on Caution (the pest it names). `concerns` may name a class.
+  - **Sampling** stays as printed in `sampling_unit` ("/25 net sweeps"); code parses count and object.
+  - **Soil-test scope** ("Zinc deficient soils") is a condition `soil_Zn_rating == low`.
+  - **Operations:** the seven new values. A list's introducing verb applies to all its options. A mixed "Dust/ spray" list takes each option's operation from its formulation code (D/DP dusting, G/GR/CG application, EC/WP/SC/WG/SL spraying, none → empty), flagged `operation_from_formulation`.
+  - **Flags:** `scope_from_heading` and `operation_from_formulation`.
+  - `kg/extract/versions.py` keeps each version's fields and flags apart: a v2 answer with a v3 field or flag fails.
 - **Output** `data/extracted/<source>/<prompt version>/<hash>.json`, plus `prompts/` and `responses/` there (all gitignored). Unit IDs contain ':', so files are named by the hash.
   - Each file records the prompt version and sha256, `extraction_model`, the unit text sha256, the time, the raw answer, every fact and its check results.
   - Cache key: unit text + prompt version + prompt hash + model.

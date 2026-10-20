@@ -11,25 +11,16 @@ from typing import Annotated, ClassVar, Literal, Union
 
 from pydantic import Field, PositiveInt, StringConstraints, TypeAdapter, model_validator
 
-from kg.schema.core import Model, Text, check_bound, check_groups, check_range
+from kg.schema.core import Model, Text, check_groups, check_range
 from kg.schema.vocab import (CONDITION_VARIABLES, Anchor, CautionKind, ConditionOp, ControlClass,
-                             DoseBasis, DurationGroup, OffsetUnit, OperationType, Subtype,
+                             DoseBasis, DurationGroup, ExtractionFlag, OffsetUnit, OperationType, Subtype,
                              WeatherAdvice)
 
 Pct = Annotated[float, Field(ge=0, le=100)]
 NonNeg = Annotated[float, Field(ge=0)]
 TableRef = Annotated[str, StringConstraints(pattern=r"^#/tables/\d+$")]
-
-# Prompt v2: how a fact was read when the page alone does not settle it. Step 11 sends every
-# flagged fact to needs_review.
-ExtractionFlag = Literal[
-    "line_order_pairing",       # a value is matched to its label only by the order of lines
-    "spans_table_rows",         # the quote runs across two table rows
-    "split_from_shared_line",   # one line was split into several facts
-    "shared_amount",            # one printed amount applies to several targets ("1 kg each")
-    "target_from_heading",      # no target printed; taken from a heading
-    "anchor_from_context",      # the timing anchor is not printed in the quote
-]
+# Prompt v2 flags plus v1.3's scope_from_heading and operation_from_formulation (kg.schema.vocab).
+# Step 11 sends every flagged fact to needs_review; kg.extract.versions says which flags a version may use.
 
 
 class RawCondition(Model):
@@ -66,6 +57,17 @@ class RawQuantity(Model):
     water_raw: str | None = None                # spray volume as printed: "500 l/ha"
     raw: Text | None = None                     # the whole quantity phrase
     quantity_ref: Literal["previous"] | None = None   # the amount was stated in an earlier bullet
+    # prompt v3 (schema v1.3): strength, mixing parts and share of a dose, as printed
+    conc_value: NonNeg | None = None
+    conc_min: NonNeg | None = None
+    conc_max: NonNeg | None = None
+    conc_unit: str | None = None                # as printed: "%", "N", "µM"
+    conc_raw: Text | None = None
+    ratio_part: Annotated[float, Field(gt=0)] | None = None   # "1 part … with 49 parts": 1
+    ratio_rest: Annotated[float, Field(gt=0)] | None = None   # … 49 (code computes the whole, 50)
+    ratio_raw: Text | None = None
+    share_pct: Annotated[float, Field(gt=0, le=100)] | None = None   # "basal (50%)": 50
+    share_raw: Text | None = None
 
     @model_validator(mode="after")
     def _amount(self):
@@ -73,13 +75,25 @@ class RawQuantity(Model):
         if self.value is not None and (self.min is not None or self.max is not None):
             raise ValueError("give either value or min/max, not both")
         check_range(self, "min", "max")
+        has_conc = any(v is not None for v in (self.conc_value, self.conc_min, self.conc_max))
+        if has_conc and (self.conc_unit is None or self.conc_raw is None):
+            raise ValueError("a strength needs conc_unit and conc_raw as printed")
+        if self.conc_value is not None and (self.conc_min is not None or self.conc_max is not None):
+            raise ValueError("give either conc_value or conc_min/conc_max, not both")
+        check_range(self, "conc_min", "conc_max")
+        has_ratio = any(v is not None for v in (self.ratio_part, self.ratio_rest, self.ratio_raw))
+        if has_ratio and None in (self.ratio_part, self.ratio_rest, self.ratio_raw):
+            raise ValueError("a ratio needs ratio_part, ratio_rest and ratio_raw")
+        if (self.share_pct is None) != (self.share_raw is None):
+            raise ValueError("share_pct and share_raw go together")
         if has_amount:
             if self.raw is None or self.unit is None:
                 raise ValueError("an amount needs its raw phrase and its unit as printed")
             if self.quantity_ref is not None:
                 raise ValueError("quantity_ref is only for an amount stated earlier, not given here")
-        elif self.quantity_ref is None:
-            raise ValueError("no amount: set quantity_ref='previous' if it was stated earlier")
+        elif self.quantity_ref is None and not (has_conc or has_ratio or self.share_pct is not None):
+            raise ValueError("no amount: set quantity_ref='previous' if it was stated earlier, "
+                             "or give a strength, ratio or share")
         if self.basis_inferred and self.basis_rule:
             raise ValueError("a basis from an approved rule is not inferred")
         if (self.basis_inferred or self.basis_rule) and self.basis is None:
@@ -107,6 +121,8 @@ class RawStep(Model):
     month_start: int | None = Field(default=None, ge=1, le=12)
     month_end: int | None = Field(default=None, ge=1, le=12)
     timing_raw: Text | None = None
+    repeat_raw: Text | None = None              # prompt v3: the repeat words as printed ("thrice (at weekly
+                                                # interval"); code reads count and interval from a word table
     instruction_en: Text | None = None          # prompt v1 only; from v2 code writes it (kg.extract.versions)
     applies: list[RawQuantity] = []
     conditions: list[RawCondition] = []
@@ -215,12 +231,22 @@ class SeedRate(RawFact):
 
 
 class Spacing(RawFact):
-    NUMERIC_FIELDS = ("row_cm", "plant_cm", "hills_per_m2", "seedlings_per_hill")
+    NUMERIC_FIELDS = ("row_cm", "plant_cm", "hills_per_m2", "seedlings_per_hill",
+                      "seedlings_per_hill_min", "seedlings_per_hill_max")
     subtype: Literal["Spacing"]
     row_cm: NonNeg | None = None
     plant_cm: NonNeg | None = None
     hills_per_m2: NonNeg | None = None
-    seedlings_per_hill: NonNeg | None = None
+    seedlings_per_hill: NonNeg | None = None        # prompts v1, v2
+    seedlings_per_hill_min: NonNeg | None = None    # prompt v3 (schema v1.3)
+    seedlings_per_hill_max: NonNeg | None = None
+    seedlings_per_hill_min_inclusive: bool = True
+    seedlings_per_hill_max_inclusive: bool = True
+
+    @model_validator(mode="after")
+    def _ranges(self):
+        check_range(self, "seedlings_per_hill_min", "seedlings_per_hill_max")
+        return self
 
 
 class SeedTreatment(RawFact):
@@ -322,13 +348,15 @@ class DryingSpec(RawFact):
 
 
 class StorageRule(RawFact):
-    NUMERIC_FIELDS = ("storage_months_min", "storage_months_max", "max_moisture_pct")
+    NUMERIC_FIELDS = ("storage_months_min", "storage_months_max", "min_moisture_pct", "max_moisture_pct")
     subtype: Literal["StorageRule"]
     storage_months_min: NonNeg | None = None
     storage_months_max: NonNeg | None = None
+    min_moisture_pct: Pct | None = None             # prompt v3 (schema v1.3)
     max_moisture_pct: Pct | None = None
     storage_months_min_inclusive: bool = True
     storage_months_max_inclusive: bool = True
+    min_moisture_pct_inclusive: bool = True
     max_moisture_pct_inclusive: bool = True
     structure: str | None = None
     targets: list[Text] = []                        # storage pests as printed
@@ -336,7 +364,7 @@ class StorageRule(RawFact):
     @model_validator(mode="after")
     def _ranges(self):
         check_range(self, "storage_months_min", "storage_months_max")
-        check_bound(self, "max_moisture_pct")
+        check_range(self, "min_moisture_pct", "max_moisture_pct")
         return self
 
 
@@ -354,7 +382,8 @@ class Caution(RawFact):
     subtype: Literal["Caution"]
     kind: CautionKind
     text_en: Text
-    concerns: list[Text] = []                       # active ingredients as printed
+    concerns: list[Text] = []                       # active ingredients or a class as printed
+    about: list[Text] = []                          # prompt v3: the pest the caution names, as printed
 
 
 SUBTYPES = (VarietyRecommendation, SowingWindow, SeedRate, Spacing, SeedTreatment, NutrientDose,
