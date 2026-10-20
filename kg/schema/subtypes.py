@@ -1,4 +1,5 @@
-"""First-slice Recommendation subtypes (schema v1.2, "Deferred and open decisions").
+"""Recommendation subtypes (schema v1.2): the nine first-slice subtypes ("Deferred and open
+decisions"), then the other seven from the subtype table.
 
 Each subtype adds only its own fields to the core. Numeric subtype fields are
 listed in NUMERIC_FIELDS so the core can require their raw text. Every bound
@@ -12,8 +13,9 @@ from typing import Annotated, Literal, Union
 from pydantic import Field, TypeAdapter, model_validator
 
 from .core import Recommendation, Text, ThresholdClause, check_bound, check_range
-from .ids import ActiveIngredientId, ControlTargetId, PestOrDiseaseId, StorageTargetId, VarietyId
-from .vocab import CautionKind, ControlClass, DoseBasis
+from .ids import (ActiveIngredientId, ControlTargetId, NutrientId, PestOrDiseaseId, StorageTargetId,
+                  VarietyId)
+from .vocab import CautionKind, ControlClass, DoseBasis, OperationType, Unit, WeatherAdvice
 
 Pct = Annotated[float, Field(ge=0, le=100)]
 Months = Annotated[float, Field(ge=0)]
@@ -139,5 +141,68 @@ class Caution(Recommendation):
 FIRST_SLICE = (VarietyRecommendation, SowingWindow, NutrientDose, PestThreshold,
                ControlMeasure, HarvestRule, DryingSpec, StorageRule, Caution)
 
-Fact = Annotated[Union[FIRST_SLICE], Field(discriminator="subtype")]
+
+# --- the other seven subtypes (schema v1.2 table "Recommendation subtypes") -------------------
+
+class SeedRate(Recommendation):
+    subtype: Literal["SeedRate"]
+    method: str | None = None                # the rate is a Step APPLIES quantity (kg per_ha)
+
+
+class Spacing(Recommendation):
+    NUMERIC_FIELDS = ("row_cm", "plant_cm", "hills_per_m2", "seedlings_per_hill")
+    subtype: Literal["Spacing"]
+    row_cm: float | None = Field(default=None, ge=0)
+    plant_cm: float | None = Field(default=None, ge=0)
+    hills_per_m2: float | None = Field(default=None, ge=0)
+    seedlings_per_hill: float | None = Field(default=None, ge=0)
+
+
+class SeedTreatment(Recommendation):
+    subtype: Literal["SeedTreatment"]        # Steps applying an agent per_kg_seed
+
+    @model_validator(mode="after")
+    def _has_steps(self):
+        if not self.steps:
+            raise ValueError("a SeedTreatment needs at least one Step")
+        return self
+
+
+class IrrigationRule(Recommendation):
+    NUMERIC_FIELDS = ("depth_cm",)
+    subtype: Literal["IrrigationRule"]
+    depth_cm: float | None = Field(default=None, ge=0)
+    criterion: str | None = None             # e.g. "hairline cracks"; timing via Steps
+
+
+class DoseFormula(Recommendation):
+    NUMERIC_FIELDS = ("coefficients",)
+    subtype: Literal["DoseFormula"]
+    target_nutrient: NutrientId
+    coefficients: dict[Literal["T", "SN", "SP", "SK", "ON", "OP", "OK"], float] | None = None
+    target_yield_unit: str | None = None
+    soil_series: str | None = None
+    valid_range: str | None = None
+
+
+class WeatherRule(Recommendation):
+    subtype: Literal["WeatherRule"]
+    operation: OperationType | None = None
+    advice: WeatherAdvice                    # Conditions on weather variables are the core `conditions`
+
+
+class QualitySpec(Recommendation):
+    NUMERIC_FIELDS = ("limit_value",)
+    subtype: Literal["QualitySpec"]
+    authority: Text                          # regulatory: the current procurement notice, not books
+    valid_for_season: str | None = None
+    parameter: Text                          # moisture | foreign_matter | damaged | ...
+    limit_value: float | None = Field(default=None, ge=0)
+    unit: Unit | None = None
+
+
+ALL_SUBTYPES = FIRST_SLICE + (SeedRate, Spacing, SeedTreatment, IrrigationRule, DoseFormula,
+                              WeatherRule, QualitySpec)
+
+Fact = Annotated[Union[ALL_SUBTYPES], Field(discriminator="subtype")]
 FACT = TypeAdapter(Fact)   # FACT.validate_python(data) picks the model from data["subtype"]

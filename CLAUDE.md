@@ -142,6 +142,14 @@ tests/               mirrors kg/
 data/gold/           hand-annotated sections (committed)
 ```
 
+## Schema models (`kg/schema`)
+
+- **Subtypes:** all 16 are modelled. The 9 first-slice subtypes and the other 7 from the v1.2 table (SeedRate, Spacing, SeedTreatment, IrrigationRule, DoseFormula, WeatherRule, QualitySpec) are in `ALL_SUBTYPES`/`FACT`.
+- **Concept models:** Pest, Disease, Weed, ActiveIngredient (`reg_status` defaults to unknown and comes only from the CIB&RC list) and OrganicInput are modelled.
+  - Their rows are drafted in `concepts/proposed/` (`PROPOSED_FILES`) and are not loaded until approved.
+  - `Fertilizer.other` is a JSON map of percentages, e.g. `{"zn": 21}`.
+- **`per_cent_nursery`:** value is the amount per one cent of nursery, and `area_cents` is the nursery area the source stated. "40 kg DAP per 20 cents" is value 2, area_cents 20.
+
 ## IDs and loading
 
 - Every node label has a uniqueness constraint on `id`, including Step, Condition, ThresholdClause, Label and the 16 subtype labels (`kg/load/constraints.py`). Every write is `MERGE` on `id`.
@@ -395,6 +403,13 @@ Pending for schema v1.3. These were found in the step 9 hand-run; until v1.3 is 
 - Repeat schedules ("thrice (at weekly interval from 37 DAT)", "twice, 15 and 30 days after transplanting") have no fields.
 - A Caution cannot name the pest it is about (the resurgence lists, p. 69: "BPH, Nilaparvata lugens : acephate, …").
 - `Spacing.seedlings_per_hill` needs a range (min/max), for "Shallow planting at 3 - 4 seedlings / hill" (p. 74).
+
+Found in step 10; until v1.3, normalisation holds the affected facts with the reason:
+- OperationType has no values for release (parasitoids), trapping, baiting, dusting or bund work, and Step `operation` is required.
+- APPLIES has no target type for inputs that aren't nutrients, fertilizers, organic inputs or active ingredients: seed, biocontrol agents (Trichogramma), traps, salts, chemicals (HNO3, KCl, NaCl).
+- No concentration or ratio quantities: "%" with no basis, "0.1 N", "80 µM", "1 part … with 49 parts".
+- ThresholdClause sampling units outside `Basis`: "/25 net sweeps", "/100 earheads", "in 12 passes".
+- `FOR_PURPOSE` needs `{origin}` (text or section); normalisation keeps the origin beside the fact for now.
 
 Candidate for prompt v3: a flag `scope_from_heading` for applicability taken from a sub-heading rather than the quote. For example, the soil "saline soil condition" comes from the p. 74 sub-heading "Recommendation for planting under saline soil condition", and "Zinc deficient soils" comes the same way. v2 has no flag for this.
 

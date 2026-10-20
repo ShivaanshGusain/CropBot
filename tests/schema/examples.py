@@ -153,7 +153,8 @@ NURSERY_DAP = fact(
         {"order": 1, "alt_group": 1, "alt_option": 1, "alt_priority": 1,
          "operation": "fertilizer_application", "anchor": "last_puddling",
          "timing_raw": "before the last puddling", "instruction_en": "Apply 40 kg DAP",
-         "applies": [{"target_id": "fertilizer:dap", "value": 40, "unit": "kg",
+         # per_cent_nursery: value per one cent; area_cents is the area the book stated
+         "applies": [{"target_id": "fertilizer:dap", "value": 2, "unit": "kg",
                       "basis": "per_cent_nursery", "area_cents": 20, "raw": "40 kg of DAP"}]},
         {"order": 1, "alt_group": 1, "alt_option": 2, "alt_priority": 2,
          "condition_raw": "if not readily available",
@@ -161,9 +162,9 @@ NURSERY_DAP = fact(
          "timing_raw": "before the last puddling",
          "instruction_en": "Apply 16 kg urea and 120 kg super phosphate",
          "applies": [
-             {"target_id": "fertilizer:urea", "value": 16, "unit": "kg",
+             {"target_id": "fertilizer:urea", "value": 0.8, "unit": "kg",
               "basis": "per_cent_nursery", "area_cents": 20, "raw": "16 kg of urea"},
-             {"target_id": "fertilizer:ssp", "value": 120, "unit": "kg",
+             {"target_id": "fertilizer:ssp", "value": 6, "unit": "kg",
               "basis": "per_cent_nursery", "area_cents": 20, "raw": "120 kg of super phosphate"},
          ]},
     ],

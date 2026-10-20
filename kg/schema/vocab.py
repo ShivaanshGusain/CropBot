@@ -40,7 +40,9 @@ class Basis(StrEnum):
     PER_M2 = "per_m2"
     PER_HILL = "per_hill"
     PER_TILLER = "per_tiller"
-    PER_CENT_NURSERY = "per_cent_nursery"   # value is for `area_cents` of nursery, as stated
+    # value is the amount per one cent of nursery; `area_cents` records the nursery area the
+    # source stated (provenance): "40 kg per 20 cents nursery" = value 2, area_cents 20
+    PER_CENT_NURSERY = "per_cent_nursery"
     PER_PLANT = "per_plant"
     ABSOLUTE = "absolute"
 

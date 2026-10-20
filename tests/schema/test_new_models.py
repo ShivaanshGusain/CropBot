@@ -1,0 +1,69 @@
+"""The seven subtypes outside the first slice, and the concept models added for step 10."""
+
+import copy
+
+import pytest
+from pydantic import ValidationError
+
+from kg.schema import FACT
+from kg.schema.concepts import ActiveIngredient, Disease, Fertilizer, OrganicInput, Pest, Weed
+
+from .examples import fact, span
+
+SPAN = span("span:x", 30, "Rice > 1.1.1. Wet nursery", "quote")
+STEP = {"order": 1, "operation": "sowing", "instruction_en": "Use 30 kg seed per ha."}
+
+
+@pytest.mark.parametrize("subtype, fields", [
+    ("SeedRate", {"method": "transplanted", "steps": [STEP]}),
+    ("Spacing", {"row_cm": 20, "plant_cm": 15, "raw": {"row_cm": "20", "plant_cm": "15 cm"}}),
+    ("SeedTreatment", {"steps": [{**STEP, "operation": "seed_treatment"}]}),
+    ("IrrigationRule", {"depth_cm": 2.5, "raw": {"depth_cm": "2.5 cm"}, "criterion": "hairline cracks"}),
+    ("DoseFormula", {"target_nutrient": "nutrient:n", "coefficients": {"T": 4.25, "SN": 0.45},
+                     "raw": {"coefficients": "FN = 4.25 T - 0.45 SN"}}),
+    ("WeatherRule", {"operation": "spraying", "advice": "avoid"}),
+    ("QualitySpec", {"authority": "FCI", "parameter": "moisture", "limit_value": 17, "unit": "pct",
+                     "raw": {"limit_value": "17%"}}),
+])
+def test_the_other_seven_subtypes_validate(subtype, fields):
+    assert FACT.validate_python(fact("rec:x", subtype, "s", SPAN, **fields)).subtype == subtype
+
+
+@pytest.mark.parametrize("subtype, fields, message", [
+    ("Spacing", {"row_cm": 20}, "raw\\['row_cm'\\]"),
+    ("SeedTreatment", {}, "needs at least one Step"),
+    ("DoseFormula", {"target_nutrient": "fertilizer:urea"}, "is not a nutrient id"),
+    ("QualitySpec", {"parameter": "moisture"}, "authority"),
+    ("WeatherRule", {"advice": "maybe"}, "advice"),
+])
+def test_the_other_seven_subtypes_reject(subtype, fields, message):
+    with pytest.raises(ValidationError, match=message):
+        FACT.validate_python(fact("rec:x", subtype, "s", copy.deepcopy(SPAN), **fields))
+
+
+def test_active_ingredient_reg_status_defaults_to_unknown():
+    ai = ActiveIngredient(id="ai:chlorantraniliprole", name_en="Chlorantraniliprole", use_class="insecticide",
+                          review_status="needs_review")
+    assert ai.reg_status.value == "unknown"
+
+
+def test_new_concepts_check_their_ids_and_vocabularies():
+    Pest(id="pest:brown_planthopper", name_en="Brown planthopper", scientific_name="Nilaparvata lugens",
+         pest_type="insect", review_status="needs_review")
+    Disease(id="disease:blast", name_en="Blast", review_status="needs_review")
+    Weed(id="weed:echinochloa", name_en="Barnyard grass", weed_type="grass", review_status="needs_review")
+    OrganicInput(id="organic_input:fym", name_en="FYM", kind="fym", review_status="needs_review")
+    with pytest.raises(ValidationError, match="is not a pest id"):
+        Pest(id="disease:blast", name_en="x", pest_type="insect", review_status="needs_review")
+    with pytest.raises(ValidationError, match="kind"):
+        OrganicInput(id="organic_input:x", name_en="x", kind="manure", review_status="needs_review")
+
+
+def test_fertilizer_other_reads_json_and_checks_percent():
+    f = Fertilizer(id="fertilizer:znso4", name_en="Zinc sulphate", n_pct=0, p2o5_pct=0, k2o_pct=0,
+                   other='{"zn": 21}', review_status="needs_review", source="x")
+    assert f.other == {"zn": 21}
+    with pytest.raises(ValidationError, match="0-100"):
+        Fertilizer(id="fertilizer:x", name_en="x", n_pct=0, p2o5_pct=0, k2o_pct=0, other={"zn": 210},
+                   review_status="needs_review", source="x")
+

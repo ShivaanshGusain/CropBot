@@ -2,14 +2,17 @@
 
 from .core import (Applies, BBox, Condition, ExcludedRegion, Recommendation, RegionRef, Source,
                    SourceSpan, Step, ThresholdClause)
-from .subtypes import (FACT, FIRST_SLICE, Caution, ControlMeasure, DryingSpec, Fact,
-                       HarvestRule, NutrientDose, PestThreshold, SowingWindow, StorageRule,
-                       VarietyRecommendation)
+from .subtypes import (ALL_SUBTYPES, FACT, FIRST_SLICE, Caution, ControlMeasure, DoseFormula,
+                       DryingSpec, Fact, HarvestRule, IrrigationRule, NutrientDose, PestThreshold,
+                       QualitySpec, SeedRate, SeedTreatment, SowingWindow, Spacing, StorageRule,
+                       VarietyRecommendation, WeatherRule)
 
 __all__ = [
     "Applies", "BBox", "Condition", "ExcludedRegion", "Recommendation", "RegionRef", "Source",
     "SourceSpan",
     "Step", "ThresholdClause",
-    "FACT", "FIRST_SLICE", "Fact", "Caution", "ControlMeasure", "DryingSpec", "HarvestRule",
-    "NutrientDose", "PestThreshold", "SowingWindow", "StorageRule", "VarietyRecommendation",
+    "ALL_SUBTYPES", "FACT", "FIRST_SLICE", "Fact", "Caution", "ControlMeasure", "DoseFormula",
+    "DryingSpec", "HarvestRule", "IrrigationRule", "NutrientDose", "PestThreshold", "QualitySpec",
+    "SeedRate", "SeedTreatment", "SowingWindow", "Spacing", "StorageRule", "VarietyRecommendation",
+    "WeatherRule",
 ]

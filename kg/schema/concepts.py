@@ -7,17 +7,20 @@ References to other concepts become edges (EDGES); the loader checks that
 their targets exist.
 """
 
+import json
 from typing import ClassVar, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 
 from .core import Model, SourceSpan, Text, check_range
-from .ids import (CountryId, CropId, DistrictId, FertilizerId, LabelId, LocalSeasonId, NutrientId,
-                  OperationId, PurposeId, SeasonId, SoilId, StateId, SystemId, VarietyId, ZoneId,
+from .ids import (ActiveIngredientId, CountryId, CropId, DiseaseId, DistrictId, FertilizerId,
+                  LabelId, LocalSeasonId, NutrientId, OperationId, OrganicInputId, PestId,
+                  PurposeId, SeasonId, SoilId, StateId, SystemId, VarietyId, WeedId, ZoneId,
                   label_id)
 from .vocab import (CropGroup, DurationGroup, LabelKind, OperationType as OperationVocab,
-                    Purpose as PurposeVocab, ReviewStatus, Season as SeasonVocab, VarietyKind,
-                    ZoneScheme)
+                    OrganicInputKind, PathogenType, PestContext, PestType,
+                    Purpose as PurposeVocab, RegStatus, ReviewStatus, Season as SeasonVocab,
+                    UseClass, VarietyKind, WeedType, ZoneScheme)
 
 
 class Concept(Model):
@@ -147,7 +150,58 @@ class Fertilizer(Concept):
     n_pct: float = Field(ge=0, le=100)
     p2o5_pct: float = Field(ge=0, le=100)
     k2o_pct: float = Field(ge=0, le=100)
+    other: dict[str, float] = {}        # schema other{}: e.g. {"zn": ...} (percent); JSON in a seed CSV
     source: Text                        # required: where the percentages come from
+
+    @field_validator("other", mode="before")
+    @classmethod
+    def _json(cls, v):
+        return json.loads(v) if isinstance(v, str) else v
+
+    @model_validator(mode="after")
+    def _other_pct(self):
+        bad = {k: v for k, v in self.other.items() if not 0 <= v <= 100}
+        if bad:
+            raise ValueError("other percentages must be 0-100: %s" % bad)
+        return self
+
+
+class OrganicInput(Concept):
+    LABEL = "OrganicInput"
+    id: OrganicInputId
+    kind: OrganicInputKind
+
+
+class ActiveIngredient(Concept):
+    """reg_status comes from the official registration list (CIB&RC), never from books."""
+    LABEL = "ActiveIngredient"
+    id: ActiveIngredientId
+    use_class: UseClass
+    reg_status: RegStatus = RegStatus.UNKNOWN
+
+
+# --- pests, diseases, weeds ------------------------------------------------------------
+
+class Pest(Concept):
+    LABEL = "Pest"
+    id: PestId
+    scientific_name: str | None = None
+    pest_type: PestType
+    context: PestContext = PestContext.FIELD
+
+
+class Disease(Concept):
+    LABEL = "Disease"
+    id: DiseaseId
+    pathogen: str | None = None
+    pathogen_type: PathogenType | None = None
+
+
+class Weed(Concept):
+    LABEL = "Weed"
+    id: WeedId
+    scientific_name: str | None = None
+    weed_type: WeedType
 
 
 class Crop(Concept):
@@ -241,6 +295,17 @@ SEED_FILES: dict[str, type] = {
     "nutrients.csv": Nutrient,
     "fertilizers.csv": Fertilizer,
     "crops.csv": Crop,
+    "labels.csv": Label,
+}
+
+# concept models whose rows are drafted in concepts/proposed/ and not loaded until approved
+PROPOSED_FILES: dict[str, type] = {
+    "pests.csv": Pest,
+    "diseases.csv": Disease,
+    "weeds.csv": Weed,
+    "active_ingredients.csv": ActiveIngredient,
+    "organic_inputs.csv": OrganicInput,
+    "fertilizers.csv": Fertilizer,
     "labels.csv": Label,
 }
 
