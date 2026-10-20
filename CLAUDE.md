@@ -193,7 +193,9 @@ data/gold/           hand-annotated sections (committed)
   - Once segmentation exists, a section that matches zero units or more than one must fail loudly. Until then, `kg.registry.heading_matches` checks each section against the committed conversion.
 - **TNAU:**
   - 2 approved default-scope rules, both section-scoped: per ha unless stated, p. 63; nursery area 800 m² per ha, p. 62.
-  - 11 proposed section scopes, in integrated farming systems, agrometeorology and sorghum.
+  - 11 proposed region section scopes, in integrated farming systems, agrometeorology and sorghum.
+  - 1 proposed purpose section scope: "RICE - VARIETAL SEED PRODUCTION" (PDF pp. 73-75), `purposes = ["purpose:seed"]`, quoting the rendered p. 73 heading.
+- **A `section_scope` has `regions`, `purposes` (`purpose:<id>`) or both.** A purposes-only scope leaves the unit's regions alone. Units carry `purposes` with origin `section`, and the model never sets a section-level purpose.
 
 ## Conversion (`kg/convert`)
 
@@ -249,6 +251,7 @@ No LLM. Input: the full `document.json`, with running-header headings dropped.
   - `items` in order (ref, label, kind, text, `pdf_page`, `printed_page`, `subheading`);
   - `table_refs`, `picture_refs`, `pdf_pages`;
   - `regions` with origin `source`, or `section` from an approved section scope;
+  - `purposes` (origin `section`) from an approved section scope, empty otherwise;
   - approved `default_scope` rules;
   - `approx_tokens` = characters ÷ 4, tables included. Units over 20,000 are flagged, which leaves headroom under the 64k request limit.
 - No table stitching or pivoting here; that's step 8.
@@ -406,4 +409,7 @@ These were found in the committed TNAU conversion while building the schema test
 - **Fixed: wheat "I. SEASON AND VARIETY" sat under "CLIMATE REQUIREMENT".**
   - PDF p. 134 prints "CROP IMPROVEMENT" (centred), then "CLIMATE REQUIREMENT" (left) with its table and paragraph, then "I. SEASON AND VARIETY" (centred). Rice p. 13 has the climate block first.
   - An approved `[[reading_order_fix]]` moves "CROP IMPROVEMENT" after the climate paragraph, giving "WHEAT > CROP IMPROVEMENT > I. SEASON AND VARIETY". The caps-heading rule is not changed for one book.
+- **Proposed, not applied: rice seed fertilizer lines on p. 74.**
+  - The page prints "Medium duration : NPK @ 150:50:60 kg / ha" and "Long duration : NPK @ 150:50:80 kg / ha", one bullet per line. Docling read both labels before both values.
+  - A proposed `[[reading_order_fix]]` moves ": NPK @ 150:50:60 kg / ha" after "Medium duration". A dry run gives the printed order.
 - **Fixed: `table_ref`.** The new conversion gives every table a `#/tables/N` ref. The ETL table is two parts (p. 63 and p. 64), to be stitched in step 8.

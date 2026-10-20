@@ -101,7 +101,20 @@ def test_only_approved_default_scope_rules_reach_the_source(reg):
 
 def test_proposed_section_scopes_are_kept_but_not_used():
     [entry] = read_registry()
-    assert len(entry.section_scope) == 11 and entry.approved_section_scopes() == []
+    assert len(entry.section_scope) == 12 and entry.approved_section_scopes() == []
+    seed = next(s for s in entry.section_scope if s.purposes)
+    assert (seed.heading, seed.pdf_pages, seed.purposes, seed.regions, seed.status) == (
+        "RICE - VARIETAL SEED PRODUCTION", (73, 75), ["purpose:seed"], [], "proposed")
+
+
+def test_section_scope_needs_regions_or_purposes(reg):
+    edit(reg, r'^purposes = \["purpose:seed"\]$', "")
+    assert "needs regions, purposes or both" in problems(reg)
+
+
+def test_section_scope_purpose_must_be_a_purpose_id(reg):
+    edit(reg, r'^purposes = \["purpose:seed"\]$', 'purposes = ["seed"]')
+    assert "is not a purpose id" in problems(reg)
 
 
 @pytest.mark.skipif(not INDEX.exists(), reason="committed TNAU conversion not present")
@@ -174,7 +187,8 @@ def test_heading_fixes_and_their_review_status():
         (51, "restore", "5.12. Disease management: See Crop Protection Chapter", "approved")]
     assert [(o.pdf_page, o.first, o.after[:30], o.status) for o in entry.reading_order_fix] == [
         (134, "Suitable Districts", "I. SEASON AND VARIETY", "approved"),
-        (134, "CROP IMPROVEMENT", "Tropical and Sub tropical cool", "approved")]
+        (134, "CROP IMPROVEMENT", "Tropical and Sub tropical cool", "approved"),
+        (74, ": NPK @ 150:50:60 kg / ha", "Medium duration", "proposed")]
     [gap] = entry.acknowledged_gap
     assert (gap.chapter, gap.under, gap.missing, gap.pdf_page) == ("WHEAT", "I. SEASON AND VARIETY", ["1"], 134)
 

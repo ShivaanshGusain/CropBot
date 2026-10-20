@@ -167,13 +167,15 @@ def check_scopes(entry, built, units) -> list[dict]:
 
 
 def resolve_scopes(entry, units, checks) -> None:
-    """Regions and default-scope rules per unit; only approved rules count."""
+    """Regions, purposes and default-scope rules per unit; only approved rules count. A section
+    scope with no regions (purposes only) leaves the regions as they are."""
     by_node = {}
     for c in checks:
         if c["ok"] and c["status"] == "approved":
             by_node.setdefault(id(c["_node"]), []).append(c)
     for u in units:
         regions = [{"id": r, "origin": "source"} for r in entry.region_scope]
+        purposes = []
         rules = [r.label() for r in entry.default_scope if r.status == "approved" and r.section is None]
         chain, n = [], u["_node"]
         while n is not None:
@@ -182,10 +184,13 @@ def resolve_scopes(entry, units, checks) -> None:
         for n in reversed(chain):                       # outermost first; deepest section scope wins
             for c in by_node.get(id(n), []):
                 if c["kind"] == "section_scope":
-                    regions = [{"id": r, "origin": "section"} for r in c["_obj"].regions]
+                    if c["_obj"].regions:
+                        regions = [{"id": r, "origin": "section"} for r in c["_obj"].regions]
+                    if c["_obj"].purposes:
+                        purposes = [{"id": p, "origin": "section"} for p in c["_obj"].purposes]
                 else:
                     rules.append(c["_obj"].label())
-        u["regions"], u["default_scope"] = regions, rules
+        u["regions"], u["purposes"], u["default_scope"] = regions, purposes, rules
 
 
 def numbering_gaps(built) -> list[dict]:

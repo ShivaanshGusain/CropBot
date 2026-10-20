@@ -111,6 +111,40 @@ def test_nursery_rule_matches_once_its_heading_fix_is_approved(seg):
     assert not check2["ok"] and check2["matches"] == 0       # fails loudly without the fix
 
 
+SEED = "RICE > RICE - VARIETAL SEED PRODUCTION"
+NPK = ["Short duration : NPK @ 120:40:40 kg / ha", "Medium duration", ": NPK @ 150:50:60 kg / ha",
+       "Long duration", ": NPK @ 150:50:80 kg / ha"]
+
+
+def _npk(units):
+    unit = next(u for u in units if u["section_path"] == SEED)
+    return [i["text"] for i in unit["items"] if i["kind"] == "text"
+            and i.get("subheading") == "Fertilizer recommendation for different duration varieties"], unit
+
+
+@needs_full
+def test_proposed_seed_purpose_and_p74_fix_are_checked_but_not_applied(seg):
+    units, report = seg
+    check = next(c for c in report["scope_checks"] if c["heading"] == "RICE - VARIETAL SEED PRODUCTION")
+    assert check["ok"] and check["status"] == "proposed" and check["section_pdf_pages"] == [73, 75]
+    texts, unit = _npk(units)
+    assert unit["purposes"] == [] and texts[:2] == ["Short duration : NPK @ 120:40:40 kg / ha", "Medium duration"]
+    assert texts[2] == "Long duration"                       # labels before values, as Docling read them
+
+
+@needs_full
+def test_approving_them_gives_purpose_seed_and_the_printed_order():
+    approved = ENTRY.model_copy(update={
+        "section_scope": [s.model_copy(update={"status": "approved"}) if s.purposes else s for s in ENTRY.section_scope],
+        "reading_order_fix": [f.model_copy(update={"status": "approved"}) for f in ENTRY.reading_order_fix]})
+    units, report = segment(approved, FULL)
+    texts, unit = _npk(units)
+    assert texts == NPK and not report["failed"]
+    assert unit["purposes"] == [{"id": "purpose:seed", "origin": "section"}]
+    assert unit["regions"] == [{"id": "state:33", "origin": "source"}]        # purposes only: regions unchanged
+    assert all(u["purposes"] == [] for u in units if not u["section_path"].startswith(SEED))
+
+
 def test_units_are_serialisable_and_carry_provenance(seg):
     units, _ = seg
     for u in units:

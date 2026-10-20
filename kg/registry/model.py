@@ -10,7 +10,7 @@ from typing import Literal
 from pydantic import Field, PositiveInt, model_validator
 
 from kg.schema.core import Model, Source, Text
-from kg.schema.ids import CropId, RegionId, SourceId, StateId
+from kg.schema.ids import CropId, PurposeId, RegionId, SourceId, StateId
 from kg.schema.vocab import AuthorityTier
 
 RuleStatus = Literal["proposed", "approved", "rejected"]
@@ -43,9 +43,17 @@ class DefaultScopeRule(Model):
 
 
 class SectionScope(Section):
-    """Section -> regions override (schema: "Section overrides")."""
-    regions: list[RegionId] = Field(min_length=1)
+    """Section -> regions override (schema: "Section overrides") and/or the purpose of everything
+    in the section (e.g. seed production -> purpose:seed)."""
+    regions: list[RegionId] = []
+    purposes: list[PurposeId] = []
     status: RuleStatus
+
+    @model_validator(mode="after")
+    def _something(self):
+        if not self.regions and not self.purposes:
+            raise ValueError("a section_scope needs regions, purposes or both")
+        return self
 
 
 class PrintedPages(Model):

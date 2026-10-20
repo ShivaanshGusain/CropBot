@@ -132,6 +132,13 @@ section = { heading = "Nursery", pdf_pages = [62, 63] }
 
 # --- section scopes: proposed, not used until approved --------------------------------
 
+[[section_scope]]   # PDF p. 73 (printed 61) prints the centred bold heading "RICE - VARIETAL SEED PRODUCTION";
+                    # everything under it (pp. 73-75) is for seed: purpose only, regions stay the book's
+heading = "RICE - VARIETAL SEED PRODUCTION"
+pdf_pages = [73, 75]
+purposes = ["purpose:seed"]
+status = "proposed"
+
 [[section_scope]]   # integrated farming systems
 heading = "1. WESTERN ZONE WETLAND"
 pdf_pages = [399, 401]
@@ -301,3 +308,11 @@ under = "I. SEASON AND VARIETY"
 missing = ["1"]
 pdf_page = 134
 note = "The printed page has no '1.' before '2. Morphological Description of COW(W) 1' (checked on the rendered page)."
+
+[[reading_order_fix]]   # PDF p. 74 (printed 62) prints one bullet per line: "Medium duration : NPK @ 150:50:60 kg / ha"
+                        # and "Long duration : NPK @ 150:50:80 kg / ha". Docling read both labels before both values.
+pdf_page = 74
+first = ": NPK @ 150:50:60 kg / ha"
+last = ": NPK @ 150:50:60 kg / ha"
+after = "Medium duration"
+status = "proposed"
