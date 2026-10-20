@@ -130,14 +130,14 @@ pdf_page = 62
 status = "approved"
 section = { heading = "Nursery", pdf_pages = [62, 63] }
 
-# --- section scopes: proposed, not used until approved --------------------------------
+# --- section scopes: used only when approved --------------------------------------------
 
 [[section_scope]]   # PDF p. 73 (printed 61) prints the centred bold heading "RICE - VARIETAL SEED PRODUCTION";
                     # everything under it (pp. 73-75) is for seed: purpose only, regions stay the book's
 heading = "RICE - VARIETAL SEED PRODUCTION"
 pdf_pages = [73, 75]
 purposes = ["purpose:seed"]
-status = "proposed"
+status = "approved"
 
 [[section_scope]]   # integrated farming systems
 heading = "1. WESTERN ZONE WETLAND"
@@ -315,4 +315,4 @@ pdf_page = 74
 first = ": NPK @ 150:50:60 kg / ha"
 last = ": NPK @ 150:50:60 kg / ha"
 after = "Medium duration"
-status = "proposed"
+status = "approved"

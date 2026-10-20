@@ -194,7 +194,7 @@ data/gold/           hand-annotated sections (committed)
 - **TNAU:**
   - 2 approved default-scope rules, both section-scoped: per ha unless stated, p. 63; nursery area 800 m² per ha, p. 62.
   - 11 proposed region section scopes, in integrated farming systems, agrometeorology and sorghum.
-  - 1 proposed purpose section scope: "RICE - VARIETAL SEED PRODUCTION" (PDF pp. 73-75), `purposes = ["purpose:seed"]`, quoting the rendered p. 73 heading.
+  - 1 approved purpose section scope: "RICE - VARIETAL SEED PRODUCTION" (PDF pp. 73-75), `purposes = ["purpose:seed"]`. It quotes the heading on the rendered p. 73, so its units carry `purpose:seed` with origin `section`.
 - **A `section_scope` has `regions`, `purposes` (`purpose:<id>`) or both.** A purposes-only scope leaves the unit's regions alone. Units carry `purposes` with origin `section`, and the model never sets a section-level purpose.
 
 ## Conversion (`kg/convert`)
@@ -393,6 +393,9 @@ Pending for schema v1.3. These were found in the step 9 hand-run; until v1.3 is 
 - StorageRule needs `min_moisture_pct` (+ `_inclusive`), so "12 - 13 %" keeps its lower bound (it has only `max_moisture_pct` now).
 - Repeat schedules ("thrice (at weekly interval from 37 DAT)", "twice, 15 and 30 days after transplanting") have no fields.
 - A Caution cannot name the pest it is about (the resurgence lists, p. 69: "BPH, Nilaparvata lugens : acephate, …").
+- `Spacing.seedlings_per_hill` needs a range (min/max), for "Shallow planting at 3 - 4 seedlings / hill" (p. 74).
+
+Candidate for prompt v3: a flag `scope_from_heading` for applicability taken from a sub-heading rather than the quote. For example, the soil "saline soil condition" comes from the p. 74 sub-heading "Recommendation for planting under saline soil condition", and "Zinc deficient soils" comes the same way. v2 has no flag for this.
 
 ## Known issues for segmentation and tables (steps 6–7)
 
@@ -409,7 +412,7 @@ These were found in the committed TNAU conversion while building the schema test
 - **Fixed: wheat "I. SEASON AND VARIETY" sat under "CLIMATE REQUIREMENT".**
   - PDF p. 134 prints "CROP IMPROVEMENT" (centred), then "CLIMATE REQUIREMENT" (left) with its table and paragraph, then "I. SEASON AND VARIETY" (centred). Rice p. 13 has the climate block first.
   - An approved `[[reading_order_fix]]` moves "CROP IMPROVEMENT" after the climate paragraph, giving "WHEAT > CROP IMPROVEMENT > I. SEASON AND VARIETY". The caps-heading rule is not changed for one book.
-- **Proposed, not applied: rice seed fertilizer lines on p. 74.**
+- **Fixed: rice seed fertilizer lines on p. 74.**
   - The page prints "Medium duration : NPK @ 150:50:60 kg / ha" and "Long duration : NPK @ 150:50:80 kg / ha", one bullet per line. Docling read both labels before both values.
-  - A proposed `[[reading_order_fix]]` moves ": NPK @ 150:50:60 kg / ha" after "Medium duration". A dry run gives the printed order.
+  - An approved `[[reading_order_fix]]` moves ": NPK @ 150:50:60 kg / ha" after "Medium duration", so the unit now has the printed order.
 - **Fixed: `table_ref`.** The new conversion gives every table a `#/tables/N` ref. The ETL table is two parts (p. 63 and p. 64), to be stitched in step 8.

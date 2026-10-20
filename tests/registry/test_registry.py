@@ -99,12 +99,12 @@ def test_only_approved_default_scope_rules_reach_the_source(reg):
         "dose basis = per_ha unless stated [ii) Main field, PDF pp. 63-69]"]
 
 
-def test_proposed_section_scopes_are_kept_but_not_used():
+def test_section_scopes_and_their_review_status():
     [entry] = read_registry()
-    assert len(entry.section_scope) == 12 and entry.approved_section_scopes() == []
-    seed = next(s for s in entry.section_scope if s.purposes)
-    assert (seed.heading, seed.pdf_pages, seed.purposes, seed.regions, seed.status) == (
-        "RICE - VARIETAL SEED PRODUCTION", (73, 75), ["purpose:seed"], [], "proposed")
+    [seed] = entry.approved_section_scopes()
+    assert len(entry.section_scope) == 12 and all(s.status == "proposed" for s in entry.section_scope if s is not seed)
+    assert (seed.heading, seed.pdf_pages, seed.purposes, seed.regions) == (
+        "RICE - VARIETAL SEED PRODUCTION", (73, 75), ["purpose:seed"], [])
 
 
 def test_section_scope_needs_regions_or_purposes(reg):
@@ -188,7 +188,7 @@ def test_heading_fixes_and_their_review_status():
     assert [(o.pdf_page, o.first, o.after[:30], o.status) for o in entry.reading_order_fix] == [
         (134, "Suitable Districts", "I. SEASON AND VARIETY", "approved"),
         (134, "CROP IMPROVEMENT", "Tropical and Sub tropical cool", "approved"),
-        (74, ": NPK @ 150:50:60 kg / ha", "Medium duration", "proposed")]
+        (74, ": NPK @ 150:50:60 kg / ha", "Medium duration", "approved")]
     [gap] = entry.acknowledged_gap
     assert (gap.chapter, gap.under, gap.missing, gap.pdf_page) == ("WHEAT", "I. SEASON AND VARIETY", ["1"], 134)
 

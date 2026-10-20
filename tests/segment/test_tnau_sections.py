@@ -123,26 +123,26 @@ def _npk(units):
 
 
 @needs_full
-def test_proposed_seed_purpose_and_p74_fix_are_checked_but_not_applied(seg):
+def test_seed_section_has_purpose_seed_and_npk_lines_in_printed_order(seg):
     units, report = seg
     check = next(c for c in report["scope_checks"] if c["heading"] == "RICE - VARIETAL SEED PRODUCTION")
-    assert check["ok"] and check["status"] == "proposed" and check["section_pdf_pages"] == [73, 75]
-    texts, unit = _npk(units)
-    assert unit["purposes"] == [] and texts[:2] == ["Short duration : NPK @ 120:40:40 kg / ha", "Medium duration"]
-    assert texts[2] == "Long duration"                       # labels before values, as Docling read them
-
-
-@needs_full
-def test_approving_them_gives_purpose_seed_and_the_printed_order():
-    approved = ENTRY.model_copy(update={
-        "section_scope": [s.model_copy(update={"status": "approved"}) if s.purposes else s for s in ENTRY.section_scope],
-        "reading_order_fix": [f.model_copy(update={"status": "approved"}) for f in ENTRY.reading_order_fix]})
-    units, report = segment(approved, FULL)
+    assert check["ok"] and check["status"] == "approved" and check["section_pdf_pages"] == [73, 75]
     texts, unit = _npk(units)
     assert texts == NPK and not report["failed"]
     assert unit["purposes"] == [{"id": "purpose:seed", "origin": "section"}]
     assert unit["regions"] == [{"id": "state:33", "origin": "source"}]        # purposes only: regions unchanged
     assert all(u["purposes"] == [] for u in units if not u["section_path"].startswith(SEED))
+
+
+@needs_full
+def test_without_the_approvals_the_docling_order_and_no_purpose_return():
+    proposed = ENTRY.model_copy(update={
+        "section_scope": [s.model_copy(update={"status": "proposed"}) for s in ENTRY.section_scope],
+        "reading_order_fix": [f.model_copy(update={"status": "proposed"}) if f.pdf_page == 74 else f
+                              for f in ENTRY.reading_order_fix]})
+    units, _ = segment(proposed, FULL)
+    texts, unit = _npk(units)
+    assert unit["purposes"] == [] and texts[1:3] == ["Medium duration", "Long duration"]
 
 
 def test_units_are_serialisable_and_carry_provenance(seg):
