@@ -367,7 +367,10 @@ uv run python -m kg.extract report  source:tnau_agriculture_2020 [--prompt v2]
 uv run python -m kg.extract compare source:tnau_agriculture_2020 --unit <unit_id> --from v1 --to v2
 ```
 
-`--prompt` defaults to the latest version (v2). Prompt v3 (schema v1.3) is written but not yet run; pass `--prompt v3` to use it. It becomes the latest once its hand-runs exist.
+`--prompt` defaults to the latest version, v3 (schema v1.3), since 2026-10-21.
+- The four units (8e1d, b879, e63c, f5b0) were hand-run under v3 by revising the v2 answers fact by fact; every changed value was written from the unit text and the v3 rules.
+- C2#10/#11 now quote the printed order that the approved p. 74 reading-order fix restored, without `line_order_pairing`.
+- "a week before harvest" and "second a week later" keep their words in `timing_raw`, with no offset: turning "a week" into 7 days would be a unit conversion.
 
 - **Raw model** (`kg/extract/model.py`), separate from `kg/schema`:
   - all 16 subtypes with the v1.2 fields;
@@ -452,7 +455,15 @@ No model. Input: the latest v2 run of every unit (a run that failed step 9 stops
   - a `fact_key` collision within the unit.
 
   An unlinked *step* or *clause* stage keeps its words in `timing_raw`/`raw`, and the fact goes to review.
-- **`fact_key`:** a hash of the source, section path, subtype, linked applicability, identity (incl. Caution `about_ids`), step slots (order, alt group, option, operation, method, anchor, target IDs; method and anchor added for v1.3) and the quote's first passage ref. Values are excluded. With the v2 data, adding the method resolved the b879#13/#14 collision, and the sample sizes validated three thresholds: 61 validated, 63 held (2026-10-20).
+- **`fact_key`:** a hash of the source, section path, subtype, linked applicability, identity (incl. Caution `about_ids`), step slots (order, alt group, option, operation, method, anchor, target IDs; method and anchor added for v1.3) and the quote's first passage ref. Values are excluded. With the v3 runs and the v1.3 concepts: 124 facts in, **99 validated, 25 held** (68 held under v1.2, 2026-10-21). Still held:
+- 14 for a generic target ("Pest", "weeds", "disease");
+- 13 for a step with no operation (advice like "avoid close planting", owl perches, options with no verb or formulation code);
+- KKM (unidentified);
+- the GLH resurgence caution: "GLH, Nephotettix virescens" doesn't match the seeded three-species scientific name;
+- "direct sowing";
+- ADT 46;
+- the lost µ (C2#4, review note proposed).
+- **Generic words:** a generic target links only through an approved label ("rodent" → `pest:rat`); without one it holds.
   - Identity covers pests, targets, kind, concerns, control class, dose basis, DryingSpec `storage_term_raw`, and every condition of the fact (variable, op, raw).
   - There is no sentence position; facts that still collide stay held. `id` is `rec:` plus a hash of the key and the values.
 - **Status:** needs_review for any of:
@@ -560,6 +571,13 @@ Step 13. Input: step 12's facts (status, verifier), step 11's (the fact, review 
   - Registry `[[conflict]]` (sides: subtype, pdf_page, quote) is for what detection can't find, e.g. across subtypes. Each side must match exactly one loaded fact, proposed or not; approved ones add `{origin: "review"}`.
   - TNAU: 0 detected. One approved entry (2026-10-20), the rice seed long-term storage conflict: DryingSpec 8-9 % (p. 74, C2#18) vs StorageRule more than 15 months at less than 8 % (p. 75, C2#24). It is one `{origin: "review"}` link, and C2#24 is needs_review.
 - **Idempotency:** the first TNAU load created 336 nodes and 664 relationships. The second created none, and the `--snapshot` hash was identical before and after it. After the conflict approval it was the same: one relationship created, then a third load changed nothing.
+- **Schema v1.3 reload of the main database** (2026-10-21):
+  - no fact was approved, rejected or reviewed;
+  - the seed load added the v1.3 concepts;
+  - `--reset-source` deleted 56 facts, 149 Steps/Clauses/Conditions and 55 spans;
+  - load 1 created 412 nodes and 872 relationships; load 2 created none, with the snapshot identical (`8fbf4e4d…`, 704 nodes, 1030 relationships);
+  - 99 facts (10 extracted, 89 needs_review); one `CONFLICTS_WITH {origin: "review"}`, none detected.
+- **`value_key` excludes a Caution's `text_en`:** its wording, not a value. Two cautions against synthetic pyrethroids in other words don't conflict.
 - **Schema v1.3 in the loader:**
   - `ABOUT` edges (Caution → pest);
   - `CONCERNS` may point at an AIGroup and APPLIES at an Input (both are `:Concept`);
@@ -568,7 +586,7 @@ Step 13. Input: step 12's facts (status, verifier), step 11's (the fact, review 
 - **`--reset-source <id>`** (one-time, for v1.3's new fact_key, which changes every id):
   - deletes the source's Recommendations with their Steps, ThresholdClauses and Conditions, and the source's spans nothing cites any more. Varieties, concepts and the Source stay;
   - refused, deleting nothing, if any of its facts is approved, rejected or has `reviewed_by`;
-  - tested live on `cropbot-test` (`tests/load/test_live_reset.py`). Not yet run on the main database.
+  - tested live on `cropbot-test` (`tests/load/test_live_reset.py`); run once on the main database on 2026-10-21 for the v1.3 reload.
 - **Live test database:** `cropbot-test` on the local Enterprise server. Neo4j database names allow no underscores. `--database` on `kg.load.facts` targets it. The live tests (`neo4j_test_db` in `tests/conftest.py`) refuse the home database (`neo4j`) and any name without "test", and empty the test database before they run.
 - **Review queue** `data/review/missing_approved.csv` (gitignored): approved facts flagged `missing_in_latest_run`. They are still served, with the flag in their citation. It is rewritten by every load of the home database, never by `--database` loads.
 
@@ -600,7 +618,8 @@ Approved 2026-10-20. `kg.query.answer(driver, template, FarmContext)` returns a 
   - safety joins also reach Cautions that concern an AI group the step's ingredient is a `MEMBER_OF`.
 - **Fixtures:** `tests/query/fixtures/*.json` hold a context and the expected answer: Q8 (spiders unknown / none), Q12 (seed medium / grain), Q14, Q15, Q16, storage months unknown, 10 months, outside Tamil Nadu (`state:test_other` is a placeholder, not an LGD code).
   - Facts are named by a quote snippet (plus `duration_group`, or `"exact": true`, where one quote contains another), never by rec id, so re-extraction doesn't break them.
-  - All 10 matched on 2026-10-20 with the v2 runs under schema v1.3.
+  - All 10 match the v3 data (2026-10-21).
+  - Q12 for grain changed with the data: the NaCl harvest-hastening spray (8e1d#3) now validates and applies to grain. It is an unreviewed dose, so the answer is "No verified guidance available" instead of "No local guidance available".
   - Rice seed storage C2#22/#23 are served as "at most 13 %" and "at most 9 %", labelled unverified. The book prints "12 - 13 %" and "8 - 9 %" (range_narrowed, pending v1.3 `min_moisture_pct`).
 
 ## Scope rules for extraction and normalisation
