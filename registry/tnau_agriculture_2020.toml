@@ -316,3 +316,23 @@ first = ": NPK @ 150:50:60 kg / ha"
 last = ": NPK @ 150:50:60 kg / ha"
 after = "Medium duration"
 status = "approved"
+
+# --- review notes: attached by step 11 to facts quoting the text on that page; values never change ---
+
+[[review_note]]   # rendered PDF p. 64 prints "Fipronil 80%WG 50- 62.5 kg"; p. 65 prints "Fipronil 80%WG 50-62.5 g"
+pdf_page = 64
+match = "Fipronil 80%WG 50- 62.5 kg"
+note = "suspected source typo: same product printed in g on p. 65"
+status = "approved"
+
+[[review_note]]   # rendered PDF p. 66; pp. 287 and 288 print "Imidacloprid 70%WG 30-35g/ha" and "@30-35 g/ha"
+pdf_page = 66
+match = "Imidacloprid 70% WG 30-35 kg"
+note = "suspected source typo: same product printed in g on pp. 287 and 288 (p. 288 also prints it in kg)"
+status = "proposed"
+
+[[review_note]]   # rendered PDF p. 67 (WBPH row continued); same evidence as the p. 66 note
+pdf_page = 67
+match = "Imidacloprid 70% WG 30-35 kg"
+note = "suspected source typo: same product printed in g on pp. 287 and 288 (p. 288 also prints it in kg)"
+status = "proposed"

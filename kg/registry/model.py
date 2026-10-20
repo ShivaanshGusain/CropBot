@@ -145,6 +145,15 @@ class AcknowledgedGap(Model):
     note: Text
 
 
+class ReviewNote(Model):
+    """A reviewer's note on printed text, e.g. a suspected typo in the source. Step 11 attaches it to
+    every fact whose quote contains `match` on `pdf_page`; it never changes a value."""
+    pdf_page: PositiveInt
+    match: Text                 # the text as printed (compared normalised)
+    note: Text
+    status: RuleStatus
+
+
 class Extraction(Model):
     """Conversion settings carried over from extraction/sources.toml."""
     ocr: Literal["auto", "force"] = "auto"
@@ -176,6 +185,7 @@ class RegistryEntry(Model):
     heading_fix: list[HeadingFix] = []
     reading_order_fix: list[ReadingOrderFix] = []
     acknowledged_gap: list[AcknowledgedGap] = []
+    review_note: list[ReviewNote] = []
     extraction: Extraction = Extraction()
     default_scope: list[DefaultScopeRule] = []
     section_scope: list[SectionScope] = []

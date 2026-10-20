@@ -124,6 +124,20 @@ def test_ingredients_fail_closed():
     assert check_ingredients(caution, {"ai:b": ai("ai:b", "banned")})["status"] == "skip"
 
 
+# review notes
+def test_review_notes_attach_only_when_approved_and_on_the_page():
+    from types import SimpleNamespace
+    from kg.registry.model import ReviewNote
+    from kg.validate import review_notes
+    notes = [ReviewNote(pdf_page=64, match="Fipronil 80%WG 50- 62.5 kg", note="typo?", status="approved"),
+             ReviewNote(pdf_page=66, match="Imidacloprid 70% WG 30-35 kg", note="typo?", status="proposed")]
+    entry = SimpleNamespace(review_note=notes)
+    quote = "Fipronil 80%WG 50-  62.5 kg Imidacloprid 70% WG 30-35 kg"
+    assert review_notes(entry, quote, [64]) == [0]
+    assert review_notes(entry, quote, [65]) == []                                  # wrong page
+    assert review_notes(entry, quote, [66]) == []                                  # proposed: not attached
+
+
 # 6 review kept
 def test_flagged_or_inferred_facts_must_be_needs_review():
     raw_fact = raw(extraction_flags=["shared_amount"])

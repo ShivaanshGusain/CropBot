@@ -467,6 +467,10 @@ No model. Input: the facts step 10 validated (`data/normalized/<id>/facts.jsonl`
   4. **alternatives:** fertilizer-only alternatives agree within 15 % on N, P2O5 and K2O, using **approved** Fertilizer percentages only. Without them it skips with a review reason.
   5. **ingredients:** every applied active ingredient must be `registered`; unknown, restricted, banned and not seeded all fail (fail closed). A Caution's `concerns` aren't checked.
   6. **review_kept:** a fact with flags, an inferred or context basis, an inherited amount, an exclusion or any step 10 review reason must be `needs_review`.
+- **Review notes:** `[[review_note]]` in the registry is printed text on a PDF page plus a note, with a status.
+  - Step 11 attaches an approved note to every fact whose quote contains that text on that page, as a review reason; the value never changes.
+  - An approved note that matches no fact is reported as stale.
+  - TNAU: the Fipronil note (p. 64) is approved. The two Imidacloprid notes (pp. 66, 67) are proposed: "same product printed in g on pp. 287 and 288 (p. 288 also prints it in kg)".
 - **Known source typos** (checked on the rendered pages 2026-10-20): "Fipronil 80%WG 50- 62.5 kg" (PDF p. 64) and "Imidacloprid 70% WG 30-35 kg" (pp. 66, 67) are printed in kg. The same Fipronil product is printed as "50-62.5 g" on p. 65. Extraction and normalisation keep the book's kg, check 3 fails them, and they go to review as suspected typos.
 
 ## Scope rules for extraction and normalisation

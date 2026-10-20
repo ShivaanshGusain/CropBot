@@ -12,8 +12,23 @@ pytestmark = pytest.mark.skipif(not (NORMALIZED_DIR / "tnau_agriculture_2020" / 
 
 
 @pytest.fixture(scope="module")
-def facts():
-    return {(f["unit_id"].rsplit(":", 1)[1], f["raw_index"]): f for f in run(ENTRY)["facts"]}
+def result():
+    return run(ENTRY)
+
+
+@pytest.fixture(scope="module")
+def facts(result):
+    return {(f["unit_id"].rsplit(":", 1)[1], f["raw_index"]): f for f in result["facts"]}
+
+
+def test_approved_review_note_is_attached_and_values_are_unchanged(result, facts):
+    fip = facts[("e63c6fbba0e4", 21)]
+    assert fip["review_notes"] == ["suspected source typo: same product printed in g on p. 65"]
+    assert "review note: suspected source typo: same product printed in g on p. 65" in fip["review_reasons"]
+    a = next(a for s in fip["fact"]["steps"] for a in s["applies"] if a.get("formulation") == "80%WG")
+    assert (a["min"], a["max"], a["unit"]) == (50, 62.5, "kg")                       # the value is never changed
+    assert facts[("e63c6fbba0e4", 35)]["review_notes"] == []                         # proposed notes are not attached
+    assert result["stale_notes"] == []
 
 
 def test_nothing_is_approved_and_failures_mean_review(facts):

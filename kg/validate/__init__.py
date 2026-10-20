@@ -250,6 +250,14 @@ def _runs(entry) -> dict:
     return out
 
 
+def review_notes(entry, quote: str, pdf_pages: list[int]) -> list[int]:
+    """Indexes of the approved registry notes whose printed text is in the fact's quote on one of
+    its pages."""
+    q = normalise(quote)
+    return [i for i, n in enumerate(entry.review_note)
+            if n.status == "approved" and n.pdf_page in pdf_pages and normalise(n.match) in q]
+
+
 def run(entry) -> dict:
     path = NORMALIZED_DIR / entry.id.split(":", 1)[1] / "facts.jsonl"
     records = [json.loads(line) for line in open(path, encoding="utf-8")]
@@ -257,7 +265,7 @@ def run(entry) -> dict:
     nodes = read_seed().nodes
     fertilizers = {n.id: n for n in nodes if isinstance(n, Fertilizer) and n.review_status.value == "approved"}
     ais = {n.id: n for n in nodes if isinstance(n, ActiveIngredient)}
-    out = []
+    out, note_hits = [], Counter()
     for rec in records:
         step9 = runs[rec["run"]["cache_key"]]["facts"][rec["raw_index"]]
         fact = rec["fact"]
@@ -273,12 +281,18 @@ def run(entry) -> dict:
         alt = checks["alternatives"]
         if alt["status"] == "skip" and alt.get("applies"):
             reasons.append("alternatives: %s" % alt["reason"])
+        hits = review_notes(entry, fact["evidence"][0]["quote"], step9["quote_check"]["pdf_pages"])
+        note_hits.update(hits)
+        notes = [entry.review_note[i].note for i in hits]
+        reasons += ["review note: %s" % n for n in notes]
         status = "needs_review" if reasons or fact["status"] == "needs_review" else fact["status"]
         out.append({**{k: rec[k] for k in ("unit_id", "raw_index", "subtype")}, "fact_id": fact["id"],
-                    "status_before": fact["status"], "status": status, "checks": checks,
+                    "status_before": fact["status"], "status": status, "checks": checks, "review_notes": notes,
                     "review_reasons": rec["review_reasons"] + reasons,
                     "fact": {**fact, "status": status}})
-    return {"facts": out}
+    stale = [{"pdf_page": n.pdf_page, "match": n.match} for i, n in enumerate(entry.review_note)
+             if n.status == "approved" and not note_hits[i]]
+    return {"facts": out, "stale_notes": stale}
 
 
 def report(result_: dict) -> dict:
@@ -291,6 +305,9 @@ def report(result_: dict) -> dict:
     return {"facts": len(result_["facts"]),
             "per_check": {c: dict(per[c]) for c in CHECKS},
             "failures": failures, "skips": {c: dict(v) for c, v in skips.items() if v},
+            "review_notes": [{"fact": "%s#%d" % (f["unit_id"].rsplit(":", 1)[1], f["raw_index"]), "notes": f["review_notes"]}
+                             for f in result_["facts"] if f["review_notes"]],
+            "stale_notes": result_["stale_notes"],
             "status_before": dict(Counter(f["status_before"] for f in result_["facts"])),
             "status_after": dict(Counter(f["status"] for f in result_["facts"])),
             "approved": sum(f["status"] == "approved" for f in result_["facts"])}

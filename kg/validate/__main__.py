@@ -30,6 +30,7 @@ def write(entry, res, rep) -> None:
 def print_report(rep: dict) -> None:
     print("facts: %d  status before %s -> after %s  (approved: %d)" % (
         rep["facts"], rep["status_before"], rep["status_after"], rep["approved"]))
+    print("review notes attached:", rep["review_notes"] or "none", " stale approved notes:", rep["stale_notes"] or "none")
     for c in CHECKS:
         print("%-15s %s" % (c, rep["per_check"][c]))
         for x in rep["failures"][c]:
