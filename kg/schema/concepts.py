@@ -11,11 +11,13 @@ from typing import ClassVar, Literal
 
 from pydantic import Field, model_validator
 
-from .core import Model, Text
+from .core import Model, SourceSpan, Text, check_range
 from .ids import (CountryId, CropId, DistrictId, FertilizerId, LabelId, LocalSeasonId, NutrientId,
-                  OperationId, PurposeId, SeasonId, SoilId, StateId, SystemId, ZoneId, label_id)
-from .vocab import (CropGroup, LabelKind, OperationType as OperationVocab, Purpose as PurposeVocab,
-                    ReviewStatus, Season as SeasonVocab, ZoneScheme)
+                  OperationId, PurposeId, SeasonId, SoilId, StateId, SystemId, VarietyId, ZoneId,
+                  label_id)
+from .vocab import (CropGroup, DurationGroup, LabelKind, OperationType as OperationVocab,
+                    Purpose as PurposeVocab, ReviewStatus, Season as SeasonVocab, VarietyKind,
+                    ZoneScheme)
 
 
 class Concept(Model):
@@ -153,6 +155,45 @@ class Crop(Concept):
     id: CropId
     scientific_name: str | None = None
     crop_group: CropGroup
+
+
+class Variety(Concept):
+    """A variety pivoted from a book's variety table (step 8).
+
+    The one sanctioned exception to "never create concepts automatically": a
+    Variety record is always needs_review, and facts linked to an unapproved
+    Variety are needs_review too. Every number keeps its raw text (pending
+    schema v1.2), and every value keeps the table cell it came from.
+    """
+    LABEL = "Variety"
+    EDGES = {"crop_id": ("VARIETY_OF", "Crop")}
+    NUMERIC_FIELDS: ClassVar[tuple[str, ...]] = ("release_year", "duration_days_min",
+                                                 "duration_days_max", "avg_yield_kg_ha")
+    id: VarietyId
+    name: Text                          # as written in the table header
+    crop_id: CropId | None = None       # set only when the chapter is approved
+    kind: VarietyKind | None = None     # "hybrid" only when the name says so
+    release_year: int | None = None
+    parentage: str | None = None
+    duration_days_min: float | None = Field(default=None, ge=0)
+    duration_days_max: float | None = Field(default=None, ge=0)
+    duration_group: DurationGroup | None = None
+    avg_yield_kg_ha: float | None = Field(default=None, ge=0)
+    grain_type: str | None = None
+    traits: list[str] = []
+    raw: dict[str, Text] = {}           # pending schema v1.2
+    cells: dict[str, dict] = {}         # field or trait label -> table cell provenance
+    evidence: list[SourceSpan] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _variety_rules(self):
+        if self.review_status is not ReviewStatus.NEEDS_REVIEW:
+            raise ValueError("a pivoted Variety is always needs_review")
+        for name in self.NUMERIC_FIELDS:
+            if getattr(self, name) is not None and name not in self.raw:
+                raise ValueError("%s needs its raw source text in raw[%r]" % (name, name))
+        check_range(self, "duration_days_min", "duration_days_max")
+        return self
 
 
 # --- labels ----------------------------------------------------------------------------

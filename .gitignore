@@ -22,6 +22,8 @@ india_villages_map.json
 data/raw/*.pdf
 data/docling/
 data/units/
+data/tables/
+data/review/
 
 # New book PDFs (books are recorded by URL and sha256 in the source registry)
 BooksData/*.pdf

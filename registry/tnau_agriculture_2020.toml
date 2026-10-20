@@ -30,13 +30,13 @@ notes = [
 # and Forage crops. Group rows (MILLETS, PULSES, ...) are kept as group. Segmentation uses every chapter for
 # boundaries; extraction uses approved chapters only.
 chapters = [
-  { number = "1", title = "RICE", printed_page = 1, pdf_page = 13, status = "proposed" },
+  { number = "1", title = "RICE", printed_page = 1, pdf_page = 13, status = "proposed", crop_id = "crop:rice" },
   { number = "2.1", title = "Sorghum", group = "MILLETS", printed_page = 65, pdf_page = 77, status = "proposed" },
   { number = "2.2", title = "Cumbu", group = "MILLETS", printed_page = 81, pdf_page = 93, status = "proposed" },
   { number = "2.3", title = "Ragi", group = "MILLETS", printed_page = 92, pdf_page = 104, status = "proposed" },
   { number = "2.4", title = "Maize", group = "MILLETS", printed_page = 103, pdf_page = 115, status = "proposed" },
   { number = "2.5", title = "Small Millets", group = "MILLETS", printed_page = 117, pdf_page = 129, status = "proposed" },
-  { number = "3", title = "WHEAT", printed_page = 122, pdf_page = 134, status = "proposed" },
+  { number = "3", title = "WHEAT", printed_page = 122, pdf_page = 134, status = "proposed", crop_id = "crop:wheat" },
   { number = "4.1", title = "Redgram", group = "PULSES", printed_page = 125, pdf_page = 137, status = "proposed" },
   { number = "4.2", title = "Blackgram", group = "PULSES", printed_page = 134, pdf_page = 146, status = "proposed" },
   { number = "4.3", title = "Greengram", group = "PULSES", printed_page = 145, pdf_page = 156, status = "proposed" },

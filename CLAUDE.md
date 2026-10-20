@@ -11,6 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - every fact needs a SourceSpan and an IN_REGION edge
 - secrets come only from .env
 - never create concepts automatically
+  - The one sanctioned exception: Variety records pivoted from a book's variety tables (`kg/tables`). They are always needs_review, and facts linked to an unapproved Variety are needs_review too.
 - new PDFs are never committed (books are recorded by URL and sha256 in the source registry instead)
 
 ## What this repo is
@@ -40,6 +41,7 @@ uv run python -m kg.convert source:tnau_agriculture_2020                # full D
 uv run python -m kg.convert source:tnau_agriculture_2020 --pages 13-76  # trial run on a page range
 uv run python -m pytest -m slow           # the real 2-page conversion test (skipped by default)
 uv run python -m kg.segment source:tnau_agriculture_2020   # section units -> data/units/<id>/ (exit 1 on scope failures)
+uv run python -m kg.tables source:tnau_agriculture_2020    # rice + wheat tables -> data/tables/<id>/, data/review/tables.csv
 
 uv run --project extraction python extraction/extract.py --list   # registry check: included, duplicate, unregistered PDFs
 uv run --project extraction python extraction/extract.py --all --source tnau_agriculture
@@ -255,6 +257,50 @@ No LLM. Input: the full `document.json`, with running-header headings dropped.
 - items before a chapter heading, and chapters whose heading wasn't found;
 - the scope checks.
 
+## Tables (`kg/tables`)
+
+No LLM. Rice and wheat chapters only for now (`--chapters`). Input: the full conversion plus `units.jsonl`.
+
+**Merged cells:** rows are built from Docling's unique `table_cells`, so a cell spanning columns appears once with its `col_span`. Genuine repeats ("Straw | Straw | Straw") are separate cells and stay. The original cells are kept per part.
+
+**Stitching**, within a unit. B continues A when:
+- B is on the next page;
+- only tables lie between them;
+- the widths match (equal grid widths, or equal merged widths when one part splits the label column).
+
+Then:
+- a first cell "Particulars" always starts a new table;
+- a repeated header is dropped;
+- otherwise B's first row is data, even if Docling flagged it a header;
+- a "Particulars" row *inside* a table splits it, because Docling sometimes puts the end of one variety table and the start of the next in one table.
+
+**Page check, per part, with docling-parse** (the same text layer Docling read):
+- rows must equal the bands between horizontal rulings;
+- each row must show the full grid width or the merged cell count;
+- a merged cell must not have a vertical ruling inside it;
+- each cell's text must equal the page words inside its box. Same words in a different order (superscripts, stacked lines) is counted, not flagged.
+
+A part without rulings is "not verifiable". Every mismatch goes to `data/review/tables.csv`; nothing is corrected.
+
+**Variety pivot:** a table headed "Particulars" gives one Variety per column. Values are aligned to the last N columns of each part.
+- Mapped rows fill typed fields, with numbers keeping their `raw` text.
+- Known descriptive rows become traits "Label: value".
+- "Grain size (mm)" prefixes Length, Breadth and Thickness.
+- Unmapped, empty, straddling or spanning cells go to review, and a spanning value is never copied to several varieties.
+- IDs are `variety:<slug of the name as written>`. Possible duplicates are reported, never merged; merging and aliases are a human review decision.
+- `kind = hybrid` only when the name says so.
+- `duration_group` comes from the section heading. Varieties whose duration is nearer another group's reference are reported; the reference values come from the book's "Stages | Short (105) | Medium (135) | Long (150)" table.
+- `crop_id` comes from the chapter entry, and only once the chapter is approved.
+
+**COW(W)1 box (PDF p. 134):** its table is pivoted (COW (W) 1, COW (W) 2), each flagged "variety box before the chapter heading". Its text lines are listed in the report as context for step 9.
+
+**Damaged by conversion (rice, pp. 23–26):**
+- "Imp. White Ponni ADT (R) 46" is one name cell holding two varieties;
+- `#/tables/23` merges two varieties' values into one cell across a ruling;
+- CO 52's morphology rows straddle columns.
+
+All of these are in review. Re-entering them by hand, or reconverting, is a review decision.
+
 ## Scope rules for extraction and normalisation
 
 - **The p. 63 per-ha rule applies only to its section.** Elsewhere, a dose with no stated basis gets `basis_inferred: true` and goes to review.
@@ -283,6 +329,7 @@ Build to these, but don't edit `docs/schema_v1.1.md`; the schema owner is updati
     - A Recommendation can carry `excluded_regions` (`{id, raw}`).
     - `RegionOrigin` gains `text_exclusion` for the edges code expands from them.
     - A fact with an exclusion must be needs_review, and an excluded region can't also be in its regions.
+11. **Table cells in provenance.** `SourceSpan` gains `table_row` and `table_col` (the cell inside `table_ref`). Variety numbers (`release_year`, `duration_days_min`/`max`, `avg_yield_kg_ha`) keep their `raw` text, like subtype numbers.
 
 Decisions on gaps that don't change the doc:
 - `sowing_date`, `variety` and `purpose` are in the condition-variable registry only for their `on_unknown` policy. Applicability to a variety or purpose is always an edge.

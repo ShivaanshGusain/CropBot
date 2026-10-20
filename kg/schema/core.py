@@ -248,7 +248,15 @@ class SourceSpan(Model):
     section_path: Text                    # "Rice > 1.8 Main field > 1.8.6 Irrigation management"
     quote: Text                           # exact source text
     table_ref: Annotated[str, StringConstraints(pattern=r"^#/tables/\d+$")] | None = None
+    table_row: int | None = Field(default=None, ge=0)   # pending schema v1.2: cell inside table_ref
+    table_col: int | None = Field(default=None, ge=0)   # pending schema v1.2
     extraction_method: ExtractionMethod
+
+    @model_validator(mode="after")
+    def _table_cell(self):
+        if (self.table_row is not None or self.table_col is not None) and self.table_ref is None:
+            raise ValueError("table_row/table_col need a table_ref")
+        return self
 
 
 class Source(Model):

@@ -10,7 +10,7 @@ from typing import Literal
 from pydantic import Field, PositiveInt, model_validator
 
 from kg.schema.core import Model, Source, Text
-from kg.schema.ids import RegionId, SourceId, StateId
+from kg.schema.ids import CropId, RegionId, SourceId, StateId
 from kg.schema.vocab import AuthorityTier
 
 RuleStatus = Literal["proposed", "approved", "rejected"]
@@ -71,6 +71,7 @@ class Chapter(Model):
     printed_page: PositiveInt
     pdf_page: PositiveInt
     status: RuleStatus
+    crop_id: CropId | None = None       # used only once the chapter is approved
 
     def path_label(self) -> str:
         return "%s > %s" % (self.group, self.title) if self.group else self.title
