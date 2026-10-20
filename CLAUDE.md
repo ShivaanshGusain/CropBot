@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project rules
 
-- docs/schema_v1.2.md is the source of truth
-  - Schema changes go in a new versioned file in this repo (`docs/schema_v1.3.md`, ...) and are committed.
-  - The Claude Doc is a superseded draft and is never exported again. `docs/schema_v1.1.md` is kept for history.
+- docs/schema_v1.3.md is the source of truth
+  - Schema changes go in a new versioned file in this repo (`docs/schema_v1.4.md`, ...) and are committed.
+  - The Claude Doc is a superseded draft and is never exported again. `docs/schema_v1.1.md` and `docs/schema_v1.2.md` are kept for history.
 - use uv add for dependencies
 - always MERGE on id; nothing is auto-corrected
 - every number keeps its raw text; the LLM never converts units
@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-CropBot is a farm-advice bot. This branch builds its Neo4j knowledge graph: every agronomic fact becomes a `Recommendation` node with applicability edges, ordered Steps, runtime Conditions and a `SourceSpan` quote (see `docs/schema_v1.2.md`). The stages are defined in the schema's "Build pipeline" section: register → convert → segment → tables → extract → normalise → validate → verify (Jev) → load. Product context (post-harvest focus, pilot plans) is in `CropBot_Research_Brief.md`.
+CropBot is a farm-advice bot. This branch builds its Neo4j knowledge graph: every agronomic fact becomes a `Recommendation` node with applicability edges, ordered Steps, runtime Conditions and a `SourceSpan` quote (see `docs/schema_v1.3.md`). The stages are defined in the schema's "Build pipeline" section: register → convert → segment → tables → extract → normalise → validate → verify (Jev) → load. Product context (post-harvest focus, pilot plans) is in `CropBot_Research_Brief.md`.
 
 ## Environments and commands
 
@@ -576,7 +576,9 @@ Decisions on gaps that don't change the doc:
 - Every NutrientDose step has `APPLIES` quantities, and a ControlMeasure has at least one Step.
 - `CONFLICTS_WITH` is recorded on both facts. Conflict detection must never create duplicate links: one link per pair of facts, however often detection runs.
 
-Pending for schema v1.3. These were found in the step 9 hand-run; until v1.3 is written, extraction keeps the phrases in `unmapped`:
+**Schema v1.3** (`docs/schema_v1.3.md`, committed 2026-10-20) now covers every item below. Its implementation is in progress; until it lands, the old behaviour described here still applies.
+
+Found in the step 9 hand-run; until v1.3 is built, extraction keeps the phrases in `unmapped`:
 - StorageRule needs `min_moisture_pct` (+ `_inclusive`), so "12 - 13 %" keeps its lower bound (it has only `max_moisture_pct` now).
 - Repeat schedules ("thrice (at weekly interval from 37 DAT)", "twice, 15 and 30 days after transplanting") have no fields.
 - A Caution cannot name the pest it is about (the resurgence lists, p. 69: "BPH, Nilaparvata lugens : acephate, …").
