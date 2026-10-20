@@ -185,6 +185,7 @@ data/gold/           hand-annotated sections (committed)
   - Dicofol has no `use_class`, since there is no acaricide value.
   - Labels approved later the same day: "Hispa/ spiny beetle" → hispa, "Earhead bug" → earhead bug, "saline soil condition" → `soil:saline`. "saline / sodic soils" is one label text on both `soil:saline` and `soil:sodic`; for soils, systems and seasons such a shared label links to all its concepts (`link_many`). Single-valued links still treat it as ambiguous.
   - Kept held by decision: "Zinc deficient soils", "direct sowing", "ADT 46", "synthetic pyrethroids".
+  - Earhead bug's `scientific_name` is the book's wording, "Leptocorisa acuta and L. oratorius", so its table cell links.
   - ZnSO4/FeSO4 and their labels are TODO, pending their nutrient percentages from an official source.
 - **Review rule for linking and loading (steps 10 and 13):**
   - Linking may use needs_review concepts, but any fact linked to a needs_review concept must itself be needs_review.
