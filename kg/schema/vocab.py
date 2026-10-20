@@ -284,6 +284,13 @@ class RegionLevel(IntEnum):
     DISTRICT = 4
 
 
+class ReviewStatus(StrEnum):
+    """Review state of a seeded concept or label. Facts linked to a needs_review
+    concept must themselves be needs_review."""
+    APPROVED = "approved"
+    NEEDS_REVIEW = "needs_review"
+
+
 class LabelKind(StrEnum):
     CANONICAL = "canonical"
     ALIAS = "alias"

@@ -1,0 +1,4 @@
+concept_id,text,lang,script,kind,review_status,source
+crop:rice,rice,en,Latn,canonical,needs_review,CROPS in extraction/extract.py
+crop:rice,paddy,en,Latn,alias,needs_review,CROPS in extraction/extract.py
+crop:wheat,wheat,en,Latn,canonical,needs_review,CROPS in extraction/extract.py

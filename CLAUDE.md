@@ -28,8 +28,12 @@ There are two separate uv projects:
 
 ```bash
 uv sync                                   # root environment
-uv run python -m pytest                   # tests (none exist yet)
-uv run python -m pytest tests/test_x.py::test_name   # one test
+uv run python -m pytest                   # all tests (offline; none need Neo4j)
+uv run python -m pytest tests/schema/test_rejections.py::test_rejected   # one test
+
+uv run python -m kg.load.seed --check     # validate concepts/ without a database
+uv run python -m kg.load.seed --counts    # node/relationship counts, no writes
+uv run python -m kg.load.seed             # id constraints + MERGE concepts/ into Neo4j
 
 uv run --project extraction python extraction/extract.py --list   # registry check: included, duplicate, unregistered PDFs
 uv run --project extraction python extraction/extract.py --all --source tnau_agriculture
@@ -124,6 +128,33 @@ scripts/             one-off checks (e.g. Neo4j and Jev connectivity)
 tests/               mirrors kg/
 data/gold/           hand-annotated sections (committed)
 ```
+
+## IDs and loading
+
+- Every node label has a uniqueness constraint on `id`, including Step, Condition, ThresholdClause, Label and the 16 subtype labels (`kg/load/constraints.py`). Every write is `MERGE` on `id`.
+- **Step, Condition and ThresholdClause IDs** are derived from their parent Recommendation's ID. The exact format is decided with the fact loader.
+- **Label IDs** are `label:` plus a hash of the concept ID, kind, language and NFC-normalised text (`kg.schema.ids.label_id`). Kind is part of the key, so the same text can be both an alias and a vernacular name.
+- Labels are words farmers and books actually use. Scientific names go in `Crop.scientific_name`, never in a Label.
+- Every concept has `name_en`, regions included (schema Conventions: "name_en on every concept").
+
+## Concept seeds (`concepts/`)
+
+- **Format:**
+  - One CSV per node label, UTF-8 with a header row (`concepts/<label>s.csv`; file → model map in `kg.schema.concepts.SEED_FILES`).
+  - An empty cell means null. Every row has `review_status` (`approved` | `needs_review`) and a `source` saying where its values came from.
+- **Unknown values:** a row containing `TODO` anywhere is skipped and reported as pending. Never invent an LGD code or a value; write TODO.
+  - The pilot state and all districts are TODO for now. District names and zones come from the TNAU rice variety table, but their LGD codes are unknown.
+- **Validation before any write** (`kg.load.seed`):
+  - ID prefixes;
+  - duplicate IDs across all files;
+  - references (`state_id`, `zone_id`, `maps_to`, label `concept_id`) must point at loaded nodes;
+  - a LocalSeason needs `state_id`;
+  - Season, Purpose and OperationType must equal the schema's closed lists.
+- **needs_review concepts are loaded,** with `review_status: needs_review`.
+- **Review rule for linking and loading (steps 10 and 13):**
+  - Linking may use needs_review concepts, but any fact linked to a needs_review concept must itself be needs_review.
+  - Both seeded crops are needs_review, so every rice and wheat fact stays needs_review until those two rows are approved.
+  - Fertilizer percentages with `review_status: needs_review` must not be used by the alternatives check until approved. All four seeded fertilizers are needs_review.
 
 ## Pending schema changes (v1.2, not yet in the doc)
 

@@ -1,0 +1,3 @@
+id,name_en,scientific_name,crop_group,review_status,source
+crop:rice,Rice,Oryza sativa,cereal,needs_review,"scientific name from CROPS aliases in extraction/extract.py"
+crop:wheat,Wheat,Triticum aestivum,cereal,needs_review,"scientific name from CROPS aliases in extraction/extract.py"

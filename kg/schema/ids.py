@@ -5,7 +5,9 @@ country, zone, season_local, purpose); the others below are this module's
 choice, kept in one place so they can change with the schema.
 """
 
+import hashlib
 import re
+import unicodedata
 from typing import Annotated
 
 from pydantic import AfterValidator
@@ -32,6 +34,8 @@ PREFIX = {
     "system": "system",
     "soil": "soil",
     "purpose": "purpose",
+    "operation": "operation",
+    "label": "label",
 }
 
 # State and district IDs are official LGD codes; zones are a state-scheme prefix + slug.
@@ -72,11 +76,35 @@ ControlTargetId = Annotated[str, AfterValidator(_matcher("pest", "disease", "wee
 StorageTargetId = Annotated[str, AfterValidator(_matcher("pest"))]
 AppliesTargetId = Annotated[str, AfterValidator(
     _matcher("nutrient", "fertilizer", "organic_input", "ai"))]
-def _state(value: str) -> str:
-    if not re.match(r"^state:\d+$", value):
-        raise ValueError("%r is not a state id (state:<lgd>)" % value)
-    return value
+def _pattern(regex: str, what: str):
+    rx = re.compile(regex)
+
+    def check(value: str) -> str:
+        if not rx.match(value):
+            raise ValueError("%r is not a %s" % (value, what))
+        return value
+    return check
 
 
 RegionId = Annotated[str, AfterValidator(_region)]
-StateId = Annotated[str, AfterValidator(_state)]
+CountryId = Annotated[str, AfterValidator(_pattern(r"^country:in$", "country id (country:in)"))]
+StateId = Annotated[str, AfterValidator(_pattern(r"^state:\d+$", "state id (state:<lgd>)"))]
+DistrictId = Annotated[str, AfterValidator(
+    _pattern(r"^district:\d+$", "district id (district:<lgd>)"))]
+ZoneId = Annotated[str, AfterValidator(_pattern(r"^zone:%s$" % SLUG, "zone id (zone:<slug>)"))]
+OperationId = Annotated[str, AfterValidator(_matcher("operation"))]
+NutrientId = Annotated[str, AfterValidator(_matcher("nutrient"))]
+FertilizerId = Annotated[str, AfterValidator(_matcher("fertilizer"))]
+LocalSeasonId = Annotated[str, AfterValidator(_matcher("local_season"))]
+SeasonId = Annotated[str, AfterValidator(_matcher("season"))]
+LabelId = Annotated[str, AfterValidator(_matcher("label"))]
+
+
+def label_id(concept_id: str, kind: str, lang: str, text: str) -> str:
+    """label: + hash of concept id, kind, language and NFC-normalised text.
+
+    Kind is part of the key, so the same text can be both an alias and a
+    vernacular name of one concept.
+    """
+    key = "\x1f".join([concept_id, kind, lang, unicodedata.normalize("NFC", text)])
+    return "label:" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:20]
