@@ -65,8 +65,9 @@ def run(entry, docling_dir, units_path, chapters: tuple[str, ...]) -> dict:
             seen[v.id] = t.parts[0].ref
             varieties.append(v)
             if t.parts[0].pdf_page == COW_BOX_PAGE:
-                fixed = any(f.status == "approved" and f.pdf_page == COW_BOX_PAGE
-                            for f in entry.reading_order_fix)
+                # p. 134 has two fixes; "corrected" only if the box really landed in its section
+                fixed = "> I. SEASON AND VARIETY" in t.section_path and any(
+                    f.status == "approved" and f.pdf_page == COW_BOX_PAGE for f in entry.reading_order_fix)
                 review.append({"chapter": t.chapter, "check": "variety", "table_ref": t.parts[0].ref,
                                "pdf_page": COW_BOX_PAGE, "variety_id": v.id,
                                "detail": COW_BOX_REASON + (" (corrected by an approved reading-order fix)"

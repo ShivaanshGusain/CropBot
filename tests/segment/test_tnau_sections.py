@@ -90,12 +90,6 @@ def test_restore_fixes_close_the_rice_gaps(seg):
     assert not [x for x in report["heading_like_list_items"] if x["pdf_page"] in (46, 49, 51)]
 
 
-def test_proposed_reading_order_fix_is_not_applied(seg):
-    _, report = seg
-    proposed = [f for f in ENTRY.reading_order_fix if f.status == "proposed"]
-    assert [(f.pdf_page, f.first) for f in proposed] == [(134, "CROP IMPROVEMENT")]
-    assert "CROP IMPROVEMENT" not in {f["first"] for f in report["reading_order_fixes_applied"]}
-
 
 def test_main_field_section_ends_on_p69(seg):
     _, report = seg
@@ -147,14 +141,23 @@ def test_wheat_chapter_tree(seg):
     assert report["stale_acknowledged_gaps"] == []
 
 
+def wheat_p134(units):
+    return [(u["kind"], u["section_path"]) for u in units
+            if u["chapter"]["title"] == "WHEAT" and u["pdf_pages"][0] == 134]
+
+
 @needs_full
-def test_approving_the_crop_improvement_fix_puts_season_under_it():
-    approved = ENTRY.model_copy(update={"reading_order_fix": [
-        f.model_copy(update={"status": "approved"}) for f in ENTRY.reading_order_fix]})
-    units, report = segment(approved, FULL)
-    wheat = {u["section_path"] for u in units if u["chapter"]["title"] == "WHEAT"}
-    assert "WHEAT > CROP IMPROVEMENT > I. SEASON AND VARIETY > 2. Morphological Description of COW(W) 1" in wheat
-    assert not [p for p in wheat if p.startswith("WHEAT > CLIMATE REQUIREMENT >")]
-    assert not report["failed"]
-    # the acknowledgement names the section, not its path, so it still matches
-    assert [g["under"] for g in report["acknowledged_gaps"]] == ["I. SEASON AND VARIETY"]
+def test_crop_improvement_fix_puts_season_under_it(seg):
+    units, report = seg
+    assert wheat_p134(units) == [
+        ("leaf", "WHEAT > CLIMATE REQUIREMENT"),
+        ("intro", "WHEAT > CROP IMPROVEMENT > I. SEASON AND VARIETY"),
+        ("leaf", "WHEAT > CROP IMPROVEMENT > I. SEASON AND VARIETY > 2. Morphological Description of COW(W) 1")]
+    assert ("CROP IMPROVEMENT", 1) in {(f["first"], f["moved"]) for f in report["reading_order_fixes_applied"]}
+    # without the fix, "CROP IMPROVEMENT" is an empty unit and the season section sits under the climate
+    rejected = ENTRY.model_copy(update={"reading_order_fix": [
+        f.model_copy(update={"status": "rejected"}) if f.first == "CROP IMPROVEMENT" else f
+        for f in ENTRY.reading_order_fix]})
+    units2, _ = segment(rejected, FULL)
+    assert wheat_p134(units2)[:3] == [("leaf", "WHEAT > CROP IMPROVEMENT"), ("intro", "WHEAT > CLIMATE REQUIREMENT"),
+                                      ("intro", "WHEAT > CLIMATE REQUIREMENT > I. SEASON AND VARIETY")]

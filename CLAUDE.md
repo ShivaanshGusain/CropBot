@@ -340,7 +340,7 @@ These were found in the committed TNAU conversion while building the schema test
   - The printed page (printed 27) has "1.3. Insect management:", "1.4. Disease management:" and "1.5. Harvesting". Docling turned them into list items without numbers.
   - Approved restore fixes bring the headings back, so "Dry the grains to 12% moisture level for storage." sits in "… > 1. TRANSPLANTED PUDDLED LOWLAND RICE > 1.5. Harvesting".
 - **Fixed: the same pattern on pp. 46, 49 and 51** (3.9 and 3.10, 4.10, 5.12). Approved restore fixes; rice has no open numbering gaps.
-- **Proposed, not applied: wheat "I. SEASON AND VARIETY" sits under "CLIMATE REQUIREMENT".**
+- **Fixed: wheat "I. SEASON AND VARIETY" sat under "CLIMATE REQUIREMENT".**
   - PDF p. 134 prints "CROP IMPROVEMENT" (centred), then "CLIMATE REQUIREMENT" (left) with its table and paragraph, then "I. SEASON AND VARIETY" (centred). Rice p. 13 has the climate block first.
-  - A proposed `[[reading_order_fix]]` moves "CROP IMPROVEMENT" after the climate paragraph, giving "WHEAT > CROP IMPROVEMENT > I. SEASON AND VARIETY". The caps-heading rule is not changed for one book.
+  - An approved `[[reading_order_fix]]` moves "CROP IMPROVEMENT" after the climate paragraph, giving "WHEAT > CROP IMPROVEMENT > I. SEASON AND VARIETY". The caps-heading rule is not changed for one book.
 - **Fixed: `table_ref`.** The new conversion gives every table a `#/tables/N` ref. The ETL table is two parts (p. 63 and p. 64), to be stitched in step 8.

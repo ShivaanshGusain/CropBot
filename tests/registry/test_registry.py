@@ -174,7 +174,7 @@ def test_heading_fixes_and_their_review_status():
         (51, "restore", "5.12. Disease management: See Crop Protection Chapter", "approved")]
     assert [(o.pdf_page, o.first, o.after[:30], o.status) for o in entry.reading_order_fix] == [
         (134, "Suitable Districts", "I. SEASON AND VARIETY", "approved"),
-        (134, "CROP IMPROVEMENT", "Tropical and Sub tropical cool", "proposed")]
+        (134, "CROP IMPROVEMENT", "Tropical and Sub tropical cool", "approved")]
     [gap] = entry.acknowledged_gap
     assert (gap.chapter, gap.under, gap.missing, gap.pdf_page) == ("WHEAT", "I. SEASON AND VARIETY", ["1"], 134)
 
