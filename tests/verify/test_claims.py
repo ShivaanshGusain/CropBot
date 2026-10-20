@@ -1,0 +1,79 @@
+"""Offline tests for code-built Jev claims (kg.verify.claims)."""
+
+from kg.verify.claims import claim_key, claims_for, control_claim
+
+NAMES = {"fertilizer:dap": "Diammonium phosphate (DAP)", "pest:brown_planthopper": "Brown planthopper",
+         "purpose:seed": "Seed", "ai:quinalphos": "Quinalphos", "organic_input:azospirillum": "Azospirillum",
+         "soil:clay": "Clay"}
+
+
+def step(**kw):
+    s = {"order": 1, "alt_group": None, "alt_option": None, "operation": "fertilizer_application", "method": None,
+         "anchor": None, "offset_min": None, "offset_max": None, "offset_unit": "days", "timing_raw": None,
+         "condition_raw": None, "applies": [], "conditions": []}
+    return {**s, **kw}
+
+
+def fact(subtype="NutrientDose", **kw):
+    return {"id": "rec:x", "fact_key": "fk:x", "subtype": subtype, "duration_group": None, "variety_ids": [],
+            "soil_ids": [], "system_ids": [], "purpose_ids": [], "steps": [], **kw}
+
+
+DAP = {"target_id": "fertilizer:dap", "value": 2, "unit": "kg", "basis": "per_cent_nursery", "area_cents": 20,
+       "formulation": None, "raw": "40 kg of DAP"}
+
+
+def test_nursery_dose_is_stated_in_the_books_terms():
+    f = fact(steps=[step(anchor="last_puddling", timing_raw="before the last puddling", applies=[DAP])])
+    assert claims_for(f, NAMES) == ["Does the passage state that Diammonium phosphate (DAP) is applied at 40 kg per "
+                                    "20 cents of nursery before the last puddling?"]
+
+
+def test_offsets_conditions_and_applicability():
+    f = fact(duration_group="medium", purpose_ids=["purpose:seed"], soil_ids=["soil:clay"],
+             steps=[step(anchor="pulling_out", offset_min=-10, offset_max=-10, timing_raw="10 days prior",
+                         condition_raw="If seedlings are to be pulled out after 25 days",
+                         applies=[{**DAP, "inherited": True}])])
+    assert claims_for(f, NAMES) == [
+        "Does the passage state that, for medium duration varieties grown for seed on clay soils, Diammonium "
+        "phosphate (DAP) is applied at 40 kg per 20 cents of nursery 10 days before pulling out the seedlings "
+        "(If seedlings are to be pulled out after 25 days)?"]
+
+
+def test_threshold_clauses_and_cautions():
+    f = fact("PestThreshold", pest_ids=["pest:brown_planthopper"], clauses=[
+        {"observation": "hoppers", "value": 2, "unit": "count", "sampling_unit": "per_tiller",
+         "conditions": [{"variable": "spider_count_per_hill", "op": ">=", "value": 1.0, "value_max": None}]}])
+    assert claims_for(f, NAMES) == ["Does the passage state that action against Brown planthopper is needed at 2 "
+                                    "hoppers per tiller when the spider count per hill is at least 1?"]
+    caution = fact("Caution", concerns=["ai:quinalphos"])
+    assert claims_for(caution, NAMES) == ["Does the passage state that it advises against using Quinalphos?"]
+    assert claims_for(fact("Caution", concerns=[]), NAMES) == []                 # human review: no claim
+
+
+def test_storage_and_drying_bounds():
+    store = fact("StorageRule", storage_months_min=15, storage_months_min_inclusive=False, storage_months_max=None,
+                 max_moisture_pct=8, max_moisture_pct_inclusive=False, structure="700 gauge polythene bag")
+    assert claims_for(store, NAMES) == ["Does the passage state that it is stored for more than 15 months at a "
+                                        "moisture content below 8% in 700 gauge polythene bag?"]
+    dry = fact("DryingSpec", target_moisture_pct_min=12, target_moisture_pct_max=13, storage_term_raw="short term storage")
+    assert claims_for(dry, NAMES) == ["Does the passage state that the produce is dried to 12 to 13% moisture for "
+                                      "short term storage?"]
+
+
+def test_untimed_steps_fall_back_to_operation_and_method():
+    f = fact("IrrigationRule", depth_cm=None, steps=[step(operation="irrigation", method="avoid stagnation of water")])
+    assert claims_for(f, NAMES) == ["Does the passage state that the advice includes irrigation: avoid stagnation of water?"]
+    assert claims_for(fact("Spacing"), NAMES) == []
+
+
+def test_keys_are_stable_and_controls_change_one_number():
+    c = "Does the passage state that x?"
+    assert claim_key("fk:a", c) == claim_key("fk:a", c) and claim_key("fk:a", c) != claim_key("fk:b", c)
+    assert claim_key("fk:a", c).startswith("c_") and claim_key("fk:a", c, control=True).startswith("x_")
+    f = fact(steps=[step(timing_raw="before the last puddling", applies=[DAP])])
+    assert control_claim(f, NAMES) == ("Does the passage state that Diammonium phosphate (DAP) is applied at 80 kg "
+                                       "per 20 cents of nursery before the last puddling?")
+    dry = fact("DryingSpec", target_moisture_pct_max=12)
+    assert "at most 22% moisture" in control_claim(dry, NAMES)
+    assert control_claim(fact("Caution", concerns=["ai:quinalphos"]), NAMES) is None

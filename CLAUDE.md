@@ -47,6 +47,8 @@ uv run python -m kg.tables source:tnau_agriculture_2020    # rice + wheat tables
 uv run python -m kg.extract report source:tnau_agriculture_2020   # extraction checks (see "Extraction")
 uv run python -m kg.normalize source:tnau_agriculture_2020        # step 10 -> data/normalized/<id>/, data/review/proposed_concepts.csv
 uv run python -m kg.validate source:tnau_agriculture_2020         # step 11 -> data/validated/<id>/, data/review/validation.csv
+uv run python -m kg.verify source:tnau_agriculture_2020 --dry-run # step 12: claims and request sizes, sends nothing
+uv run python -m kg.verify source:tnau_agriculture_2020           # step 12: asks Jev what is not answered yet
 
 uv run --project extraction python extraction/extract.py --list   # registry check: included, duplicate, unregistered PDFs
 uv run --project extraction python extraction/extract.py --all --source tnau_agriculture
@@ -470,8 +472,31 @@ No model. Input: the facts step 10 validated (`data/normalized/<id>/facts.jsonl`
 - **Review notes:** `[[review_note]]` in the registry is printed text on a PDF page plus a note, with a status.
   - Step 11 attaches an approved note to every fact whose quote contains that text on that page, as a review reason; the value never changes.
   - An approved note that matches no fact is reported as stale.
-  - TNAU: the Fipronil note (p. 64) is approved. The two Imidacloprid notes (pp. 66, 67) are proposed: "same product printed in g on pp. 287 and 288 (p. 288 also prints it in kg)".
+  - TNAU: the Fipronil note (p. 64) is approved. The two Imidacloprid notes (pp. 66, 67) are approved: "inconsistent units for the same product in the source: g/ha on pp. 287–288, kg/ha on pp. 66, 67 and once on p. 288".
+  - Known bug (reported, not fixed): step 9 records only the first piece's page for a quote in a row merged across pages. So the p. 67 note is reported stale; the WBPH fact gets the same note through p. 66.
 - **Known source typos** (checked on the rendered pages 2026-10-20): "Fipronil 80%WG 50- 62.5 kg" (PDF p. 64) and "Imidacloprid 70% WG 30-35 kg" (pp. 66, 67) are printed in kg. The same Fipronil product is printed as "50-62.5 g" on p. 65. Extraction and normalisation keep the book's kg, check 3 fails them, and they go to review as suspected typos.
+
+## Verification with Jev (`kg/verify`)
+
+Input: the step 11 facts (`data/validated/<id>/facts.jsonl`). The URL and model are read from `docs/jev_example.md`; the key comes from `BEATAPI_API_KEY` in `.env` and is never printed or stored.
+- **Claims** (`kg/verify/claims.py`) are built by code from the stored fields; no model writes them.
+  - One yes/no claim per step and value, per threshold clause, per moisture, months or depth field, and per ingredient a Caution concerns.
+  - Amounts are restated in the book's terms: `per_cent_nursery` becomes value × `area_cents` "per 20 cents of nursery".
+  - Timing comes from anchor and offsets, else the stored `timing_raw`. Applicability is a lead-in ("for medium duration varieties grown for seed").
+  - Untimed steps fall back to "the advice includes <operation>: <method>".
+  - A fact with no claim (the two cautions with no `concerns`, and the saline Spacing with no values) is marked "human review required: no code-built claim" and can never be auto_verified.
+  - The key is `c_` + hash(fact_key + claim).
+- **Controls:** 5 deliberately wrong claims, one number changed (×2, or +10 points for a percentage) on the first numeric claim of facts taken round-robin over units. Keys are `x_…`; they're excluded from scores and reported separately. Step 15 raises them to about 10 % of claims.
+- **Requests:** one per unit, with the unit text exactly as step 9 rendered it as the state and all pending claims as `noul` questions (P(yes)).
+  - A request is split only past an estimated 60k tokens (characters ÷ 4 × 1.2).
+  - `--dry-run` writes `claims.jsonl` and sizes and sends nothing.
+- **Queue and cache** (`data/verified/<id>/`, gitignored):
+  - Answers are appended to `answers.jsonl` as they arrive, keyed sha256(unit text + claim + model). A re-run sends only unanswered claims.
+  - 429, 5xx and timeouts back off (2, 4, 8, 16, 32 s, or `Retry-After` if longer), then stop with the queue kept.
+  - Every try is logged in `requests.jsonl` with HTTP status, latency, rate-limit headers and usage.
+  - Raw responses are stored only if they're valid JSON with no key or key-like string.
+- **Per fact:** `verifier`, `verifier_score` (the lowest P(yes) of its non-control claims), and its claims with P(yes) and the response file.
+- **Threshold:** `auto_verified_threshold` in `config/verify.toml` has **no default**. Without it nothing becomes auto_verified; calibration is step 15. With it, only an `extracted` fact with claims can become auto_verified; needs_review stays needs_review.
 
 ## Scope rules for extraction and normalisation
 

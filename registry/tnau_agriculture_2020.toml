@@ -328,11 +328,11 @@ status = "approved"
 [[review_note]]   # rendered PDF p. 66; pp. 287 and 288 print "Imidacloprid 70%WG 30-35g/ha" and "@30-35 g/ha"
 pdf_page = 66
 match = "Imidacloprid 70% WG 30-35 kg"
-note = "suspected source typo: same product printed in g on pp. 287 and 288 (p. 288 also prints it in kg)"
-status = "proposed"
+note = "inconsistent units for the same product in the source: g/ha on pp. 287–288, kg/ha on pp. 66, 67 and once on p. 288"
+status = "approved"
 
 [[review_note]]   # rendered PDF p. 67 (WBPH row continued); same evidence as the p. 66 note
 pdf_page = 67
 match = "Imidacloprid 70% WG 30-35 kg"
-note = "suspected source typo: same product printed in g on pp. 287 and 288 (p. 288 also prints it in kg)"
-status = "proposed"
+note = "inconsistent units for the same product in the source: g/ha on pp. 287–288, kg/ha on pp. 66, 67 and once on p. 288"
+status = "approved"
