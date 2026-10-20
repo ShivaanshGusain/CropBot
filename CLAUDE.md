@@ -44,6 +44,7 @@ uv run python -m kg.convert source:tnau_agriculture_2020 --pages 13-76  # trial 
 uv run python -m pytest -m slow           # the real 2-page conversion test (skipped by default)
 uv run python -m kg.segment source:tnau_agriculture_2020   # section units -> data/units/<id>/ (exit 1 on scope failures)
 uv run python -m kg.tables source:tnau_agriculture_2020    # rice + wheat tables -> data/tables/<id>/, data/review/tables.csv
+uv run python -m kg.extract report source:tnau_agriculture_2020   # extraction checks (see "Extraction")
 
 uv run --project extraction python extraction/extract.py --list   # registry check: included, duplicate, unregistered PDFs
 uv run --project extraction python extraction/extract.py --all --source tnau_agriculture
@@ -309,6 +310,37 @@ A part without rulings is "not verifiable". Every mismatch goes to `data/review/
 - CO 52's morphology rows straddle columns.
 
 All of these are in review. Re-entering them by hand, or reconverting, is a review decision.
+
+## Extraction (`kg/extract`)
+
+No model is called from this repo. `prepare` writes the filled prompt, a runner answers it, and `ingest` checks and stores the answer:
+
+```bash
+uv run python -m kg.extract find    source:tnau_agriculture_2020 "Wet nursery"          # unit ids
+uv run python -m kg.extract prepare source:tnau_agriculture_2020 --unit <unit_id> --model <name>
+uv run python -m kg.extract ingest  source:tnau_agriculture_2020 --unit <unit_id> --model <name> --response <file>
+uv run python -m kg.extract report  source:tnau_agriculture_2020
+```
+
+- **Raw model** (`kg/extract/model.py`), separate from `kg/schema`:
+  - all 16 subtypes with the v1.2 fields;
+  - names, units and bases as printed ("DAP", "kg", "per 20 cents"), never IDs or canonical units, and numbers parsed with their printed text. Step 10 normalises and links.
+  - Extra fields: `basis_inferred`, `basis_rule`, `quantity_ref`, `alt_*`, `condition_raw`, `unmapped`, `excluded_regions` {name, raw}, and one `quote` per fact.
+  - A step's `operation` may be empty when no type fits.
+  - A quantity's `basis` may be empty when none is printed and the section gives none.
+  - Crop and the book's regions come from code, never the model.
+- **Prompt** `kg/extract/prompts/v1.md`, model-agnostic.
+  - Code fills `{{subtypes}}`, `{{vocabularies}}` (from `kg/schema/vocab.py`), `{{default_scope}}` (approved rules with their quotes) and `{{unit}}`.
+  - Units are rendered as `[p.N] text`, `[p.N] ## Sub-heading`, and stitched tables as `[#/tables/N row R] cell | cell`.
+  - A test fails if the prompt's field reference and the raw model disagree.
+  - Never edit a prompt that has been used: make `v2.md`.
+- **Output** `data/extracted/<source>/<hash>.json` (gitignored). Unit IDs contain ':', so files are named by the hash.
+  - Each file records the prompt version and sha256, `extraction_model`, the unit text sha256, the time, the raw answer, every fact and its check results.
+  - Cache key: unit text + prompt version + prompt hash + model.
+  - `ingest` refuses to replace an answer with the same key unless given `--force`.
+- **Checks here only:** the answer parses into the raw model (fact by fact), and each quote is found in the unit text after both are normalised (NFKC, soft hyphens, dashes, whitespace). Code, not the model, finds the quote's page.
+  - Failures are saved and reported, never fixed, and `ingest`/`report` exit 1.
+  - Everything else (numbers in quotes, vocabularies, alternatives, banned list) is step 11.
 
 ## Scope rules for extraction and normalisation
 
