@@ -337,8 +337,8 @@ def _flatten(obj, prefix="") -> dict:
                 out.update(_flatten(v, "%s.%s" % (prefix, k) if prefix else k))
         return out
     if isinstance(obj, list):
-        if not obj:
-            return {prefix: []}
+        if not any(isinstance(v, (dict, list)) for v in obj):
+            return {prefix: obj}                     # names, flags, signs: compared whole
         out = {}
         for i, v in enumerate(obj):
             out.update(_flatten(v, "%s[%d]" % (prefix, i)))
@@ -363,9 +363,12 @@ def compare(a: dict, b: dict) -> dict:
                     left.remove(x)
                     right.remove(y)
                     break
+    def current(fact):                               # both runs through today's model: same defaults
+        return FACT.validate_python(fact).model_dump(mode="json")
+
     changed = []
     for x, y in pairs:
-        dx, dy = _flatten(x["fact"]), _flatten(y["fact"])
+        dx, dy = _flatten(current(x["fact"])), _flatten(current(y["fact"]))
         diff = {k: [dx.get(k), dy.get(k)] for k in sorted(set(dx) | set(dy)) if dx.get(k) != dy.get(k)}
         if diff:
             changed.append({"from": x["index"], "to": y["index"], "subtype": x["fact"]["subtype"], "diff": diff})

@@ -186,8 +186,16 @@ def test_compare_matches_by_subtype_and_quote_and_ignores_instruction_en(store):
     c = ex.compare(a, b)
     assert (c["matched"], len(c["only_from"]), len(c["only_to"])) == (1, 1, 1)
     diff = c["changed"][0]["diff"]
-    assert set(diff) == {"quote", "extraction_flags", "extraction_flags[0]"}
-    assert not any("instruction_en" in k for k in diff)
+    assert diff == {"quote": [V1_GOOD["quote"], longer["quote"]],
+                    "extraction_flags": [[], ["anchor_from_context"]]}       # whole lists, no instruction_en
+
+
+def test_compare_ignores_fields_a_stored_v1_fact_never_had(store):
+    _, a = ex.ingest(ENTRY, UNIT, "model-a", json.dumps([V1_GOOD]), version="v1")
+    del a["facts"][0]["fact"]["extraction_flags"]                     # as stored before v2 existed
+    _, b = ex.ingest(ENTRY, UNIT, "model-a", v2([V2_GOOD, ETL_FACT, BPH_FACT]))
+    c = ex.compare(a, b)
+    assert c["matched"] == 1 and c["unchanged"] == 1 and c["changed"] == []
 
 
 def test_file_stem_has_no_colon():
