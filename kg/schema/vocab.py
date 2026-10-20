@@ -116,8 +116,15 @@ class OperationType(StrEnum):
     IRRIGATION = "irrigation"
     FERTILIZER_APPLICATION = "fertilizer_application"
     SPRAYING = "spraying"
+    DUSTING = "dusting"                  # schema v1.3
+    APPLICATION = "application"          # v1.3: granules, biopesticides, treated material to soil or water
     SEED_TREATMENT = "seed_treatment"
     WEEDING = "weeding"
+    RELEASE = "release"                  # v1.3: parasitoids, bioagents
+    TRAPPING = "trapping"                # v1.3
+    BAITING = "baiting"                  # v1.3
+    BUND_MANAGEMENT = "bund_management"  # v1.3
+    SANITATION = "sanitation"            # v1.3: removing or destroying stubble, egg masses, collected insects
     HARVEST = "harvest"
     THRESHING = "threshing"
     DRYING = "drying"
@@ -252,11 +259,13 @@ class DisorderKind(StrEnum):
 
 class UseClass(StrEnum):
     INSECTICIDE = "insecticide"
+    ACARICIDE = "acaricide"              # schema v1.3
     FUNGICIDE = "fungicide"
     HERBICIDE = "herbicide"
     NEMATICIDE = "nematicide"
     RODENTICIDE = "rodenticide"
     PGR = "PGR"
+    BIOPESTICIDE = "biopesticide"        # schema v1.3
 
 
 class RegStatus(StrEnum):
@@ -273,6 +282,58 @@ class OrganicInputKind(StrEnum):
     BIOFERTILIZER = "biofertilizer"
     PRESS_MUD = "press_mud"
     OTHER = "other"
+
+
+class InputKind(StrEnum):
+    """Schema v1.3 `Input`: applied things that are not nutrients, fertilisers, organic inputs or
+    pesticide ingredients. Identity follows the substance, not the use."""
+    SEED = "seed"
+    BIOAGENT = "bioagent"
+    TRAP = "trap"
+    DEVICE = "device"
+    SALT = "salt"
+    CHEMICAL = "chemical"
+    BOTANICAL = "botanical"
+    AMENDMENT = "amendment"
+    OTHER = "other"
+
+
+class ConcUnit(StrEnum):
+    """Schema v1.3: solution strength on APPLIES (conc_unit)."""
+    PCT = "pct"
+    NORMAL = "normal"
+    MICROMOLAR = "micromolar"
+
+
+class SamplingObject(StrEnum):
+    """Schema v1.3: ThresholdClause samples outside Basis ("/25 net sweeps", "/100 earheads")."""
+    NET_SWEEP = "net_sweep"
+    EARHEAD = "earhead"
+    PASS = "pass"
+
+
+class RepeatUnit(StrEnum):
+    """Schema v1.3: Step.repeat_interval_unit."""
+    DAYS = "days"
+    WEEKS = "weeks"
+
+
+class ExtractionFlag(StrEnum):
+    """How a fact was read when the page alone does not settle it (prompt v2, plus v1.3's two).
+    A flagged fact is always reviewed."""
+    LINE_ORDER_PAIRING = "line_order_pairing"      # a value matched to its label only by line order
+    SPANS_TABLE_ROWS = "spans_table_rows"          # the quote runs across two table rows
+    SPLIT_FROM_SHARED_LINE = "split_from_shared_line"   # one line split into several facts
+    SHARED_AMOUNT = "shared_amount"                # one printed amount for several targets
+    TARGET_FROM_HEADING = "target_from_heading"    # no target printed; taken from a heading
+    ANCHOR_FROM_CONTEXT = "anchor_from_context"    # the timing anchor is not printed in the quote
+    SCOPE_FROM_HEADING = "scope_from_heading"      # v1.3: applicability taken from a sub-heading
+    OPERATION_FROM_FORMULATION = "operation_from_formulation"   # v1.3: mixed "Dust/ spray" lists
+
+
+# Schema v1.3: count and interval words code reads (never the model): "thrice at weekly interval"
+COUNT_WORDS = {"once": 1, "twice": 2, "thrice": 3}
+INTERVAL_WORDS = {"daily": (1, "days"), "weekly": (1, "weeks"), "fortnightly": (2, "weeks")}
 
 
 class ZoneScheme(StrEnum):
@@ -351,6 +412,8 @@ CONDITION_VARIABLES: dict[str, ConditionVariable] = {
     "soil_N_rating": ConditionVariable(_R, None, _ATB),
     "soil_P_rating": ConditionVariable(_R, None, _ATB),
     "soil_K_rating": ConditionVariable(_R, None, _ATB),
+    # schema v1.3: soil-test findings used as scope ("zinc deficient soils": deficient -> low)
+    "soil_Zn_rating": ConditionVariable(_R, None, _ATB),
     "soil_pH": ConditionVariable(_N, None, _ATB),   # other soil values: add when a source needs them
     "grain_moisture_pct": ConditionVariable(_N, Unit.PCT, _ATB),
     "pest_count": ConditionVariable(_N, Unit.COUNT, _ASK),

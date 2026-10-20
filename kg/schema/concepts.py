@@ -13,11 +13,11 @@ from typing import ClassVar, Literal
 from pydantic import Field, field_validator, model_validator
 
 from .core import Model, SourceSpan, Text, check_range
-from .ids import (ActiveIngredientId, CountryId, CropId, DiseaseId, DistrictId, FertilizerId,
-                  LabelId, LocalSeasonId, NutrientId, OperationId, OrganicInputId, PestId,
+from .ids import (ActiveIngredientId, AIGroupId, CountryId, CropId, DiseaseId, DistrictId, FertilizerId,
+                  InputId, LabelId, LocalSeasonId, NutrientId, OperationId, OrganicInputId, PestId,
                   PurposeId, SeasonId, SoilId, StateId, SystemId, VarietyId, WeedId, ZoneId,
                   label_id)
-from .vocab import (CropGroup, DurationGroup, LabelKind, OperationType as OperationVocab,
+from .vocab import (CropGroup, DurationGroup, InputKind, LabelKind, OperationType as OperationVocab,
                     OrganicInputKind, PathogenType, PestContext, PestType,
                     Purpose as PurposeVocab, RegStatus, ReviewStatus, Season as SeasonVocab,
                     UseClass, VarietyKind, WeedType, ZoneScheme)
@@ -198,12 +198,41 @@ class OrganicInput(Concept):
     kind: OrganicInputKind
 
 
+class AIGroup(Concept):
+    """Schema v1.3: a chemical class a book names as a whole ("synthetic pyrethroids")."""
+    LABEL = "AIGroup"
+    id: AIGroupId
+
+
 class ActiveIngredient(Concept):
     """reg_status comes from the official registration list (CIB&RC), never from books."""
     LABEL = "ActiveIngredient"
     id: ActiveIngredientId
-    use_class: UseClass | None = None   # empty when no value fits (acaricide: pending schema v1.3)
+    use_class: UseClass | None = None   # optional (schema v1.3)
     reg_status: RegStatus = RegStatus.UNKNOWN
+    member_of: list[AIGroupId] = []     # MEMBER_OF AIGroup (v1.3); seed CSV: a JSON list of ids
+
+    @field_validator("member_of", mode="before")
+    @classmethod
+    def _json(cls, v):
+        return json.loads(v) if isinstance(v, str) else v
+
+    def references(self):
+        return super().references() + [("member_of", g, "AIGroup") for g in self.member_of]
+
+    def edges(self):
+        return super().edges() + [("MEMBER_OF", "AIGroup", g, {}) for g in self.member_of]
+
+    def props(self) -> dict:
+        return self.model_dump(mode="json", exclude={"id", "member_of", *self.EDGES})
+
+
+class Input(Concept):
+    """Schema v1.3: applied things that are not nutrients, fertilisers, organic inputs or pesticide
+    ingredients (seed, Trichogramma, traps, common salt, KNO3, gypsum, plain leaf extracts)."""
+    LABEL = "Input"
+    id: InputId
+    kind: InputKind
 
 
 # --- pests, diseases, weeds ------------------------------------------------------------
@@ -327,8 +356,10 @@ SEED_FILES: dict[str, type] = {
     "pests.csv": Pest,
     "diseases.csv": Disease,
     "weeds.csv": Weed,
+    "ai_groups.csv": AIGroup,                # schema v1.3; before active_ingredients (MEMBER_OF)
     "active_ingredients.csv": ActiveIngredient,
     "organic_inputs.csv": OrganicInput,
+    "inputs.csv": Input,                     # schema v1.3
     "labels.csv": Label,
 }
 
@@ -337,8 +368,10 @@ PROPOSED_FILES: dict[str, type] = {
     "pests.csv": Pest,
     "diseases.csv": Disease,
     "weeds.csv": Weed,
+    "ai_groups.csv": AIGroup,
     "active_ingredients.csv": ActiveIngredient,
     "organic_inputs.csv": OrganicInput,
+    "inputs.csv": Input,
     "fertilizers.csv": Fertilizer,
     "labels.csv": Label,
 }

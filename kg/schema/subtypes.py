@@ -1,4 +1,4 @@
-"""Recommendation subtypes (schema v1.2): the nine first-slice subtypes ("Deferred and open
+"""Recommendation subtypes (schema v1.3): the nine first-slice subtypes ("Deferred and open
 decisions"), then the other seven from the subtype table.
 
 Each subtype adds only its own fields to the core. Numeric subtype fields are
@@ -12,9 +12,8 @@ from typing import Annotated, Literal, Union
 
 from pydantic import Field, TypeAdapter, model_validator
 
-from .core import Recommendation, Text, ThresholdClause, check_bound, check_range
-from .ids import (ActiveIngredientId, ControlTargetId, NutrientId, PestOrDiseaseId, StorageTargetId,
-                  VarietyId)
+from .core import Recommendation, Text, ThresholdClause, check_range
+from .ids import (ConcernId, ControlTargetId, NutrientId, PestOrDiseaseId, StorageTargetId, VarietyId)
 from .vocab import CautionKind, ControlClass, DoseBasis, OperationType, Unit, WeatherAdvice
 
 Pct = Annotated[float, Field(ge=0, le=100)]
@@ -113,13 +112,15 @@ class DryingSpec(Recommendation):
 
 
 class StorageRule(Recommendation):
-    NUMERIC_FIELDS = ("storage_months_min", "storage_months_max", "max_moisture_pct")
+    NUMERIC_FIELDS = ("storage_months_min", "storage_months_max", "min_moisture_pct", "max_moisture_pct")
     subtype: Literal["StorageRule"]
     storage_months_min: Months | None = None
     storage_months_max: Months | None = None
+    min_moisture_pct: Pct | None = None      # schema v1.3: "12 - 13 %" keeps both bounds
     max_moisture_pct: Pct | None = None
     storage_months_min_inclusive: bool = True
     storage_months_max_inclusive: bool = True
+    min_moisture_pct_inclusive: bool = True
     max_moisture_pct_inclusive: bool = True
     structure: str | None = None
     target_ids: list[StorageTargetId] = []   # TARGETS storage pests (context checked against concepts)
@@ -127,7 +128,7 @@ class StorageRule(Recommendation):
     @model_validator(mode="after")
     def _ranges(self):
         check_range(self, "storage_months_min", "storage_months_max")
-        check_bound(self, "max_moisture_pct")
+        check_range(self, "min_moisture_pct", "max_moisture_pct")
         return self
 
 
@@ -135,7 +136,8 @@ class Caution(Recommendation):
     subtype: Literal["Caution"]
     kind: CautionKind
     text_en: Text
-    concerns: list[ActiveIngredientId] = []  # CONCERNS; optional (a safety caution may name no chemical)
+    concerns: list[ConcernId] = []           # CONCERNS ActiveIngredient | AIGroup (v1.3); optional
+    about_ids: list[PestOrDiseaseId] = []    # schema v1.3: ABOUT, the pest a warning names
 
 
 FIRST_SLICE = (VarietyRecommendation, SowingWindow, NutrientDose, PestThreshold,
@@ -150,12 +152,20 @@ class SeedRate(Recommendation):
 
 
 class Spacing(Recommendation):
-    NUMERIC_FIELDS = ("row_cm", "plant_cm", "hills_per_m2", "seedlings_per_hill")
+    NUMERIC_FIELDS = ("row_cm", "plant_cm", "hills_per_m2", "seedlings_per_hill_min", "seedlings_per_hill_max")
     subtype: Literal["Spacing"]
     row_cm: float | None = Field(default=None, ge=0)
     plant_cm: float | None = Field(default=None, ge=0)
     hills_per_m2: float | None = Field(default=None, ge=0)
-    seedlings_per_hill: float | None = Field(default=None, ge=0)
+    seedlings_per_hill_min: float | None = Field(default=None, ge=0)   # schema v1.3: "3 - 4 seedlings / hill"
+    seedlings_per_hill_max: float | None = Field(default=None, ge=0)
+    seedlings_per_hill_min_inclusive: bool = True
+    seedlings_per_hill_max_inclusive: bool = True
+
+    @model_validator(mode="after")
+    def _ranges(self):
+        check_range(self, "seedlings_per_hill_min", "seedlings_per_hill_max")
+        return self
 
 
 class SeedTreatment(Recommendation):

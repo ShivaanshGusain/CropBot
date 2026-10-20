@@ -26,6 +26,8 @@ PREFIX = {
     "weed": "weed",
     "disorder": "disorder",
     "ai": "ai",
+    "ai_group": "ai_group",          # schema v1.3
+    "input": "input",                # schema v1.3
     "fertilizer": "fertilizer",
     "organic_input": "organic_input",
     "nutrient": "nutrient",
@@ -79,7 +81,12 @@ PestOrDiseaseId = Annotated[str, AfterValidator(_matcher("pest", "disease"))]
 ControlTargetId = Annotated[str, AfterValidator(_matcher("pest", "disease", "weed", "disorder"))]
 StorageTargetId = Annotated[str, AfterValidator(_matcher("pest"))]
 AppliesTargetId = Annotated[str, AfterValidator(
-    _matcher("nutrient", "fertilizer", "organic_input", "ai"))]
+    _matcher("nutrient", "fertilizer", "organic_input", "ai", "input"))]
+AIGroupId = Annotated[str, AfterValidator(_matcher("ai_group"))]
+InputId = Annotated[str, AfterValidator(_matcher("input"))]
+ConcernId = Annotated[str, AfterValidator(_matcher("ai", "ai_group"))]   # Caution CONCERNS (v1.3)
+
+
 def _pattern(regex: str, what: str):
     rx = re.compile(regex)
 

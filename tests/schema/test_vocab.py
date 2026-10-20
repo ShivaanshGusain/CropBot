@@ -1,4 +1,4 @@
-"""The vocabularies match the lists written in docs/schema_v1.2.md.
+"""The vocabularies match the lists written in docs/schema_v1.3.md.
 
 If the schema doc changes a list, these tests fail until vocab.py follows.
 """
@@ -6,10 +6,11 @@ If the schema doc changes a list, these tests fail until vocab.py follows.
 import re
 from pathlib import Path
 
-from kg.schema.vocab import (CONDITION_VARIABLES, Anchor, Basis, CautionKind, ConditionOp,
-                             OnUnknown, OperationType, Status, Subtype, Unit)
+from kg.schema.vocab import (CONDITION_VARIABLES, Anchor, Basis, CautionKind, ConcUnit, ConditionOp,
+                             ExtractionFlag, InputKind, OnUnknown, OperationType, RepeatUnit,
+                             SamplingObject, Status, Subtype, Unit, UseClass)
 
-DOC = (Path(__file__).resolve().parents[2] / "docs" / "schema_v1.2.md").read_text(encoding="utf-8")
+DOC = (Path(__file__).resolve().parents[2] / "docs" / "schema_v1.3.md").read_text(encoding="utf-8")
 
 
 def values(enum):
@@ -32,6 +33,18 @@ def test_bases():
 
 def test_operation_types():
     assert values(OperationType) == doc_list(r"\| `OperationType` \| id \(`([^`]+)`\)")
+
+
+def test_v13_lists():
+    table = r"\s*\\\|\s*"
+    assert values(InputKind) == doc_list(r"\| `Input` \| id, name\\_en, kind \(`([^`]+)`\)", table)
+    assert values(UseClass) == doc_list(r"use\\_class \(`([^`]+)`, optional\)", table)
+    assert values(ConcUnit) == doc_list(r"`conc_unit` \(`([^`]+)`\)", table)
+    assert values(SamplingObject) == doc_list(r"`sampling_object` \(`([^`]+)`\)", table)
+    assert values(RepeatUnit) == doc_list(r"`repeat_interval_unit` `([^`]+)`", r"\s*\|\s*")
+    m = re.search(r"extraction_flags,\s*// list: ([^\n]+)\n\s*//\s+([^\n]+)\n\s*//\s+([^\n]+)", DOC)
+    assert m
+    assert values(ExtractionFlag) == {v.strip() for v in ",".join(m.groups()).split(",") if v.strip()}
 
 
 def test_statuses():
@@ -58,7 +71,8 @@ def test_subtype_count():
 
 def test_registry_covers_every_condition_variable_named_in_the_doc():
     line = next(l for l in DOC.splitlines() if "Condition variables come from" in l)
-    named = set(re.findall(r"`([a-z_A-Z0-9]+)`", line))
+    examples = re.search(r"for example (.*?)\. ", line).group(1)      # the list, not the later prose
+    named = set(re.findall(r"`([a-z_A-Z0-9]+)`", examples))
     assert named and named <= set(CONDITION_VARIABLES)
     table_names = {"sowing_date", "das", "variety", "purpose", "storage_months",
                    "pest_count", "spider_count_per_hill"}   # the "Missing data" table

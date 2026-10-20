@@ -15,9 +15,10 @@ from pydantic import (BaseModel, ConfigDict, Field, PositiveInt, StringConstrain
 from .ids import (AppliesTargetId, CropId, PurposeId, RecId, RegionId, SeasonRef,
                   SoilId, SourceId, SpanId, StageId, StateId, SystemId, VarietyId,
                   _matcher)
-from .vocab import (CONDITION_VARIABLES, Anchor, AuthorityTier, Basis, ConditionOnlyUnit,
-                    ConditionOp, DurationGroup, ExtractionMethod, OffsetUnit, OperationType,
-                    Purpose, Rating, RegionOrigin, Status, Subtype, Unit, ValueType)
+from .vocab import (CONDITION_VARIABLES, Anchor, AuthorityTier, Basis, ConcUnit, ConditionOnlyUnit,
+                    ConditionOp, DurationGroup, ExtractionFlag, ExtractionMethod, OffsetUnit,
+                    OperationType, Purpose, Rating, RegionOrigin, RepeatUnit, SamplingObject, Status,
+                    Subtype, Unit, ValueType)
 
 # at least one non-space character; source text is never stripped or rewritten
 Text = Annotated[str, StringConstraints(pattern=r"\S")]
@@ -130,6 +131,8 @@ class ThresholdClause(Model):
     value: float = Field(ge=0)
     unit: Unit
     sampling_unit: Basis | None = None
+    sampling_count: PositiveInt | None = None        # schema v1.3: "/25 net sweeps" -> 25
+    sampling_object: SamplingObject | None = None    # schema v1.3: net_sweep | earhead | pass
     stage_id: StageId | None = None
     any_of_group: PositiveInt | None = None   # optional and unused for now
     raw: Text                                 # schema v1.2: source text of the number
@@ -138,6 +141,10 @@ class ThresholdClause(Model):
     @model_validator(mode="after")
     def _groups(self):
         check_groups(self.conditions)
+        if (self.sampling_count is None) != (self.sampling_object is None):
+            raise ValueError("sampling_count and sampling_object go together")
+        if self.sampling_object is not None and self.sampling_unit is not None:
+            raise ValueError("a sample is either a Basis sampling_unit or a count of sampling_object, not both")
         return self
 
 
@@ -160,6 +167,17 @@ class Applies(Model):
     area_cents: float | None = Field(default=None, gt=0)
     quantity_ref: Literal["previous"] | None = None
     inherited: bool = False
+    # schema v1.3: solution strength, mixing ratio and share of the total dose, each with its raw text
+    conc_value: float | None = Field(default=None, ge=0)
+    conc_min: float | None = Field(default=None, ge=0)
+    conc_max: float | None = Field(default=None, ge=0)
+    conc_unit: ConcUnit | None = None
+    conc_raw: Text | None = None
+    ratio_part: float | None = Field(default=None, gt=0)
+    ratio_whole: float | None = Field(default=None, gt=0)
+    ratio_raw: Text | None = None
+    share_pct: float | None = Field(default=None, gt=0, le=100)
+    share_raw: Text | None = None
 
     @model_validator(mode="after")
     def _quantity(self):
@@ -171,11 +189,28 @@ class Applies(Model):
         if self.value is not None and (self.min is not None or self.max is not None):
             raise ValueError("give either value or min/max, not both")
         check_range(self, "min", "max")
+        has_conc = any(v is not None for v in (self.conc_value, self.conc_min, self.conc_max))
+        if has_conc:
+            if self.conc_unit is None or self.conc_raw is None:
+                raise ValueError("a concentration needs conc_unit and conc_raw")
+            if self.conc_value is not None and (self.conc_min is not None or self.conc_max is not None):
+                raise ValueError("give either conc_value or conc_min/conc_max, not both")
+            check_range(self, "conc_min", "conc_max")
+        elif self.conc_unit is not None or self.conc_raw is not None:
+            raise ValueError("conc_unit / conc_raw without a concentration value")
+        has_ratio = self.ratio_part is not None or self.ratio_whole is not None
+        if has_ratio and (self.ratio_part is None or self.ratio_whole is None or self.ratio_raw is None):
+            raise ValueError("a ratio needs ratio_part, ratio_whole and ratio_raw")
+        if has_ratio and self.ratio_part >= self.ratio_whole:
+            raise ValueError("ratio_part must be less than ratio_whole (1 part in 50: part 1, whole 50)")
+        if (self.share_pct is None) != (self.share_raw is None):
+            raise ValueError("share_pct and share_raw go together")
         if has_amount:
             if self.unit is None or self.basis is None:
                 raise ValueError("a quantity needs a unit and a basis")
-        elif self.quantity_ref is None:
-            raise ValueError("no amount: set quantity_ref='previous' if it was stated earlier")
+        elif self.quantity_ref is None and not (has_conc or has_ratio or self.share_pct is not None):
+            raise ValueError("no amount: set quantity_ref='previous' if it was stated earlier, "
+                             "or give a concentration, ratio or share")
         if (self.basis is Basis.PER_CENT_NURSERY) != (self.area_cents is not None):
             raise ValueError("basis per_cent_nursery and area_cents go together")
         if self.inherited and self.quantity_ref != "previous":
@@ -200,10 +235,24 @@ class Step(Model):
     stage_id: StageId | None = None
     month_start: int | None = Field(default=None, ge=1, le=12)
     month_end: int | None = Field(default=None, ge=1, le=12)
+    # schema v1.3: a count with an interval ("thrice at weekly interval"); stated times are separate Steps
+    repeat_count: PositiveInt | None = None
+    repeat_interval: float | None = Field(default=None, gt=0)
+    repeat_interval_unit: RepeatUnit | None = None
+    repeat_raw: Text | None = None
     timing_raw: Text | None = None
     instruction_en: Text
     applies: list[Applies] = []
     conditions: list[Condition] = []
+
+    @model_validator(mode="after")
+    def _repeat(self):
+        if (self.repeat_interval is None) != (self.repeat_interval_unit is None):
+            raise ValueError("repeat_interval and repeat_interval_unit go together")
+        repeats = self.repeat_count is not None or self.repeat_interval is not None
+        if repeats != (self.repeat_raw is not None):
+            raise ValueError("a repeat needs repeat_raw, and repeat_raw needs a repeat count or interval")
+        return self
 
     @model_validator(mode="after")
     def _timing(self):
@@ -316,6 +365,8 @@ class Recommendation(Model):
     verifier_score: float | None = Field(default=None, ge=0, le=1)
     reviewed_by: str | None = None
     unmapped: list[str] = []
+    extraction_flags: list[ExtractionFlag] = []   # schema v1.3: copied from the step 9 fact
+    review_notes: list[str] = []                  # schema v1.3: approved registry notes (step 11)
     missing_in_latest_run: bool = False
     valid_from: date | None = None
     superseded_by: RecId | None = None

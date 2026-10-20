@@ -10,3 +10,10 @@ operation:harvest,Harvest,approved,docs/schema_v1.1.md
 operation:threshing,Threshing,approved,docs/schema_v1.1.md
 operation:drying,Drying,approved,docs/schema_v1.1.md
 operation:storage,Storage,approved,docs/schema_v1.1.md
+operation:dusting,Dusting,approved,docs/schema_v1.3.md
+operation:application,Application,approved,docs/schema_v1.3.md
+operation:release,Release,approved,docs/schema_v1.3.md
+operation:trapping,Trapping,approved,docs/schema_v1.3.md
+operation:baiting,Baiting,approved,docs/schema_v1.3.md
+operation:bund_management,Bund management,approved,docs/schema_v1.3.md
+operation:sanitation,Sanitation,approved,docs/schema_v1.3.md

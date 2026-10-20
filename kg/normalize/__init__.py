@@ -235,7 +235,9 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
     elif st == "DoseFormula":
         f.blocks.append("DoseFormula coefficients are not parsed yet")
     copy_fields = {"VarietyRecommendation": (), "SowingWindow": ("start_month", "start_day", "end_month", "end_day"),
-                   "SeedRate": ("method",), "Spacing": ("row_cm", "plant_cm", "hills_per_m2", "seedlings_per_hill"),
+                   "SeedRate": ("method",),
+                   "Spacing": tuple(k for k in r if k.startswith(("row_cm", "plant_cm", "hills_per_m2",
+                                                                   "seedlings_per_hill_"))),
                    "NutrientDose": ("dose_basis",), "IrrigationRule": ("depth_cm", "criterion"),
                    "WeatherRule": ("operation", "advice"),
                    "HarvestRule": tuple(k for k in r if k.startswith(("harvest_", "threshing_")) or k == "maturity_signs"),
@@ -245,6 +247,13 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
                    "QualitySpec": ("authority", "valid_for_season", "parameter", "limit_value")}
     for k in copy_fields.get(st, ()):
         d[k] = r[k]
+    if st == "Spacing" and "seedlings_per_hill" in r:
+        # a v1/v2 raw fact gives one printed number; schema v1.3 stores it as equal bounds
+        if r["seedlings_per_hill"] is not None:
+            d["seedlings_per_hill_min"] = d["seedlings_per_hill_max"] = r["seedlings_per_hill"]
+        d["raw"] = {("seedlings_per_hill_min" if k == "seedlings_per_hill" else k): v for k, v in d["raw"].items()}
+        if "seedlings_per_hill_min" in d["raw"]:
+            d["raw"]["seedlings_per_hill_max"] = d["raw"]["seedlings_per_hill_min"]
     if st == "QualitySpec" and r["unit"]:
         u = canon_unit(r["unit"])
         if u is None:

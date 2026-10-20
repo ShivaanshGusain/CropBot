@@ -13,7 +13,7 @@ from .db import get_driver
 CONCEPT_LABELS = (
     "Concept",            # shared label on every concept, for the vector index
     "Crop", "Variety", "GrowthStage", "Pest", "Disease", "Weed", "Disorder", "Symptom",
-    "ActiveIngredient", "Fertilizer", "OrganicInput", "Nutrient", "OperationType",
+    "ActiveIngredient", "AIGroup", "Fertilizer", "OrganicInput", "Input", "Nutrient", "OperationType",
     "Country", "State", "District", "AgroClimaticZone", "Season", "LocalSeason",
     "ProductionSystem", "SoilType", "Purpose",
 )
