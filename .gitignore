@@ -21,6 +21,7 @@ india_villages_map.json
 # Raw source PDFs and Docling cache
 data/raw/*.pdf
 data/docling/
+data/units/
 
 # New book PDFs (books are recorded by URL and sha256 in the source registry)
 BooksData/*.pdf

@@ -39,6 +39,7 @@ uv run python -m kg.load.sources          # MERGE Source nodes and SUPERSEDES ed
 uv run python -m kg.convert source:tnau_agriculture_2020                # full Docling conversion (cached)
 uv run python -m kg.convert source:tnau_agriculture_2020 --pages 13-76  # trial run on a page range
 uv run python -m pytest -m slow           # the real 2-page conversion test (skipped by default)
+uv run python -m kg.segment source:tnau_agriculture_2020   # section units -> data/units/<id>/ (exit 1 on scope failures)
 
 uv run --project extraction python extraction/extract.py --list   # registry check: included, duplicate, unregistered PDFs
 uv run --project extraction python extraction/extract.py --all --source tnau_agriculture
@@ -85,9 +86,12 @@ Local development runs Neo4j 2026.09.0 Enterprise. Which edition to deploy is a 
 
 **Page numbers are PDF page numbers, not printed page numbers.** The TNAU rice chapter starts at PDF p. 13, but the book's contents table says p. 1.
 
-**The crop segmentation in the committed `out/` is unreliable.**
-- In the MVP output for `tnau_agriculture`, the rice chapter is interleaved with false `carnation`, `banana` and `fieldpea` segments; see `out/segmentation_report.md`.
-- The files also append "Other mentions" from unrelated chapters. Build extraction units from the converted document, not from `out/`.
+**`out/` (per-crop Markdown from the old `extract.py`) is not a pipeline input.**
+- Its crop segmentation and page markers are known to be wrong.
+  - In `tnau_agriculture`, the rice chapter is interleaved with false `carnation`, `banana` and `fieldpea` segments (`out/segmentation_report.md`).
+  - Page markers follow headings only.
+  - The files append "Other mentions" from unrelated chapters.
+- Use it only as a cross-check or for reading. Extraction units come from `kg/segment`.
 
 **`extraction/sources.toml` is the existing source registry.**
 - It is keyed by file name and holds title, publisher, url, doc_type, a free-text region, OCR settings, page_range and include.
@@ -206,6 +210,51 @@ data/gold/           hand-annotated sections (committed)
   - `printed_page` comes from the registry's `printed_pages` runs (printed = PDF page − offset) and is null outside them.
   - The TNAU PDF has no embedded page labels; its runs were found from the printed number at the top of every page.
 
+## Segmentation (`kg/segment`)
+
+No LLM. Input: the full `document.json`, with running-header headings dropped.
+
+**Chapters**
+- They come from the registry's `chapters` list (63 entries drafted from the contents table, PDF pp. 3–5).
+- A chapter starts on its PDF page. Its own heading there ("1. RICE (Oryza sativa L.)") is its title, never a section number.
+- Segmentation uses every chapter for boundaries; extraction uses approved chapters only.
+
+**The tree is rebuilt from heading numbers,** never from Docling heading levels.
+- `1.8.3.1` nests under `1.8.3`. "1.8.3.1.Seed rate" is split into number and title.
+- Each scheme (`1.`, `I.`, `A)`, `ii)`/`i.`, `a)`/`a.`) nests in the order it first appears in its context, e.g. "II. NURSERY PRACTICES" > "1. NURSERY PREPARATION".
+- A child that arrives before its parent creates a placeholder, which the late parent fills.
+- Body text like "4.11.Disease management: …" is promoted to a heading when its parent number exists.
+
+**Unnumbered headings are inline sub-headings** of the numbered section above. Each item records its `subheading`. ALL-CAPS headings are the exception:
+- right after another heading it shares a word with, a caps heading is that heading's subtitle ("1. TRANSPLANTED PUDDLED LOWLAND RICE" → "TRANSPLANTED RICE");
+- otherwise it starts a major section at chapter level;
+- numbering continues across a major section ("3." goes next to "2." even with "RAINFED RICE" in between).
+
+**Heading fixes:** only `status = "approved"` `[[heading_fix]]` entries are applied (`match` + `pdf_page` → heading + inline sub-heading or sub-section).
+
+**Units**
+- One unit per leaf section, plus an "intro" unit for a section with its own text before its first child.
+- Fields:
+  - `id = unit:<slug>:<hash of section_path and kind>`;
+  - `source_id`, `chapter`, `section_path`;
+  - `items` in order (ref, label, kind, text, `pdf_page`, `printed_page`, `subheading`);
+  - `table_refs`, `picture_refs`, `pdf_pages`;
+  - `regions` with origin `source`, or `section` from an approved section scope;
+  - approved `default_scope` rules;
+  - `approx_tokens` = characters ÷ 4, tables included. Units over 20,000 are flagged, which leaves headroom under the 64k request limit.
+- No table stitching or pivoting here; that's step 8.
+
+**Scope check:** every `section_scope` and every `default_scope` section, proposed or approved, must match exactly one section node (heading text equal, start page in range). Its rules apply to every unit under that section. A mismatch writes the outputs, prints FAILED and exits 1.
+
+**Output:** `data/units/<source_id>/units.jsonl` and `report.json` (gitignored). The report lists:
+- the largest units and units without text;
+- headings that didn't parse;
+- numbering gaps, placeholders, late parents, duplicate numbers, promotions;
+- heading-like list items;
+- every caps decision;
+- items before a chapter heading, and chapters whose heading wasn't found;
+- the scope checks.
+
 ## Scope rules for extraction and normalisation
 
 - **The p. 63 per-ha rule applies only to its section.** Elsewhere, a dose with no stated basis gets `basis_inferred: true` and goes to review.
@@ -243,7 +292,13 @@ Decisions on gaps that don't change the doc:
 
 ## Known issues for segmentation and tables (steps 6–7)
 
-Found in the committed TNAU conversion while building the schema tests:
-- **Rice seed sub-headings are missing on pp. 74–75.** The harvest, drying, seed-treatment and storage sub-headings of `RICE - VARIETAL SEED PRODUCTION` are absent, so those bullets sit under "Roguing space". The tests use the chapter heading as `section_path`.
-- **The grain-drying sentence is under the wrong heading.** "Dry the grains to 12% moisture level for storage." (p. 39) sits under "Non-Puddled machine Transplanted Rice (NPTR)".
-- **No `table_ref`.** Table facts such as the BPH threshold (p. 64) can't get a `#/tables/N` pointer until the full Docling JSON conversion exists.
+These were found in the committed TNAU conversion while building the schema tests.
+
+- **Fixed: rice seed sub-headings missing on pp. 74–75.**
+  - The old conversion's filter had deleted them.
+  - The new conversion keeps "Harvesting", "Threshing", "Drying", "Pre-storage seed treatment" and "Storage", and segmentation records them as each item's `subheading`.
+  - The schema test examples still use the chapter heading as `section_path`.
+- **Reported, not fixed: the grain-drying sentence on p. 39.**
+  - "Dry the grains to 12% moisture level for storage." follows the list items "Insect management: See Crop Protection Chapter", "Disease management: …" and "Harvesting". These look like the lost sections 1.3–1.5.
+  - Segmentation reports both the gap (1.3–1.5 missing under "1. TRANSPLANTED PUDDLED LOWLAND RICE") and the heading-like list items. Until a `heading_fix` from the printed book (printed p. 27) is approved, the sentence sits in the "1.2.5. Water management" unit.
+- **Fixed: `table_ref`.** The new conversion gives every table a `#/tables/N` ref. The ETL table is two parts (p. 63 and p. 64), to be stitched in step 8.

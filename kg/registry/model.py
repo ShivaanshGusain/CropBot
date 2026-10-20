@@ -62,6 +62,43 @@ class PrintedPages(Model):
         return self
 
 
+class Chapter(Model):
+    """A contents-table entry. Segmentation uses every chapter for boundaries;
+    extraction uses approved chapters only."""
+    number: Text
+    title: Text
+    group: str | None = None            # "MILLETS" for Sorghum, Cumbu, ...
+    printed_page: PositiveInt
+    pdf_page: PositiveInt
+    status: RuleStatus
+
+    def path_label(self) -> str:
+        return "%s > %s" % (self.group, self.title) if self.group else self.title
+
+
+class HeadingFix(Model):
+    """A reviewed correction to one Docling heading (nothing is auto-corrected).
+
+    `match` (the heading text as converted, on `pdf_page`) becomes `heading`; the
+    rest becomes an inline sub-heading of it, or a new unnumbered sub-section.
+    """
+    match: Text
+    pdf_page: PositiveInt
+    heading: Text
+    inline_subheading: str | None = None
+    subsection: str | None = None
+    status: RuleStatus
+
+    @model_validator(mode="after")
+    def _split(self):
+        rest = [x for x in (self.inline_subheading, self.subsection) if x]
+        if len(rest) != 1:
+            raise ValueError("a heading_fix needs exactly one of inline_subheading or subsection")
+        if self.match != "%s %s" % (self.heading, rest[0]):
+            raise ValueError("match %r must equal heading + ' ' + %r" % (self.match, rest[0]))
+        return self
+
+
 class Extraction(Model):
     """Conversion settings carried over from extraction/sources.toml."""
     ocr: Literal["auto", "force"] = "auto"
@@ -89,6 +126,8 @@ class RegistryEntry(Model):
     supersedes: SourceId | None = None  # an older edition of the same book
     notes: list[str] = []               # known problems with the file, e.g. missing pages
     printed_pages: list[PrintedPages] = []
+    chapters: list[Chapter] = []
+    heading_fix: list[HeadingFix] = []
     extraction: Extraction = Extraction()
     default_scope: list[DefaultScopeRule] = []
     section_scope: list[SectionScope] = []
@@ -123,4 +162,11 @@ class RegistryEntry(Model):
         for (_, end), (start, _) in zip(runs, runs[1:]):
             if start <= end:
                 raise ValueError("printed_pages runs overlap at PDF page %d" % start)
+        for ch in self.chapters:
+            if self.printed_page(ch.pdf_page) != str(ch.printed_page):
+                raise ValueError("chapter %s %r: PDF p. %d is printed p. %s, not %d" % (
+                    ch.number, ch.title, ch.pdf_page, self.printed_page(ch.pdf_page), ch.printed_page))
+        numbers = [ch.number for ch in self.chapters]
+        if len(numbers) != len(set(numbers)):
+            raise ValueError("duplicate chapter numbers")
         return self

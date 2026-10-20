@@ -92,8 +92,8 @@ def test_page_range_must_be_ordered(reg):
 
 
 def test_only_approved_default_scope_rules_reach_the_source(reg):
-    edit(reg, r'^status = "approved"\nsection = \{ heading = "A\) Pest',
-         'status = "proposed"\nsection = { heading = "A) Pest')
+    edit(reg, r'^status = "approved"\nsection = \{ heading = "Nursery"',
+         'status = "proposed"\nsection = { heading = "Nursery"')
     [entry] = read_registry(reg)
     assert entry.to_source().default_scope == [
         "dose basis = per_ha unless stated [ii) Main field, PDF pp. 63-69]"]
@@ -109,7 +109,10 @@ def test_every_section_matches_exactly_one_heading():
     [entry] = read_registry()
     items = json.loads(INDEX.read_text(encoding="utf-8"))["items"]
     sections = [r.section for r in entry.default_scope if r.section] + entry.section_scope
-    counts = {s.heading: heading_matches(s, items) for s in sections}
+    # a section named by a heading_fix exists only after the fix; check the fix's source heading
+    fixed = {f.subsection or f.heading: f.match for f in entry.heading_fix}
+    counts = {s.heading: heading_matches(s.model_copy(update={"heading": fixed.get(s.heading, s.heading)}),
+                                         items) for s in sections}
     assert all(n == 1 for n in counts.values()), counts
 
 
@@ -131,3 +134,29 @@ def test_overlapping_printed_page_runs_fail(reg):
 def test_gaps_are_recorded_as_notes():
     [entry] = read_registry()
     assert any("135" in n for n in entry.notes) and any("370-384" in n for n in entry.notes)
+
+
+# --- chapters and heading fixes ------------------------------------------------------------
+
+def test_chapters_follow_the_printed_page_mapping():
+    [entry] = read_registry()
+    rice, wheat = (next(c for c in entry.chapters if c.title == t) for t in ("RICE", "WHEAT"))
+    assert (rice.pdf_page, rice.printed_page, wheat.pdf_page, wheat.printed_page) == (13, 1, 134, 122)
+    assert len(entry.chapters) == 63 and all(c.status == "proposed" for c in entry.chapters)
+
+
+def test_chapter_page_that_disagrees_with_the_mapping_fails(reg):
+    edit(reg, r'title = "WHEAT", printed_page = 122, pdf_page = 134',
+         'title = "WHEAT", printed_page = 122, pdf_page = 133')
+    assert "PDF p. 133 is printed p. 121, not 122" in problems(reg)
+
+
+def test_heading_fix_must_split_its_match_exactly(reg):
+    edit(reg, r'^heading = "1.1.1. Wet nursery"$', 'heading = "1.1.1. Wet"')
+    assert "must equal heading" in problems(reg)
+
+
+def test_heading_fixes_are_proposed():
+    [entry] = read_registry()
+    assert [(f.match, f.status) for f in entry.heading_fix] == [
+        ("1.1.1. Wet nursery Nursery area", "proposed"), ("A) Pest management Nursery", "proposed")]
