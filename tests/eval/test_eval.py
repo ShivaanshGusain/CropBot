@@ -3,8 +3,8 @@ Nothing here decides a disagreement; the tests check what is listed and how it i
 
 import pytest
 
-from kg.eval import (atoms_of, compare, gold_value, granularity, judged_extras, match, needed_n, pair_status,
-                     same_basis, wilson)
+from kg.eval import (_counts, atoms_of, compare, gold_value, granularity, judged_extras, match, needed_n,
+                     pair_status, same_basis, wilson)
 
 UNIT = "b879265e483b"            # section A
 
@@ -139,3 +139,14 @@ def test_a_gold_row_naming_two_values_is_a_granularity_disagreement():
     pairs = match([r], a)
     found, covered_atoms, _ = granularity([r], a, pairs)
     assert len(pairs) == 1 and len(covered_atoms) == 1 and found[0]["rule"] == "one gold row names several values"
+
+
+@pytest.mark.parametrize("row_status, lower, upper", [("agree", 2, 2), ("open", 0, 2), ("wrong", 0, 0)])
+def test_a_covered_atom_takes_its_gold_rows_status_in_agreeing_precision(row_status, lower, upper):
+    """Atom 0 is matched to gold row 0; atom 1 is covered by the same row through granularity."""
+    a = [{"in_scope": True, "validated": True} for _ in range(2)]
+    outcome = [{"gi": 0, "row": row(), "scored": True, "not_extracted": None,
+                "match": {"ai": 0, "diffs": [], "status": row_status}}]
+    m = _counts(outcome, a, {1: 0}, set(), {}, lambda r: True, lambda x: True)
+    assert m["precision_found"]["k"] == 2
+    assert (m["precision_agree_lower"]["k"], m["precision_agree_upper"]["k"]) == (lower, upper)

@@ -34,11 +34,11 @@ def print_report(rep: dict) -> None:
         print("\nby %s:" % title)
         for k, m in block.items():
             print("  %-15s rows %3d found %3d (not-extracted %d, missed %d) | recall found %s, lenient %s, "
-                  "pipeline %s | agree %s .. %s | precision found %s, agree>= %s" % (
+                  "pipeline %s | agree %s .. %s | precision found %s, agree %s .. %s" % (
                       k, m["gold_rows"], m["found"], m["not_extracted"], m["missed"] - m["not_extracted"],
                       pct(m["recall_found_strict"]), pct(m["recall_found_lenient"]), pct(m["recall_pipeline_strict"]),
                       pct(m["recall_agree"]["lower"]), pct(m["recall_agree"]["upper"]),
-                      pct(m["precision_found"]), pct(m["precision_agree_lower"])))
+                      pct(m["precision_found"]), pct(m["precision_agree_lower"]), pct(m["precision_agree_upper"])))
     print("\nnot extracted (step 9 decision):", rep["not_extracted_rows"])
     print("missed scored rows:", rep["missed_rows"])
     d = rep["disagreements"]

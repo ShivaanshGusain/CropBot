@@ -32,8 +32,14 @@ def test_bph_scope_keeps_out_the_wbph_row(res):
 
 def test_adjudications_count_and_nothing_else_is_decided(res):
     m = metrics(res)["sections"]
-    assert m["all"]["found"] == 90 and m["all"]["recall_agree"]["upper"]["k"] == 90
+    assert m["all"]["found"] == 90
+    # 2026-10-21: all 127 disagreements adjudicated; 10 biofertilizer rows unclear, 6 judged for the gold set
+    assert (m["all"]["recall_agree"]["lower"]["k"], m["all"]["recall_agree"]["upper"]["k"]) == (74, 84)
+    assert m["all"]["precision_found"]["k"] == 109 and m["all"]["precision_found"]["n"] == 110
+    assert (m["all"]["precision_agree_lower"]["k"], m["all"]["precision_agree_upper"]["k"]) == (92, 102)
     if ADJUDICATIONS.exists():                   # 2026-10-21: the BPH resurgence list is in the book (p. 69)
-        assert m["B"]["extras_confirmed"] == 16 and len(res["judged_extras"]) == 16
+        assert m["B"]["extras_confirmed"] == 16
+        verdicts = sorted(e["verdict"] for e in res["judged_extras"].values())
+        assert verdicts == ["extraction"] * 16 + ["gold"]       # + 8e1d#1/m2, a paraphrased maturity sign (E8)
     calib = calibration(res)
     assert calib["proposal"]["threshold"] is None and calib["proposal"]["message"] == "no threshold yet"

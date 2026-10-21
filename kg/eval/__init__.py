@@ -631,14 +631,20 @@ def run(entry) -> dict:
     annotated = {atoms[i]["fact"] for i in used}
     context = {i for i, a in enumerate(atoms) if a["kind"] == "s" and i not in used and a["fact"] in annotated}
     judged = judged_extras(atoms, used | context, extra_verdicts)
+    covered_by = {}                     # a granularity-covered atom -> the gold row it is covered by (the first)
+    for d in gran:
+        if d["ai"] in covered_atoms:
+            covered_by.setdefault(d["ai"], d["gi"])
     return {"rows": rows, "atoms": atoms, "outcome": outcome, "verified": verified, "adjudications": adjud,
-            "covered_atoms": covered_atoms, "unscored_atoms": unscored_atoms | context, "context_atoms": context,
-            "judged_extras": judged}
+            "covered_atoms": covered_atoms, "covered_by": covered_by, "unscored_atoms": unscored_atoms | context,
+            "context_atoms": context, "judged_extras": judged}
 
 
-def _counts(outcome, atoms, covered_atoms, unscored_atoms, judged, key_row, key_atom) -> dict:
+def _counts(outcome, atoms, covered_by, unscored_atoms, judged, key_row, key_atom) -> dict:
     """Recall and precision for the rows and atoms selected by key_row / key_atom. An extra judged
-    "extraction" or "both" by a person counts as correct (the gold set lacks it)."""
+    "extraction" or "both" by a person counts as correct (the gold set lacks it). A granularity-covered
+    atom takes the status of the gold row it is covered by. Agreeing precision is a range like recall:
+    the lower bound counts "unclear" (open) as not agreeing, the upper bound as agreeing."""
     rows = [o for o in outcome if o["scored"] and key_row(o["row"])]
     ne = [o for o in rows if not o["match"] and o["not_extracted"]]
     found = [o for o in rows if o["match"]]
@@ -648,9 +654,19 @@ def _counts(outcome, atoms, covered_atoms, unscored_atoms, judged, key_row, key_
     matched_atoms = {o["match"]["ai"] for o in found}
     scope = [i for i, a in enumerate(atoms) if a["in_scope"] and key_atom(a) and i not in unscored_atoms]
     confirmed = {i for i, e in judged.items() if e["verdict"] in ("extraction", "both")}
-    hit = [i for i in scope if i in matched_atoms or i in covered_atoms or i in confirmed]
-    hit_agree = [i for i in scope if i in confirmed or any(
-        o["match"]["ai"] == i and o["match"]["status"] == "agree" for o in found)]
+    hit = [i for i in scope if i in matched_atoms or i in covered_by or i in confirmed]
+    by_atom = {o["match"]["ai"]: o["match"]["status"] for o in found}
+    by_row = {o["gi"]: o["match"]["status"] for o in outcome if o["match"]}
+
+    def status(i):
+        if i in by_atom:
+            return by_atom[i]
+        if i in covered_by:
+            return by_row.get(covered_by[i])
+        return "agree" if i in confirmed else None
+
+    hit_agree = [i for i in scope if status(i) == "agree"]
+    hit_open = [i for i in scope if status(i) == "open"]
     n_strict, n_lenient = len(rows), len(rows) - len(ne)
     return {
         "gold_rows": len(rows), "found": len(found), "not_extracted": len(ne), "missed": len(rows) - len(found),
@@ -662,12 +678,13 @@ def _counts(outcome, atoms, covered_atoms, unscored_atoms, judged, key_row, key_
         "extras_confirmed": len([i for i in scope if i in confirmed]),
         "precision_found": rate(len(hit), len(scope)),
         "precision_agree_lower": rate(len(hit_agree), len(scope)),
+        "precision_agree_upper": rate(len(hit_agree) + len(hit_open), len(scope)),
     }
 
 
 def metrics(res: dict) -> dict:
     out, atoms = res["outcome"], res["atoms"]
-    args = (out, atoms, res["covered_atoms"], res["unscored_atoms"], res["judged_extras"])
+    args = (out, atoms, res["covered_by"], res["unscored_atoms"], res["judged_extras"])
     by_section = {s: _counts(*args, lambda r, s=s: r["_sheet"] == s, lambda a, s=s: a["section"] == s)
                   for s in SECTION_UNITS}
     by_section["all"] = _counts(*args, lambda r: True, lambda a: True)
