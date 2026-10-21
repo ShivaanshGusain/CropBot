@@ -5,7 +5,7 @@ import copy
 from kg.extract.model import FACT as RAW
 from kg.validate import (check_alternatives, check_ingredients, check_lost_glyph, check_printed_text,
                          check_quote_location, check_range_narrowed, check_raw_numbers, check_review_kept,
-                         check_value_ranges)
+                         check_value_ranges, table_rows)
 from kg.schema.concepts import ActiveIngredient, Fertilizer
 
 SPAN = {"id": "span:x", "source_id": "source:tnau_agriculture_2020", "pdf_page": 64, "section_path": "s",
@@ -219,7 +219,10 @@ def test_a_replacement_character_in_any_stored_text_fails():
 
 # 9 printed text
 def test_each_quantity_unit_and_target_appear_in_the_quote_as_printed():
-    assert check_printed_text(raw())["status"] == "pass"
+    assert check_printed_text(raw())["reason"] == "step 1 basis 'x' is not in the quote"   # the fixture's basis
+    printed = raw(steps=[{"order": 1, "operation": "fertilizer_application",
+                          "applies": [{"target": "DAP", "value": 40, "unit": "kg", "raw": "40 kg of DAP"}]}])
+    assert check_printed_text(printed)["status"] == "pass"
     wrong_target = raw(steps=[{"order": 1, "operation": "fertilizer_application",
                                "applies": [{"target": "urea", "value": 40, "unit": "kg", "raw": "40 kg of DAP"}]}])
     assert check_printed_text(wrong_target)["reason"] == "step 1 target 'urea' is not in the quote"
@@ -231,3 +234,36 @@ def test_each_quantity_unit_and_target_appear_in_the_quote_as_printed():
     counted = raw(quote="Release Trichogramma 5 cc/ha", steps=[{"order": 1, "operation": "release",
                   "applies": [{"target": "Trichogramma", "value": 5, "unit": "count", "raw": "Trichogramma 5"}]}])
     assert check_printed_text(counted)["status"] == "pass"                     # prompt v2's placeholder unit
+
+
+def test_every_copied_text_is_printed_in_the_quote_its_row_or_flagged_heading():
+    """2026-10-21: names, stages, observations, structures, methods and maturity signs, not only quantities."""
+    def any_raw(subtype, **fields):
+        return RAW.validate_python({"subtype": subtype, "summary_en": "s", **fields}).model_dump(mode="json")
+
+    sign = any_raw("HarvestRule", quote="If the rice is clear and firm, it is in hard dough stage.",
+                   maturity_signs=["dehusked rice is clear and firm (hard dough stage)"])
+    r = check_printed_text(sign)
+    assert r["reason"] == ("maturity_signs[0] 'dehusked rice is clear and firm (hard dough stage)' is not in the "
+                           "quote (prompt v3 allows a short phrase here)")
+    sign["maturity_signs"] = ["the rice is clear and firm"]
+    assert check_printed_text(sign)["status"] == "pass"
+    store = any_raw("StorageRule", quote="Store the seeds in polylined gunny bag", structure="polythene bag")
+    assert check_printed_text(store)["reason"] == "structure 'polythene bag' is not in the quote"
+    cased = raw(steps=[{"order": 1, "operation": "fertilizer_application", "method": "apply",
+                        "applies": [{"target": "DAP", "value": 40, "unit": "kg", "raw": "40 kg of DAP"}]}])
+    r = check_printed_text(cased)
+    assert r["status"] == "pass" and r["case_only"] == ["step 1 method"]          # "Apply" in the quote
+    cell = any_raw("ControlMeasure", quote="Spray phenthoate 50% EC 1000 ml", control_class="chemical",
+                   targets=["Case worm Parapoynx stagnalis"], steps=[{"order": 1, "operation": "spraying"}])
+    assert check_printed_text(cell)["status"] == "fail"
+    row = "Case worm Parapoynx stagnalis | Spray phenthoate 50% EC 1000 ml"
+    assert check_printed_text(cell, row=row)["status"] == "pass"                 # the pest is the row's first cell
+    soil = raw(quote="Basal application of gypsum @ 500 kg / ha.", soils=["saline soil condition"],
+               steps=[{"order": 1, "operation": "fertilizer_application",
+                       "applies": [{"target": "gypsum", "value": 500, "unit": "kg", "raw": "500 kg"}]}])
+    heading = "Recommendation for planting under saline soil condition"
+    assert check_printed_text(soil, subheading=heading)["status"] == "fail"      # not flagged: heading not read
+    soil["extraction_flags"] = ["scope_from_heading"]
+    assert check_printed_text(soil, subheading=heading)["status"] == "pass"
+    assert table_rows(["[#/tables/56 row 3] " + row, "[#/tables/56 row 4] Hispa"], ["#/tables/56 row 3"]) == row

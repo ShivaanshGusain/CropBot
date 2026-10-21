@@ -15,14 +15,15 @@ Output: data/validated/<id>/{facts.jsonl, report.json} and data/review/validatio
   6 review_kept      a flagged or inferred fact is needs_review
   7 range_narrowed   a printed range ("12 - 13 %") is not stored as a single bound
   8 lost_glyph       no stored text, on the fact or its step 9 fact, contains U+FFFD
-  9 printed_text     each quantity's unit and target name, as printed, appear in its quote
+  9 printed_text     every text the extraction copies (names, units, bases, formulations, stages, observations,
+                     structures, methods, maturity signs, unmapped phrases) appears in its quote
 """
 
 import json
 import re
 from collections import Counter
 
-from kg.extract import EXTRACTED_DIR
+from kg.extract import EXTRACTED_DIR, get_unit, load_tables, render_unit
 from kg.extract.numbers import printed_numbers
 from kg.extract.quotes import normalise
 from kg.load.seed import read_seed
@@ -341,17 +342,73 @@ def _printed_in(text: str, q: str) -> bool:
     return False
 
 
-def check_printed_text(raw_fact: dict) -> dict:
-    """On the step 9 fact: each quantity's target name, unit and strength unit as printed (case kept)."""
-    q = normalise(raw_fact["quote"])
-    problems = []
-    for s in raw_fact["steps"]:
+COPIED_LISTS = ("varieties", "seasons", "systems", "soils", "purposes", "stages", "regions", "recommends", "pests",
+                "targets", "concerns", "about", "unmapped", "maturity_signs")
+COPIED_FIELDS = ("structure", "storage_term_raw", "coefficients_raw", "target_nutrient", "soil_series", "valid_range",
+                 "authority", "valid_for_season", "parameter", "method", "criterion")
+# prompt v3 asks for these only as "a short phrase" / "a few words from the text", not as printed
+PHRASE_FIELDS = ("maturity_signs", "method", "criterion")
+HEADING_FLAGS = ("scope_from_heading", "target_from_heading")
+
+
+def copied_texts(raw_fact: dict) -> list[tuple[str, str, str]]:
+    """(where, field, text) for every text the extraction copies from the book. A quantity's unit "count"
+    (prompt v2's placeholder) and a basis given by a default-scope rule or inferred are not copied."""
+    out = [("%s[%d]" % (k, i), k, t) for k in COPIED_LISTS for i, t in enumerate(raw_fact.get(k) or [])]
+    out += [("excluded_regions[%d].name" % i, "excluded_regions", x["name"])
+            for i, x in enumerate(raw_fact.get("excluded_regions") or [])]
+    out += [(k, k, raw_fact[k]) for k in COPIED_FIELDS if isinstance(raw_fact.get(k), str) and raw_fact[k]]
+    for s in raw_fact.get("steps") or []:
+        step = "step %d" % s["order"]
+        out += [("%s %s" % (step, k), k, s[k]) for k in ("stage", "method") if s.get(k)]
         for a in s["applies"]:
-            texts = [("target", a["target"]), ("unit", a.get("unit")), ("conc_unit", a.get("conc_unit"))]
-            for what, text in texts:
-                if text and not (what == "unit" and text in PLACEHOLDER_UNITS) and not _printed_in(text, q):
-                    problems.append("step %d %s %r is not in the quote" % (s["order"], what, text))
-    return result("fail", "; ".join(problems)) if problems else result("pass")
+            out.append(("%s target" % step, "target", a["target"]))
+            if a.get("unit") and a["unit"] not in PLACEHOLDER_UNITS:
+                out.append(("%s unit" % step, "unit", a["unit"]))
+            for k in ("conc_unit", "formulation", "water_raw"):
+                if a.get(k):
+                    out.append(("%s %s" % (step, k), k, a[k]))
+            if a.get("basis") and not (a.get("basis_rule") or a.get("basis_inferred")):
+                out.append(("%s basis" % step, "basis", a["basis"]))
+    for i, cl in enumerate(raw_fact.get("clauses") or []):
+        out += [("clause %d %s" % (i + 1, k), k, cl[k]) for k in ("observation", "unit", "sampling_unit", "stage")
+                if cl.get(k)]
+    return out
+
+
+def check_printed_text(raw_fact: dict, subheading: str | None = None, row: str | None = None) -> dict:
+    """On the step 9 fact: every copied text (`copied_texts`) is printed in the quote, not inside a longer
+    word. Also accepted: the fact's own table row (`row`; a table fact quotes a passage of one cell, its pest
+    is the row's first cell) and, for a fact flagged scope_from_heading or target_from_heading, its
+    sub-heading. A difference only in case ("Soak" / "soak") passes and is counted in `case_only`. A
+    failure says when prompt v3 allowed a short phrase for that field."""
+    q = normalise(raw_fact["quote"])
+    if row:
+        q += " " + normalise(row)
+    if subheading and set(HEADING_FLAGS) & set(raw_fact.get("extraction_flags") or []):
+        q += " " + normalise(subheading)
+    problems, case_only = [], []
+    for where, field, text in copied_texts(raw_fact):
+        if _printed_in(text, q):
+            continue
+        if _printed_in(text.casefold(), q.casefold()):
+            case_only.append(where)
+            continue
+        note = " (prompt v3 allows a short phrase here)" if field in PHRASE_FIELDS else ""
+        problems.append("%s %r is not in the quote%s" % (where, text, note))
+    if problems:
+        return result("fail", " | ".join(problems), case_only=case_only)
+    return result("pass", case_only=case_only)
+
+
+def table_rows(rendered: list[str], refs: list[str]) -> str:
+    """The rendered text of the table rows a quote was found in ("[#/tables/57 row 3] Brown planthopper …")."""
+    out = []
+    for ref in refs:
+        if "#/tables/" in ref:
+            marker = "[%s]" % ref
+            out += [line[len(marker):].strip() for line in rendered if line.startswith(marker)]
+    return " ".join(out)
 
 
 # --- running ---------------------------------------------------------------------------------
@@ -381,6 +438,15 @@ def run(entry) -> dict:
     path = NORMALIZED_DIR / entry.id.split(":", 1)[1] / "facts.jsonl"
     records = [json.loads(line) for line in open(path, encoding="utf-8")]
     runs = step9_runs(entry)
+    tables, rendered = load_tables(entry), {}
+
+    def row_of(unit_id: str, refs: list[str]) -> str:
+        if not any("#/tables/" in r for r in refs):
+            return ""
+        if unit_id not in rendered:                  # the unit text exactly as step 9 rendered it
+            rendered[unit_id] = render_unit(entry, get_unit(entry, unit_id), tables)[0].splitlines()
+        return table_rows(rendered[unit_id], refs)
+
     nodes = read_seed().nodes
     fertilizers = {n.id: n for n in nodes if isinstance(n, Fertilizer) and n.review_status.value == "approved"}
     ais = {n.id: n for n in nodes if isinstance(n, ActiveIngredient)}
@@ -397,7 +463,8 @@ def run(entry) -> dict:
             "review_kept": check_review_kept(rec, step9["fact"]),
             "range_narrowed": check_range_narrowed(fact),
             "lost_glyph": check_lost_glyph(fact, step9["fact"]),
-            "printed_text": check_printed_text(step9["fact"]),
+            "printed_text": check_printed_text(step9["fact"], step9.get("subheading"),
+                                               row_of(rec["unit_id"], step9["quote_check"]["refs"])),
         }
         reasons = ["%s: %s" % (k, c["reason"]) for k, c in checks.items() if c["status"] == "fail"]
         alt = checks["alternatives"]

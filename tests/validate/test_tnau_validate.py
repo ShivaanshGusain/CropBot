@@ -61,8 +61,14 @@ def test_rice_seed_storage_ranges_keep_both_bounds(result, facts):
 def test_no_lost_glyph_and_targets_as_printed(facts):
     assert all(f["checks"]["lost_glyph"]["status"] == "pass" for f in facts.values())
     failed = {k for k, f in facts.items() if f["checks"]["printed_text"]["status"] == "fail"}
-    assert failed == {("b879265e483b", i) for i in range(4)} | {("f5b06c9fd3f8", i) for i in (9, 10, 11)}
-    for k in failed:                                     # "seed" from the "Seed rate" heading; N, P, K from "NPK"
+    targets = {("b879265e483b", i) for i in range(4)} | {("f5b06c9fd3f8", i) for i in (9, 10, 11)}
+    assert targets <= failed                             # "seed" from the "Seed rate" heading; N, P, K from "NPK"
+    reworded = {("b879265e483b", 6), ("b879265e483b", 7), ("b879265e483b", 18), ("e63c6fbba0e4", 26),
+                ("e63c6fbba0e4", 38), ("e63c6fbba0e4", 44), ("e63c6fbba0e4", 58), ("e63c6fbba0e4", 59),
+                ("f5b06c9fd3f8", 3), ("f5b06c9fd3f8", 19), ("f5b06c9fd3f8", 20)}    # methods, a short phrase in v3
+    observed = {("e63c6fbba0e4", 15), ("e63c6fbba0e4", 17)}                       # "leafhoppers" not in the quote
+    assert failed == targets | reworded | observed
+    for k in failed:
         assert facts[k]["status"] == "needs_review"
 
 
