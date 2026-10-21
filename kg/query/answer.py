@@ -12,6 +12,8 @@ citations, on the rows a template fetched.
 - Visibility: rejected and superseded facts are never fetched; a non-approved fact missing from the latest
   run is not fetched either. approved is served; auto_verified is labelled; extracted and needs_review are
   unreviewed: descriptive subtypes are shown labelled "not yet verified by an expert", doses are hidden.
+  A fact with scope in its unmapped phrases (step 11) is hidden until approved, unless it is a Caution: a
+  caution served more widely than printed only warns more.
 - Safety: a step applying an active ingredient whose reg_status is not "registered" is dropped (fail
   closed, stricter than schema v1.2); templates with safety joins add the Cautions on their ingredients.
 - Cross-state: only when the farmer's own regions return nothing, and only for the subtypes the schema
@@ -20,7 +22,7 @@ citations, on the rows a template fetched.
 
 import json
 
-from kg.schema.vocab import OnUnknown
+from kg.schema.vocab import SCOPE_IN_UNMAPPED_REASON, OnUnknown
 
 from .logic import FALSE, TRUE, UNKNOWN, combine, policy, question
 from .templates import CROSS_FREELY, FALLBACK_ONLY, STATE_NAMES, TEMPLATES, fetch
@@ -35,7 +37,7 @@ WINDOW = ("storage_months_min", "storage_months_max", "storage_months_min_inclus
 VALUE_SKIP = {"id", "status", "verifier", "verifier_score", "verifier_claims", "verifier_claim_p_yes",
               "verifier_notes", "review_reasons", "review_notes", "extraction_flags", "created_at",
               "missing_in_latest_run", "summary_en", "text_en", "conflict_key", "value_key", "fact_key",
-              "extraction_model", "reviewed_by"}
+              "extraction_model", "reviewed_by", "scope_in_unmapped"}
 
 
 def quote_of(row: dict) -> str | None:
@@ -163,6 +165,8 @@ def render(c: dict, ctx, t, scope: str, label_fallback: str | None, asks: dict) 
     unreviewed = status in UNREVIEWED
     if unreviewed and f["subtype"] not in DESCRIPTIVE:
         return None, ["%s not yet verified by an expert" % f["subtype"]]
+    if status != "approved" and f.get("scope_in_unmapped") and f["subtype"] != "Caution":
+        return None, ["%s (%s)" % (SCOPE_IN_UNMAPPED_REASON, "; ".join(f["scope_in_unmapped"]))]
     shown_steps, hidden_steps = [], []
     for s in sorted(row["steps"], key=lambda s: (s.get("order") or 0, s.get("alt_group") or 0, s.get("alt_option") or 0)):
         state, svars = combine(s["conditions"], ctx)

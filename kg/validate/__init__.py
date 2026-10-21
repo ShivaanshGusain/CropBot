@@ -17,6 +17,9 @@ Output: data/validated/<id>/{facts.jsonl, report.json} and data/review/validatio
   8 lost_glyph       no stored text, on the fact or its step 9 fact, contains U+FFFD
   9 printed_text     every text the extraction copies (names, units, bases, formulations, stages, observations,
                      structures, methods, maturity signs, unmapped phrases) appears in its quote
+ 10 scope_in_unmapped  no unmapped phrase looks like scope (a variety type, area, condition or moisture); a
+                     failure gives the review reason "scope in unmapped: served scope would be wider than printed"
+                     and the phrases are stored on the fact (step 14 hides it, unless a Caution, until approved)
 """
 
 import json
@@ -29,12 +32,13 @@ from kg.extract.quotes import normalise
 from kg.load.seed import read_seed
 from kg.registry import ROOT
 from kg.schema.concepts import ActiveIngredient, Fertilizer
+from kg.schema.vocab import NOT_SCOPE, SCOPE_IN_UNMAPPED, SCOPE_IN_UNMAPPED_REASON
 
 NORMALIZED_DIR = ROOT / "data" / "normalized"
 VALIDATED_DIR = ROOT / "data" / "validated"
 REVIEW_CSV = ROOT / "data" / "review" / "validation.csv"
 CHECKS = ("quote_location", "raw_numbers", "value_ranges", "alternatives", "ingredients", "review_kept",
-          "range_narrowed", "lost_glyph", "printed_text")
+          "range_narrowed", "lost_glyph", "printed_text", "scope_in_unmapped")
 NARROWED = "printed range stored as a single bound"
 LOST_GLYPH = "�"                       # the Unicode replacement character
 PLACEHOLDER_UNITS = {"count"}               # prompt v2: organisms or items with no printed unit
@@ -401,6 +405,30 @@ def check_printed_text(raw_fact: dict, subheading: str | None = None, row: str |
     return result("pass", case_only=case_only)
 
 
+# --- 10 scope in unmapped ----------------------------------------------------------------------
+
+def scope_phrases(unmapped: list[str] | None) -> list[tuple[str, list[str]]]:
+    """(phrase, kinds) for every unmapped phrase that looks like scope (kg.schema.vocab.SCOPE_IN_UNMAPPED)."""
+    out = []
+    for phrase in unmapped or []:
+        if re.search(NOT_SCOPE, phrase, re.I):
+            continue
+        kinds = [k for k, patterns in SCOPE_IN_UNMAPPED.items() if any(re.search(p, phrase, re.I) for p in patterns)]
+        if kinds:
+            out.append((phrase, kinds))
+    return out
+
+
+def check_scope_in_unmapped(fact: dict) -> dict:
+    """On the step 10 fact: an unmapped phrase that names a variety type, an area, a condition or a moisture
+    means the fact as stored applies more widely than the book says."""
+    found = scope_phrases(fact.get("unmapped"))
+    if not found:
+        return result("pass")
+    return result("fail", "; ".join("%r (%s)" % (p, ", ".join(k)) for p, k in found),
+                  phrases=[p for p, _ in found])
+
+
 def table_rows(rendered: list[str], refs: list[str]) -> str:
     """The rendered text of the table rows a quote was found in ("[#/tables/57 row 3] Brown planthopper …")."""
     out = []
@@ -465,8 +493,11 @@ def run(entry) -> dict:
             "lost_glyph": check_lost_glyph(fact, step9["fact"]),
             "printed_text": check_printed_text(step9["fact"], step9.get("subheading"),
                                                row_of(rec["unit_id"], step9["quote_check"]["refs"])),
+            "scope_in_unmapped": check_scope_in_unmapped(fact),
         }
-        reasons = ["%s: %s" % (k, c["reason"]) for k, c in checks.items() if c["status"] == "fail"]
+        reasons = [SCOPE_IN_UNMAPPED_REASON if k == "scope_in_unmapped" else "%s: %s" % (k, c["reason"])
+                   for k, c in checks.items() if c["status"] == "fail"]
+        scope = checks["scope_in_unmapped"].get("phrases", [])
         alt = checks["alternatives"]
         if alt["status"] == "skip" and alt.get("applies"):
             reasons.append("alternatives: %s" % alt["reason"])
@@ -479,7 +510,8 @@ def run(entry) -> dict:
         out.append({**{k: rec[k] for k in ("unit_id", "raw_index", "subtype", "run")}, "fact_id": fact["id"],
                     "status_before": fact["status"], "status": status, "checks": checks, "review_notes": notes,
                     "review_reasons": rec["review_reasons"] + reasons,
-                    "fact": {**fact, "status": status, "review_notes": notes}})          # notes on the fact (v1.3)
+                    "fact": {**fact, "status": status, "review_notes": notes,            # notes on the fact (v1.3)
+                             "scope_in_unmapped": scope}})
     stale = [{"pdf_page": n.pdf_page, "match": n.match} for i, n in enumerate(entry.review_note)
              if n.status == "approved" and not note_hits[i]]
     return {"facts": out, "stale_notes": stale}

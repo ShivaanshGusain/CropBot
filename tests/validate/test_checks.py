@@ -3,9 +3,11 @@
 import copy
 
 from kg.extract.model import FACT as RAW
+import pytest
+
 from kg.validate import (check_alternatives, check_ingredients, check_lost_glyph, check_printed_text,
                          check_quote_location, check_range_narrowed, check_raw_numbers, check_review_kept,
-                         check_value_ranges, table_rows)
+                         check_scope_in_unmapped, check_value_ranges, scope_phrases, table_rows)
 from kg.schema.concepts import ActiveIngredient, Fertilizer
 
 SPAN = {"id": "span:x", "source_id": "source:tnau_agriculture_2020", "pdf_page": 64, "section_path": "s",
@@ -267,3 +269,46 @@ def test_every_copied_text_is_printed_in_the_quote_its_row_or_flagged_heading():
     soil["extraction_flags"] = ["scope_from_heading"]
     assert check_printed_text(soil, subheading=heading)["status"] == "pass"
     assert table_rows(["[#/tables/56 row 3] " + row, "[#/tables/56 row 4] Hispa"], ["#/tables/56 row 3"]) == row
+
+
+# 10 scope in unmapped (approved 2026-10-21): every unmapped phrase of the TNAU v3 runs
+
+SCOPE = {
+    "for hybrids": ["variety"],                                                       # b879#3 (gold A5)
+    "depending on the height of the seedlings": ["condition"],                        # b879#14, kept blocked
+    "when the seedlings are to be pulled out in 20-25 days after sowing in less fertile nursery soils":
+        ["condition"],                                                                # b879#19 (A38)
+    "In BPH prone areas/seasons": ["area"],                                           # e63c#9 (B35)
+    "in tungro endemic area": ["area"],                                               # e63c#17
+    "submergence of recommended level during critical periods only": ["condition"],   # e63c#56
+    "at 10 per cent moisture content": ["moisture"],                                  # f5b0#21 (C13b, C14, C15)
+}
+NOT_SCOPE = [
+    "especially in BPH and leaffolder prone areas/seasons",       # e63c#5: "especially" narrows nothing
+    "especially",
+    "Taking the average duration of the crop as an indication", "Even at this stage, the leaves of some of the "
+    "varieties may remain green.", "Maturity may be hastened by 3-4 days", "to escape monsoon rains", "for 10 hrs",
+    "leave for 24hrs", "overnight", "sprout for 24hrs", "1lit of water", "for 30 minutes", "Thereafter",
+    "fully decomposed", "can be followed", "30 cm space at every 2.5 m", "second a week later", "at 0.005%",
+    "(45 x 30 cms)", "preferably", "(1' for every 8')", "ETL based insecticide / fungicide application",
+    "in equal volume", "for 12 - 16 h", "for 16 h", "to original moisture content", "for 12 h",
+    "at the ratio of 1 : 1", "to original seed moisture content", "for 16 hrs", "Shallow planting",
+    "(CaOCl2 + CaCO3 + arappu (Albizzia amara) leaf powder mixed in the ratio of 5:4:1)",
+]
+
+
+@pytest.mark.parametrize("phrase, kinds", SCOPE.items())
+def test_a_scope_like_unmapped_phrase_is_flagged(phrase, kinds):
+    assert scope_phrases([phrase]) == [(phrase, kinds)]
+    r = check_scope_in_unmapped(fact(unmapped=["Thereafter", phrase]))
+    assert r["status"] == "fail" and r["phrases"] == [phrase]
+
+
+@pytest.mark.parametrize("phrase", NOT_SCOPE)
+def test_other_unmapped_phrases_are_not_scope(phrase):
+    assert scope_phrases([phrase]) == []
+    assert check_scope_in_unmapped(fact(unmapped=[phrase]))["status"] == "pass"
+
+
+def test_no_unmapped_phrase_passes():
+    assert check_scope_in_unmapped(fact())["status"] == "pass"

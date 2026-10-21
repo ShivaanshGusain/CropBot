@@ -112,6 +112,9 @@ def test_conflict_key_ignores_values_and_sources_but_not_the_storage_window():
     raw_only = copy.deepcopy(a)
     raw_only["raw"]["max_moisture_pct"] = "below 8 %"
     assert lf.value_key(a) == lf.value_key(raw_only)                             # printed wording is not a value
+    scoped = copy.deepcopy(a)
+    scoped["scope_in_unmapped"] = ["at 10 per cent moisture content"]            # step 11's flag is not a value
+    assert lf.value_key(a) == lf.value_key(scoped) and lf.conflict_key(a) == lf.conflict_key(scoped)
     other_method = copy.deepcopy(a)
     other_method["steps"][0]["method"] = "maintain"                              # different advice, not a contradiction
     assert lf.conflict_key(a) != lf.conflict_key(other_method)

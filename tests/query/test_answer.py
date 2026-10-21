@@ -167,6 +167,27 @@ def test_threshold_asks_for_spiders_and_keeps_both_clauses_until_counted():
     assert answer(FakeDriver([BPH]), "threshold", ctx())["asks"][0]["variable"] == "pest"
 
 
+def test_scope_in_unmapped_hides_the_fact_until_approved():
+    scoped = {**BPH, "fact": {**BPH["fact"], "scope_in_unmapped": ["in tungro endemic area"]}}
+    out = answer(FakeDriver([scoped]), "threshold", ctx(pest="pest:brown_planthopper"))
+    assert out["slots"] == [] and out["hidden"] == [{
+        "fact": BPH["fact"]["id"], "quote": "q",
+        "reason": "scope in unmapped: served scope would be wider than printed (in tungro endemic area)"}]
+    approved = {**scoped, "fact": {**scoped["fact"], "status": "approved"}}
+    assert answer(FakeDriver([approved]), "threshold", ctx(pest="pest:brown_planthopper"))["slots"]
+
+
+def test_scope_in_unmapped_never_hides_a_caution():
+    """A caution served more widely than printed only warns more; it stays labelled unverified."""
+    from kg.query.answer import render
+    from kg.query.templates import Template
+    caution = row("rec:c", "Caution", text_en="avoid synthetic pyrethroids",
+                  scope_in_unmapped=["In BPH prone areas/seasons"])
+    c = {"row": caution, "unknown": {}, "explicit": 0, "variety": 0}          # as candidates() builds it
+    served, reasons = render(c, ctx(), Template("Caution", ("text_en",)), "local", None, {})
+    assert served and served["labels"] == [LABEL_UNREVIEWED] and not reasons
+
+
 def test_conservative_unknown_withholds_an_action():
     rain = {"variable": "forecast_rain_mm_24h", "op": "<", "value": 5.0, "any_of_group": 1, "raw": "no rain"}
     r = row("rec:dry", "DryingSpec", purposes=["purpose:grain"], target_moisture_pct_max=12.0, conditions=[rain])

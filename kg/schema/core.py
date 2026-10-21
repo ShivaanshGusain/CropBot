@@ -367,6 +367,7 @@ class Recommendation(Model):
     unmapped: list[str] = []
     extraction_flags: list[ExtractionFlag] = []   # schema v1.3: copied from the step 9 fact
     review_notes: list[str] = []                  # schema v1.3: approved registry notes (step 11)
+    scope_in_unmapped: list[str] = []             # step 11: unmapped phrases that look like scope (not yet in v1.3)
     missing_in_latest_run: bool = False
     valid_from: date | None = None
     superseded_by: RecId | None = None

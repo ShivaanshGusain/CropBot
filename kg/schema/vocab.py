@@ -335,6 +335,19 @@ class ExtractionFlag(StrEnum):
 COUNT_WORDS = {"once": 1, "twice": 2, "thrice": 3}
 INTERVAL_WORDS = {"daily": (1, "days"), "weekly": (1, "weeks"), "fortnightly": (2, "weeks")}
 
+# Scope-like `unmapped` phrases (approved 2026-10-21): the fact carries no edge or condition for them, so
+# its served scope would be wider than printed. Step 11 flags them; step 14 hides such a fact (not a
+# Caution) until a person approves it. Regexes, case-insensitive. A phrase starting with "especially"
+# narrows nothing ("especially in BPH and leaffolder prone areas/seasons" applies everywhere).
+SCOPE_IN_UNMAPPED = {
+    "variety": (r"\bfor\s+(\w+\s+)?(hybrids?|variet(y|ies))\b", r"\b(short|medium|long)\s+duration\b"),
+    "area": (r"\b(areas?|endemic|prone|regions?|zones?|delta|tracts?|districts?)\b",),
+    "condition": (r"\b(when|if|unless)\b", r"\bdepending\s+on\b", r"\bonly\b", r"\bsoils?\b"),
+    "moisture": (r"\b\d+(\.\d+)?\s*(%|per\s*cent)\s+moisture\b",),
+}
+NOT_SCOPE = r"^\s*especially\b"
+SCOPE_IN_UNMAPPED_REASON = "scope in unmapped: served scope would be wider than printed"
+
 
 class ZoneScheme(StrEnum):
     STATE_BOOK = "state_book"

@@ -82,3 +82,22 @@ def test_nursery_alternatives_wait_for_approved_percentages(facts):
     r = facts[("b879265e483b", 19)]["checks"]["alternatives"]
     assert r["status"] == "skip" and r["applies"] and "no approved percentages" in r["reason"]
     assert any(x.startswith("alternatives:") for x in facts[("b879265e483b", 19)]["review_reasons"])
+
+
+def test_scope_in_unmapped_flags_six_facts_with_the_exact_reason(facts):
+    """2026-10-21: the 6 validated facts whose unmapped phrase is scope; e63c#5 ("especially ...") and
+    f5b0#21 (moisture) are held at step 10, so they never reach step 11."""
+    failed = {k: f["checks"]["scope_in_unmapped"]["phrases"] for k, f in facts.items()
+              if f["checks"]["scope_in_unmapped"]["status"] == "fail"}
+    assert failed == {("b879265e483b", 3): ["for hybrids"],
+                      ("b879265e483b", 14): ["depending on the height of the seedlings"],
+                      ("b879265e483b", 19): ["when the seedlings are to be pulled out in 20-25 days after sowing "
+                                             "in less fertile nursery soils"],
+                      ("e63c6fbba0e4", 9): ["In BPH prone areas/seasons"],
+                      ("e63c6fbba0e4", 17): ["in tungro endemic area"],
+                      ("e63c6fbba0e4", 56): ["submergence of recommended level during critical periods only"]}
+    for k, phrases in failed.items():
+        f = facts[k]
+        assert f["status"] == "needs_review" and f["fact"]["scope_in_unmapped"] == phrases
+        assert "scope in unmapped: served scope would be wider than printed" in f["review_reasons"]
+    assert facts[("e63c6fbba0e4", 56)]["status_before"] == "extracted"

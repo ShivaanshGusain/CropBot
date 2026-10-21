@@ -64,7 +64,7 @@ NOT_PROPS = {"steps", "conditions", "evidence", "regions", "excluded_regions", "
     | {k for k, _ in APPLICABILITY} | {k for k, _ in IDENTITY}
 # text_en is a Caution's wording, not a value: two cautions against the same thing agree, whatever their words
 CORE_VALUE_SKIP = NOT_PROPS | {"id", "subtype", "fact_key", "summary_en", "text_en", "extraction_model", "verifier",
-                               "verifier_score", "unmapped", "missing_in_latest_run", "valid_from",
+                               "verifier_score", "unmapped", "scope_in_unmapped", "missing_in_latest_run", "valid_from",
                                "superseded_by", "duration_group"} | set(IDENTITY_FIELDS) | set(WINDOW_FIELDS)
 
 
