@@ -205,14 +205,42 @@ def test_compare_ignores_fields_a_stored_v1_fact_never_had(store):
 def test_a_new_run_keeps_the_earlier_one(store):
     path, first = ex.ingest(ENTRY, UNIT, "model-a", v2([V2_GOOD, ETL_FACT, BPH_FACT]), version="v2")
     path2, second = ex.ingest(ENTRY, UNIT, "model-b", v2([V2_GOOD, ETL_FACT, BPH_FACT]), version="v2")   # different cache key
-    assert path2 == path and second["previous_run"] == "tnau_agriculture_2020/v2/history/abc123.%s.json" % (
-        first["cache_key"][:12])
+    assert path2 == path and second["previous_run"] == "tnau_agriculture_2020/v2/history/%s" % (
+        ex.history_name("abc123", first))
     kept = store / second["previous_run"]
     assert json.loads(kept.read_text(encoding="utf-8"))["extraction_model"] == "model-a"
     assert ex.load_run(ENTRY, UNIT["id"], str(kept))["cache_key"] == first["cache_key"]
     assert ex.load_run(ENTRY, UNIT["id"], "v2")["cache_key"] == second["cache_key"]
     with pytest.raises(ex.ExtractError, match="no run v1"):
         ex.load_run(ENTRY, UNIT["id"], "v1")
+
+
+def test_forced_reruns_with_the_same_key_keep_every_run(store):
+    """Before 2026-10-21 the second --force re-run overwrote history/<hash>.<key>.json, the run kept by the first,
+    and the kept run's previous_run pointed at itself."""
+    answer = v2([V2_GOOD, ETL_FACT, BPH_FACT])
+    _, first = ex.ingest(ENTRY, UNIT, "model-a", answer, version="v2")
+    _, second = ex.ingest(ENTRY, UNIT, "model-a", answer, force=True, version="v2")
+    _, third = ex.ingest(ENTRY, UNIT, "model-a", answer, force=True, version="v2")
+    assert first["cache_key"] == second["cache_key"] == third["cache_key"]
+    assert second["previous_run"] != third["previous_run"]
+    kept_first, kept_second = (json.loads((store / r["previous_run"]).read_text(encoding="utf-8"))
+                               for r in (second, third))
+    assert kept_first["created_at"] == first["created_at"] and kept_second["created_at"] == second["created_at"]
+    assert kept_second["previous_run"] == second["previous_run"] != third["previous_run"]   # never itself
+    assert len(list((store / "tnau_agriculture_2020" / "v2" / "history").glob("*.json"))) == 2
+
+
+def test_an_existing_history_file_is_never_overwritten(store):
+    answer = v2([V2_GOOD, ETL_FACT, BPH_FACT])
+    path, first = ex.ingest(ENTRY, UNIT, "model-a", answer, version="v2")
+    taken = path.parent / "history" / ex.history_name("abc123", first)
+    taken.parent.mkdir()
+    taken.write_text("an earlier run", encoding="utf-8")
+    with pytest.raises(ex.ExtractError, match="refusing to overwrite"):
+        ex.ingest(ENTRY, UNIT, "model-b", answer, version="v2")
+    assert taken.read_text(encoding="utf-8") == "an earlier run"
+    assert json.loads(path.read_text(encoding="utf-8"))["created_at"] == first["created_at"]   # nothing written
 
 
 def test_a_new_prompt_keeps_the_earlier_one(store):

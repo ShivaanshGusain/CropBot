@@ -326,12 +326,21 @@ def ingest(entry, unit: dict, model: str, answer: str, force: bool = False,
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():                    # an earlier run is kept, never overwritten
         old = json.loads(path.read_text(encoding="utf-8"))
-        kept = path.parent / "history" / ("%s.%s.json" % (path.stem, old["cache_key"][:12]))
+        kept = path.parent / "history" / history_name(path.stem, old)
+        if kept.exists():                # a --force re-run has the same cache key; its time tells the runs apart
+            raise ExtractError("%s already exists; refusing to overwrite an earlier run" % kept)
         kept.parent.mkdir(exist_ok=True)
         kept.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
         record["previous_run"] = kept.relative_to(EXTRACTED_DIR).as_posix()
     path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
     return path, record
+
+
+def history_name(stem: str, run: dict) -> str:
+    """history/<hash>.<cache key[:12]>.<run time, UTC>.json. The cache key alone repeats when the same
+    unit, prompt and model are re-run with --force; before 2026-10-21 that overwrote a kept run."""
+    when = datetime.fromisoformat(run["created_at"]).astimezone(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    return "%s.%s.%s.json" % (stem, run["cache_key"][:12], when)
 
 
 def write_prompt(entry, unit: dict, built: dict) -> Path:
@@ -347,6 +356,8 @@ def write_prompt(entry, unit: dict, built: dict) -> Path:
             "nokey-" + hashlib.sha256(path.read_bytes()).hexdigest()
         if old_key != built["cache_key"]:
             kept = out_dir(entry, built["version"]) / "history" / ("%s.%s.md" % (stem, old_key[:12]))
+            if kept.exists() and kept.read_bytes() != path.read_bytes():   # the key covers the prompt text
+                raise ExtractError("%s already exists with other text; refusing to overwrite it" % kept)
             kept.parent.mkdir(exist_ok=True)
             kept.write_bytes(path.read_bytes())
     path.write_text(built["prompt"], encoding="utf-8")
