@@ -3,8 +3,8 @@ Nothing here decides a disagreement; the tests check what is listed and how it i
 
 import pytest
 
-from kg.eval import (atoms_of, compare, gold_value, granularity, match, needed_n, pair_status, same_basis,
-                     wilson)
+from kg.eval import (atoms_of, compare, gold_value, granularity, judged_extras, match, needed_n, pair_status,
+                     same_basis, wilson)
 
 UNIT = "b879265e483b"            # section A
 
@@ -119,6 +119,15 @@ def test_only_a_person_closes_a_disagreement():
     assert pair_status(diffs, both, "A6") == "agree"
     assert pair_status(diffs, {**both, ("A6", "basis"): {"verdict": "gold"}}, "A6") == "wrong"
     assert pair_status(diffs, {("A6", "unit"): {"verdict": "both"}}, "A6") == "open"
+
+
+def test_an_extra_is_judged_by_name_and_quote_not_by_its_atom_id():
+    a = atoms(fact_rec([option(1, "Acephate", "75 % SP", 666, 1000, "g")]))
+    verdict = {"gold_id": "", "field": "extra", "verdict": "extraction", "note": "n", "atom": "e63c#99/k1",
+               "name": "Acephate", "quote": a[0]["quote"]}
+    assert set(judged_extras(a, set(), [verdict])) == {0}                     # the stored id differs: still found
+    assert judged_extras(a, {0}, [verdict]) == {}                             # matched atoms are not extras
+    assert judged_extras(a, set(), [{**verdict, "name": "Carbofuran"}]) == {}
 
 
 def test_a_gold_row_naming_two_values_is_a_granularity_disagreement():

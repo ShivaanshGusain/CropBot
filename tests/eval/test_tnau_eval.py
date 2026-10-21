@@ -28,9 +28,10 @@ def test_bph_scope_keeps_out_the_wbph_row(res):
     assert "e63c#37" not in in_b and "e63c#70" not in in_b        # WBPH row and WBPH resurgence list
 
 
-@pytest.mark.skipif(ADJUDICATIONS.exists(), reason="the counts below hold before any adjudication")
-def test_nothing_is_decided_before_adjudication(res):
-    m = metrics(res)["sections"]["all"]
-    assert m["found"] == 89 and m["recall_agree"]["upper"]["k"] == 89
+def test_adjudications_count_and_nothing_else_is_decided(res):
+    m = metrics(res)["sections"]
+    assert m["all"]["found"] == 89 and m["all"]["recall_agree"]["upper"]["k"] == 89
+    if ADJUDICATIONS.exists():                   # 2026-10-21: the BPH resurgence list is in the book (p. 69)
+        assert m["B"]["extras_confirmed"] == 16 and len(res["judged_extras"]) == 16
     calib = calibration(res)
     assert calib["proposal"]["threshold"] is None and calib["proposal"]["message"] == "no threshold yet"

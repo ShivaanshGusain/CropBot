@@ -15,7 +15,10 @@ greedily, best first, one to one, ties in gold-row then atom order. Numbers only
 Nothing is decided in code. Each matched pair's differences (value, unit, basis, condition, alternative
 structure, purpose, subtype, timing, page, granularity) are listed in data/review/gold_disagreements.csv
 for adjudication against the PDF. Verdicts are read back from data/gold/adjudications.csv, which only a
-person writes (columns gold_id, field, verdict, note; verdict extraction | gold | both | unclear).
+person decides (columns gold_id, field, verdict, note, atom, name, quote; verdict extraction | gold | both |
+unclear). A disagreement is keyed by gold_id + field. An extracted atom with no gold row is a row with field
+"extra", no gold_id, and its name and quote; judged extraction or both, it counts as correct (the gold set
+lacks it).
 Equality uses step 10's unit and basis tables (kg.normalize.units) and exact normalised text only.
 
 Scoring (approved 2026-10-21):
@@ -517,16 +520,36 @@ def group_structure(rows, atoms, pairs) -> list[dict]:
 
 # --- adjudication ---------------------------------------------------------------------------------
 
-def read_adjudications() -> dict:
+def read_adjudications() -> tuple[dict, list[dict]]:
+    """(verdicts on disagreements keyed by gold_id + field, verdicts on extras). An extra (field "extra",
+    no gold_id) is an extracted atom with no gold row, named by `name` and `quote` rather than its atom id,
+    which shifts when a unit is re-extracted; `atom` is kept for reading only."""
     if not ADJUDICATIONS.exists():
-        return {}
-    out = {}
+        return {}, []
+    pairs, extras = {}, []
     with open(ADJUDICATIONS, encoding="utf-8", newline="") as f:
         for row in csv.DictReader(f):
             if row["verdict"] not in VERDICTS:
                 raise ValueError("%s: verdict %r for %s %s is not one of %s"
                                  % (ADJUDICATIONS.name, row["verdict"], row["gold_id"], row["field"], VERDICTS))
-            out[(row["gold_id"], row["field"])] = row
+            if row["field"] == "extra":
+                if row["gold_id"] or not row.get("name") or not row.get("quote"):
+                    raise ValueError("%s: an extra needs name and quote and no gold_id: %s" % (ADJUDICATIONS.name, row))
+                extras.append(row)
+            else:
+                pairs[(row["gold_id"], row["field"])] = row
+    return pairs, extras
+
+
+def judged_extras(atoms: list[dict], used: set[int], extras: list[dict]) -> dict[int, dict]:
+    """Unmatched in-scope atoms a person judged, by name and quote: atom index -> adjudication row."""
+    out = {}
+    for i, a in enumerate(atoms):
+        if i in used or not a["in_scope"]:
+            continue
+        for e in extras:
+            if norm(e["name"]) == norm(a["name"]) and norm(e["quote"]) == norm(a["quote"]):
+                out[i] = e
     return out
 
 
@@ -576,7 +599,7 @@ def run(entry) -> dict:
                 skipped.append({"unit": stem, "quote": x["entry"]["quote"], "reason": x["entry"].get("reason"),
                                 "section": section_of(stem)})
     pairs = match(rows, atoms)
-    adjud = read_adjudications()
+    adjud, extra_verdicts = read_adjudications()
     gran, covered_atoms, covered_rows = granularity(rows, atoms, pairs)
     structure = group_structure(rows, atoms, pairs)
     extra = defaultdict(list)
@@ -607,12 +630,15 @@ def run(entry) -> dict:
     used = {o["match"]["ai"] for o in outcome if o["match"]} | covered_atoms
     annotated = {atoms[i]["fact"] for i in used}
     context = {i for i, a in enumerate(atoms) if a["kind"] == "s" and i not in used and a["fact"] in annotated}
+    judged = judged_extras(atoms, used | context, extra_verdicts)
     return {"rows": rows, "atoms": atoms, "outcome": outcome, "verified": verified, "adjudications": adjud,
-            "covered_atoms": covered_atoms, "unscored_atoms": unscored_atoms | context, "context_atoms": context}
+            "covered_atoms": covered_atoms, "unscored_atoms": unscored_atoms | context, "context_atoms": context,
+            "judged_extras": judged}
 
 
-def _counts(outcome, atoms, covered_atoms, unscored_atoms, key_row, key_atom) -> dict:
-    """Recall and precision for the rows and atoms selected by key_row / key_atom."""
+def _counts(outcome, atoms, covered_atoms, unscored_atoms, judged, key_row, key_atom) -> dict:
+    """Recall and precision for the rows and atoms selected by key_row / key_atom. An extra judged
+    "extraction" or "both" by a person counts as correct (the gold set lacks it)."""
     rows = [o for o in outcome if o["scored"] and key_row(o["row"])]
     ne = [o for o in rows if not o["match"] and o["not_extracted"]]
     found = [o for o in rows if o["match"]]
@@ -621,8 +647,10 @@ def _counts(outcome, atoms, covered_atoms, unscored_atoms, key_row, key_atom) ->
     pipeline = sum(atoms[o["match"]["ai"]]["validated"] for o in found)
     matched_atoms = {o["match"]["ai"] for o in found}
     scope = [i for i, a in enumerate(atoms) if a["in_scope"] and key_atom(a) and i not in unscored_atoms]
-    hit = [i for i in scope if i in matched_atoms or i in covered_atoms]
-    hit_agree = [i for i in scope if any(o["match"]["ai"] == i and o["match"]["status"] == "agree" for o in found)]
+    confirmed = {i for i, e in judged.items() if e["verdict"] in ("extraction", "both")}
+    hit = [i for i in scope if i in matched_atoms or i in covered_atoms or i in confirmed]
+    hit_agree = [i for i in scope if i in confirmed or any(
+        o["match"]["ai"] == i and o["match"]["status"] == "agree" for o in found)]
     n_strict, n_lenient = len(rows), len(rows) - len(ne)
     return {
         "gold_rows": len(rows), "found": len(found), "not_extracted": len(ne), "missed": len(rows) - len(found),
@@ -631,6 +659,7 @@ def _counts(outcome, atoms, covered_atoms, unscored_atoms, key_row, key_atom) ->
         "recall_pipeline_strict": rate(pipeline, n_strict),
         "recall_agree": {"lower": rate(agree_lb, n_strict), "upper": rate(agree_ub, n_strict)},
         "atoms_in_scope": len(scope), "atoms_matched": len(hit),
+        "extras_confirmed": len([i for i in scope if i in confirmed]),
         "precision_found": rate(len(hit), len(scope)),
         "precision_agree_lower": rate(len(hit_agree), len(scope)),
     }
@@ -638,7 +667,7 @@ def _counts(outcome, atoms, covered_atoms, unscored_atoms, key_row, key_atom) ->
 
 def metrics(res: dict) -> dict:
     out, atoms = res["outcome"], res["atoms"]
-    args = (out, atoms, res["covered_atoms"], res["unscored_atoms"])
+    args = (out, atoms, res["covered_atoms"], res["unscored_atoms"], res["judged_extras"])
     by_section = {s: _counts(*args, lambda r, s=s: r["_sheet"] == s, lambda a, s=s: a["section"] == s)
                   for s in SECTION_UNITS}
     by_section["all"] = _counts(*args, lambda r: True, lambda a: True)
@@ -781,11 +810,15 @@ def unmatched(res: dict) -> list[dict]:
     for i, a in enumerate(res["atoms"]):
         if a["in_scope"] and i not in matched and i not in res["covered_atoms"]:
             context = i in res["context_atoms"]
-            out.append({"kind": "context step (not counted)" if context else "extracted atom with no gold row",
-                        "id": a["atom"], "section": a["section"], "scored": "no" if context else "yes",
+            judged = res["judged_extras"].get(i)
+            kind = "context step (not counted)" if context else "extracted atom with no gold row"
+            if judged:
+                kind = "extracted atom with no gold row, adjudicated %s" % judged["verdict"]
+            out.append({"kind": kind, "id": a["atom"], "section": a["section"], "scored": "no" if context else "yes",
                         "pdf_page": ", ".join(map(str, a["pages"])), "type": a["subtype"],
                         "name": a["name"], "value": _atom_value(a),
-                        "note": "validated" if a["validated"] else "held", "quote": a["quote"]})
+                        "note": ("validated" if a["validated"] else "held") + ("; %s" % judged["note"] if judged else ""),
+                        "quote": a["quote"]})
     return out
 
 
