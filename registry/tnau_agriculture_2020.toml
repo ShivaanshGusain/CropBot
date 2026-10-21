@@ -337,11 +337,12 @@ match = "Imidacloprid 70% WG 30-35 kg"
 note = "inconsistent units for the same product in the source: g/ha on pp. 287–288, kg/ha on pp. 66, 67 and once on p. 288"
 status = "approved"
 
-[[review_note]]   # rendered PDF p. 73 (printed 61) prints "80 µM concentration of sodium nitroprusside"; the PDF's text layer has U+FFFD for the µ
+[[review_note]]   # rejected 2026-10-21: the PDF text layer, the conversion and the v2 answer all have µ (U+00B5); only the v3 hand-run answer had U+FFFD
 pdf_page = 73
 match = "80 �M concentration of sodium nitroprusside"
 note = "the PDF text layer has a replacement character where the page prints µ: '80 µM' (rendered p. 73, printed p. 61); once approved, step 10 may read '�M' here as micromolar"
-status = "proposed"
+status = "rejected"
+reason = "based on a typo (U+FFFD) in the hand-run answer; the PDF text layer prints µ"
 # --- reviewer conflicts: CONFLICTS_WITH {origin: "review"} once approved; each side must match exactly one loaded fact ---
 
 [[conflict]]   # rice seed: the drying section calls 8-9 % "long term"; the storage section's long term (> 15 months) is < 8 %

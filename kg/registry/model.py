@@ -152,6 +152,7 @@ class ReviewNote(Model):
     match: Text                 # the text as printed (compared normalised)
     note: Text
     status: RuleStatus
+    reason: Text | None = None  # why a note was rejected; kept so the decision stays on record
 
 
 class ConflictSide(Model):
