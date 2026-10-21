@@ -25,7 +25,8 @@ def fact(result, unit, index):
 
 
 def test_every_fact_is_validated_or_held_with_reasons_and_none_is_approved(result):
-    assert len(result["facts"]) + len(result["held"]) == 124
+    assert len(result["facts"]) + len(result["held"]) == 123      # 124 before the step 8 rebuild removed e63c's
+                                                                  # WBPH Pymetrozine fact (the line is BPH's)
     assert all(h["reasons"] for h in result["held"])
     for x in result["facts"]:
         assert x["status"] in ("extracted", "needs_review")

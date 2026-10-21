@@ -30,7 +30,7 @@ def test_approved_review_note_is_attached_and_values_are_unchanged(result, facts
     imid = ("inconsistent units for the same product in the source: g/ha on pp. 287–288, kg/ha on pp. 66, 67 "
             "and once on p. 288")
     assert facts[("e63c6fbba0e4", 35)]["review_notes"] == [imid]                     # BPH row, p. 66
-    assert facts[("e63c6fbba0e4", 37)]["review_notes"] == [imid]                     # WBPH row, pp. 66-67
+    assert facts[("e63c6fbba0e4", 36)]["review_notes"] == [imid]                     # WBPH row, pp. 66-67
 
 
 def test_no_approved_note_is_stale(result):                      # the WBPH row spans pp. 66-67 and matches both notes
@@ -64,7 +64,7 @@ def test_no_lost_glyph_and_targets_as_printed(facts):
     targets = {("b879265e483b", i) for i in range(4)} | {("f5b06c9fd3f8", i) for i in (9, 10, 11)}
     assert targets <= failed                             # "seed" from the "Seed rate" heading; N, P, K from "NPK"
     reworded = {("b879265e483b", 6), ("b879265e483b", 7), ("b879265e483b", 18), ("e63c6fbba0e4", 26),
-                ("e63c6fbba0e4", 38), ("e63c6fbba0e4", 44), ("e63c6fbba0e4", 58), ("e63c6fbba0e4", 59),
+                ("e63c6fbba0e4", 37), ("e63c6fbba0e4", 43), ("e63c6fbba0e4", 57), ("e63c6fbba0e4", 58),
                 ("f5b06c9fd3f8", 3), ("f5b06c9fd3f8", 19), ("f5b06c9fd3f8", 20)}    # methods, a short phrase in v3
     observed = {("e63c6fbba0e4", 15), ("e63c6fbba0e4", 17)}                       # "leafhoppers" not in the quote
     assert failed == targets | reworded | observed
