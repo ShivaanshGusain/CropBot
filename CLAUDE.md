@@ -55,6 +55,7 @@ uv run python -m kg.verify source:tnau_agriculture_2020           # step 12: ask
 uv run python -m kg.load.facts source:tnau_agriculture_2020 --check   # step 13: build and check every row, no database
 uv run python -m kg.load.facts source:tnau_agriculture_2020           # step 13: one write transaction
 uv run python -m kg.load.facts --snapshot                             # hash of the whole graph (idempotency proof)
+uv run python -m kg.eval.gold [--check]                               # frozen gold workbook -> data/gold/*.jsonl, unchanged
 
 uv run --project extraction python extraction/extract.py --list   # registry check: included, duplicate, unregistered PDFs
 uv run --project extraction python extraction/extract.py --all --source tnau_agriculture
@@ -555,6 +556,7 @@ Input: the step 11 facts (`data/validated/<id>/facts.jsonl`). The URL and model 
   - A fact with no claim (the two cautions with no `concerns`, and the saline Spacing with no values) is marked "human review required: no code-built claim" and can never be auto_verified.
   - The key is `c_` + hash(fact_key + claim).
 - **Controls:** 5 deliberately wrong claims, one number changed (×2, or +10 points for a percentage) on the first numeric claim of facts taken round-robin over units. Keys are `x_…`; they're excluded from scores and reported separately. Step 15 raises them to about 10 % of claims.
+  - **Backlog** (recorded 2026-10-21, not done): `_changed` changes `max_moisture_pct` but never `min_moisture_pct`, so a StorageRule with only a lower moisture bound gets no control. No TNAU fact has only a lower bound.
 - **Requests:** one per unit, with the unit text exactly as step 9 rendered it as the state and all pending claims as `noul` questions (P(yes)).
   - A request is split only past an estimated 60k tokens (characters ÷ 4 × 1.2).
   - `--dry-run` writes `claims.jsonl` and sizes and sends nothing.
@@ -641,6 +643,17 @@ Approved 2026-10-20. `kg.query.answer(driver, template, FarmContext)` returns a 
   - All 10 match the v3 data (2026-10-21).
   - Q12 for grain changed with the data: the NaCl harvest-hastening spray (8e1d#3) now validates and applies to grain. It is an unreviewed dose, so the answer is "No verified guidance available" instead of "No local guidance available".
   - Rice seed storage C2#22/#23 are served with both bounds, 12–13 % and 8–9 % (`min_moisture_pct` beside `max_moisture_pct`), labelled unverified.
+
+## Gold set (`data/gold`, step 15)
+
+- **The frozen gold set** is `data/gold/gold_set_annotations_final.xlsx` (committed 2026-10-21, sha256 `d40725a2…`). It is fixed outside the repo, and its Changelog sheet records every change from v3. **Never edit it.**
+- `uv run python -m kg.eval.gold` converts it to `data/gold/gold_{A,B,C,changelog}.jsonl` plus `gold_manifest.json`; `--check` compares the committed files and writes nothing.
+  - **Nothing is changed:** one record per non-empty row with `_sheet`, `_row` (the Excel row) and every cell as stored. Strings are unstripped, numbers stay numbers, and empty cells are null.
+  - **Refused:** a workbook with another sha256 (the hash is pinned in `kg/eval/gold.py`), any formula, and a value outside the header's columns.
+  - **Reported, never fixed:**
+    - 11 rows with an empty `quote` cell whose quote text sits in `other_values`, apparently shifted one column left: A25–A28, A30, A37, A44, B37, B42, C7, C8.
+    - `step` is stored as text in A and C and as a number in B.
+- **Contents:** A (wet nursery, 47 rows), B (main-field pest management, 35 rows; only the BPH rows are scored), C (harvest p. 39 and varietal seed production pp. 74–75, 19 rows). 8 rows are `Other`.
 
 ## Scope rules for extraction and normalisation
 

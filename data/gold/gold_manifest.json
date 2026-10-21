@@ -1,0 +1,102 @@
+{
+  "workbook": "gold_set_annotations_final.xlsx",
+  "sha256": "d40725a2b47ece2e3ff0d541ca4f80d5b75cdcea9787661c22b4ce7da6480a71",
+  "sheets": {
+    "A": {
+      "file": "gold_A.jsonl",
+      "rows": 47,
+      "header": [
+        "fact_id",
+        "fact_type",
+        "pdf_page",
+        "printed_page",
+        "section",
+        "crop",
+        "purpose",
+        "where",
+        "condition",
+        "step",
+        "alternative",
+        "action",
+        "input",
+        "amount",
+        "unit",
+        "per",
+        "timing",
+        "other_values",
+        "quote",
+        "unsure"
+      ],
+      "empty_rows_skipped": []
+    },
+    "B": {
+      "file": "gold_B.jsonl",
+      "rows": 35,
+      "header": [
+        "fact_id",
+        "fact_type",
+        "pdf_page",
+        "printed_page",
+        "section",
+        "crop",
+        "purpose",
+        "where",
+        "condition",
+        "step",
+        "alternative",
+        "action",
+        "input",
+        "amount",
+        "unit",
+        "per",
+        "timing",
+        "other_values",
+        "quote",
+        "unsure"
+      ],
+      "empty_rows_skipped": []
+    },
+    "C": {
+      "file": "gold_C.jsonl",
+      "rows": 19,
+      "header": [
+        "fact_id",
+        "fact_type",
+        "pdf_page",
+        "printed_page",
+        "section",
+        "crop",
+        "purpose",
+        "where",
+        "condition",
+        "step",
+        "alternative",
+        "action",
+        "input",
+        "amount",
+        "unit",
+        "per",
+        "timing",
+        "other_values",
+        "quote",
+        "unsure"
+      ],
+      "empty_rows_skipped": []
+    },
+    "Changelog": {
+      "file": "gold_changelog.jsonl",
+      "rows": 128,
+      "header": [
+        "sheet",
+        "fact_id",
+        "field",
+        "before",
+        "after",
+        "why"
+      ],
+      "empty_rows_skipped": [
+        129
+      ]
+    }
+  }
+}
