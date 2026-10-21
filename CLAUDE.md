@@ -569,6 +569,26 @@ No model. Input: the facts step 10 validated (`data/normalized/<id>/facts.jsonl`
      - **Prompt v4 candidates:**
        - copy `method`, `observation` and maturity sign text verbatim from the quote (decided 2026-10-21);
        - never write a generic "Pest" target.
+  10. **scope_in_unmapped** (approved 2026-10-21): an `unmapped` phrase of the step 10 fact that looks like scope means the fact as stored applies more widely than the book says.
+     - **Patterns:** `kg.schema.vocab.SCOPE_IN_UNMAPPED`, case-insensitive regexes:
+       - variety: "for (word) hybrids/variety/varieties", "short/medium/long duration";
+       - area: area(s), endemic, prone, region(s), zone(s), delta, tract(s), district(s);
+       - condition: when, if, unless, "depending on", only, soil(s);
+       - moisture: a number + % or "per cent" + moisture.
+     - **Never scope:** a phrase starting with "especially" (e63c#5 "especially in BPH and leaffolder prone areas/seasons" applies everywhere).
+     - **A failure:**
+       - adds the review reason "scope in unmapped: served scope would be wider than printed" (exactly this text; the phrase and its kind are in the check's detail);
+       - stores the phrases on the fact as `scope_in_unmapped` (a list; outside `value_key`);
+       - makes the fact needs_review.
+     - **TNAU:** 6 validated facts fail:
+       - b879#3 "for hybrids";
+       - b879#14 "depending on the height of the seedlings" (kept blocked by decision);
+       - b879#19 "when the seedlings are to be pulled out in 20-25 days …";
+       - e63c#9 "In BPH prone areas/seasons";
+       - e63c#17 "in tungro endemic area";
+       - e63c#56 "submergence of recommended level during critical periods only" (was extracted).
+
+       f5b0#21 "at 10 per cent moisture content" would fail too, but it is held at step 10. The rule covers all six gold rows judged "gold" (A5, A38, B35, C13b, C14, C15).
 - **Review notes:** `[[review_note]]` in the registry is printed text on a PDF page plus a note, with a status.
   - Step 11 attaches an approved note to every fact whose quote contains that text on that page, as a review reason; the value never changes.
   - An approved note that matches no fact is reported as stale.
@@ -660,6 +680,10 @@ Step 13. Input: step 12's facts (status, verifier), step 11's (the fact, review 
   - Load 1 created 22 nodes (the fact, 20 steps, 1 span) and 44 relationships. Load 2 created none, with the snapshot identical (`aa9f3971…`, 729 nodes, 1083 relationships).
   - 101 Recommendations: 100 current (12 extracted, 88 needs_review), plus the missing one. No other status changed.
   - No U+FFFD anywhere; the 10 query fixtures still match.
+- **scope_in_unmapped reload** (2026-10-21, no reset):
+  - Load 1 created no nodes or relationships. It set `scope_in_unmapped` and the review reason on 6 facts, and e63c#56 became needs_review. The snapshot went from `aa9f3971…` to `e2b45a25…` (729 nodes, 1083 relationships).
+  - Load 2 changed nothing, and the snapshot was identical.
+  - 100 current facts: 11 extracted, 89 needs_review, plus the missing old BPH node. The 10 fixtures still match.
 - **`value_key` excludes a Caution's `text_en`:** its wording, not a value. Two cautions against synthetic pyrethroids in other words don't conflict.
 - **Schema v1.3 in the loader:**
   - `ABOUT` edges (Caution → pest);
@@ -690,6 +714,9 @@ Approved 2026-10-20. `kg.query.answer(driver, template, FarmContext)` returns a 
   - approved is served;
   - auto_verified is labelled "checked automatically against the source";
   - extracted is treated exactly like needs_review (unreviewed). DryingSpec, StorageRule, HarvestRule, PestThreshold and Caution are shown labelled "not yet verified by an expert". Doses (any APPLIES), inferred bases and inherited amounts are hidden, and dose subtypes are hidden entirely;
+  - a fact with `scope_in_unmapped` phrases (step 11 check 10) is hidden until a person approves it; auto_verified is not enough. It is listed as hidden with the reason and the phrases. **Cautions are never hidden by this rule** (approved 2026-10-21: a wider caution only warns more); they keep the review reason and the unverified label.
+    - TNAU: a GLH threshold question now returns "No verified guidance available" with e63c#17 hidden.
+    - The whole fact is hidden, although only its last clause ("2/hill in tungro endemic area") is narrowed; the extraction kept that clause's scope in the fact's `unmapped`.
   - rejected and superseded facts are never fetched, nor non-approved facts flagged missing.
 - **Active ingredients fail closed:** a step applying an ingredient whose `reg_status` isn't `registered` is dropped, whatever the fact's status (approved 2026-10-20; stricter than v1.2, see the v1.3 list).
 - **Cross-state:** only when the farmer's own regions return nothing, only for DryingSpec, StorageRule, PestThreshold and HarvestRule (labelled "From a <state> source"), plus QualitySpec and Caution (unlabelled). Others: "No local guidance available".
@@ -760,7 +787,13 @@ No model. Input: the latest step 9 run of each unit (held facts included), the s
       - the 16 concerns of the BPH resurgence list (e63c#68, now #67, p. 69) → extraction; gold incomplete.
 
       With these, precision found is 108/109 (B 43/43).
-  - "Agree" stays a range until every disagreement has a verdict.
+    - **All 127 adjudicated 2026-10-21** (`f1cbe33`). The categories from `data/review/gold_adjudication_prep.md` were applied to the current rows; each note names its rule.
+      - **both:** list-intro-vs-alternatives, condition-same-words, advice-as-condition, the three timing categories, option-label-only, and the evidence items E1, E2, E3, E5, E6 and E7.
+      - **gold:** condition-in-unmapped (A5, A38, B35, C13b, C14, C15).
+      - **unclear:** biofertilizer-grouping (A15–A21, A45–A47), "ambiguous punctuation on p. 29; agronomist to decide".
+      - **The extra 8e1d#1/m2** → gold: "paraphrase of printed text".
+  - "Agree" stays a range while any verdict is "unclear": the lower bound counts unclear as not agreeing, the upper as agreeing. This holds for precision as well as recall.
+  - **A granularity-covered atom takes the status of the gold row it is covered by** (fixed 2026-10-21, `0d0c6be`). Before, `precision_agree_lower` left these atoms out and printed 86/110.
 - **Calibration:** facts matched to gold rows, by `verifier_score` cut-off (0.5–0.99), for three populations:
   - (a) all with a score;
   - (b) `extracted` facts only;
@@ -783,6 +816,20 @@ No model. Input: the latest step 9 run of each unit (held facts included), the s
   - **Disagreements:** 127 on 81 rows; 1 adjudicated.
   - **Threshold:** still no threshold. Population (b): 10 facts, 1 correct.
   - **Controls:** 2 unit swaps at ≥ 0.5, none at ≥ 0.7.
+- **TNAU, all adjudicated** (2026-10-21; unchanged by the scope_in_unmapped rule):
+
+  | Metric | A | B | C | All |
+  |---|---|---|---|---|
+  | Recall found | 40/40 [91–100] | 31/31 [89–100] | 19/19 [83–100] | 90/90 = 100 % [96–100] |
+  | Recall agreeing | 28–38/40 | 30/31 | 16/19 | 74/90 = 82 % [73–89] .. 84/90 = 93 % [86–97] |
+  | Pipeline recall | 37/40 | 27/31 | 13/19 | 77/90 = 86 % [77–91] |
+  | Precision found | 41/41 | 44/44 | 24/25 | 109/110 = 99 % [95–100] |
+  | Precision agreeing | 29–39/41 | 42/44 | 21/25 | 92/110 = 84 % [76–89] .. 102/110 = 93 % [86–96] |
+
+  - **Wrong:** the six condition-in-unmapped rows (atoms b879#3, b879#19, e63c#9 k1 + k2, f5b0#21 q1.1–q1.3) and the extra 8e1d#1/m2.
+  - **Unclear:** the 10 biofertilizer rows.
+  - **Threshold:** none yet. Population (b) is 10/10 correct (Wilson lower bound 72 %); 0.90 needs 35 facts above the cut-off, about 255 scored gold rows.
+  - **Controls:** 2/60 accepted at 0.5, both unit swaps.
 
 ## Scope rules for extraction and normalisation
 
@@ -853,6 +900,11 @@ Proposed, not built (recorded 2026-10-21; the code does not do this yet):
    - **Risk:** two facts in one unit that differ only in their option lists would now share a fact_key. Today's rule already holds both at step 10 (a `fact_key` collision), so the change fails safe. In TNAU the passage ref and the pest separate the BPH and WBPH lists.
    - **Migration:** every fact with an alternative group gets a new fact_key and id, so the change needs a one-time `--reset-source` (refused if any fact is approved, rejected or reviewed), like the v1.3 reload.
    - **Tests when built:** the old and new e63c#35 share a fact_key and load as REVISION_OF; removing, adding or renumbering an option keeps the key; changing a step outside the group changes it; a collision within a unit still holds both facts.
+
+Built, not yet in the doc (2026-10-21):
+
+7. **`Recommendation.scope_in_unmapped`** (a list of the unmapped phrases that look like scope, set by step 11 check 10). Step 14 hides such a fact, unless it is a Caution, until a person approves it.
+   - Candidate for prompt v4 or the schema: scope that belongs to one threshold clause ("2/hill in tungro endemic area", e63c#17) should sit on that clause, as a condition or a clause-level scope, not in the fact's `unmapped`. Today the rule hides the whole GLH threshold.
 
 ## Known issues for segmentation and tables (steps 6–7)
 
