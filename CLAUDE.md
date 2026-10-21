@@ -312,6 +312,16 @@ No LLM. Rice and wheat chapters only for now (`--chapters`). Input: the full con
 
 **Merged cells:** rows are built from Docling's unique `table_cells`, so a cell spanning columns appears once with its `col_span`. Genuine repeats ("Straw | Straw | Straw") are separate cells and stay. The original cells are kept per part.
 
+**Rebuild from rulings** (`kg/tables/rebuild.py`, approved 2026-10-21), before stitching, so a page-break merge continues the corrected cells:
+- **Ruled cells:** the part's ruling segments (`check.rulings`) cut its box into a grid. Neighbouring grid units join unless one segment covers the whole edge between them, so underlines don't count.
+- **Assigning words:** every page word (docling-parse, the text layer Docling read) goes to the Docling cell whose row and column sit over the word's ruled cell. A row's or column's position is the median centre of its one-span cells. Inside one ruled cell, the smallest Docling box holding the word decides.
+- **Editing a cell:** Docling's tokens are aligned to the words in its box (difflib), and a word moves only as a block at the start or end of the cell. The receiving cell takes the same block, so every removed token lands somewhere. A span is narrowed when a ruled cell is narrower.
+- **All or nothing per part:**
+  - every character is conserved exactly, or Docling's cells are kept and the part is flagged;
+  - a ruled cell with no Docling row or column over it keeps Docling's boxes and is flagged ("ruled cells with no Docling row or column …").
+- **Output:** changed cells keep `docling_text` (and `docling_col`); `original_cells` in `tables.jsonl` are Docling's own. Each change goes to review as "rebuilt from rulings". `python -m kg.tables.rebuild <source>` prints the before/after diff; the rice/wheat diff is pinned in `tests/tables/fixtures/table_rebuild_diff.txt`.
+- **Rice/wheat:** pp. 17, 34, 66, 69, 70 and 71 are corrected (see "Known issues" below). `varieties.jsonl` is unchanged.
+
 **Stitching**, within a unit. B continues A when:
 - B is on the next page;
 - only tables lie between them;
@@ -334,6 +344,16 @@ Then:
 - each cell's text must equal the page words inside its box. Same words in a different order (superscripts, stacked lines) is counted, not flagged.
 
 A part without rulings is "not verifiable". Every mismatch goes to `data/review/tables.csv`; nothing is corrected.
+
+**Ruling checks on Docling's own cells** (`rebuild.crossings`, 2026-10-21). Each goes to review marked "resolved by the rebuild" or "not resolved":
+- "crosses a row ruling": one drawn segment runs across the whole cell width, with words above and below it;
+- "crosses a column ruling": the same, for the cell height;
+- "span wider than its ruled cell".
+
+Rice/wheat:
+- 6 row crossings: #57, #60 (×2), #61 and #8 are resolved; #7 p. 16 is not resolved;
+- 4 column crossings (#32): all resolved;
+- 1 span (#8): resolved.
 
 **Variety pivot:** a table headed "Particulars" gives one Variety per column. Values are aligned to the last N columns of each part.
 - Mapped rows fill typed fields, with numbers keeping their `raw` text.
@@ -376,6 +396,11 @@ uv run python -m kg.extract compare source:tnau_agriculture_2020 --unit <unit_id
   - The wrong run is kept in `v3/history/f5b06c9fd3f8.e33b29d52cdc.json`. Its `previous_run` points at itself.
   - The run before it, the first failed v3 f5b0 run (the old C2#10/#11 quotes), was lost. A `--force` re-run with the same cache key wrote its history copy over it, and no other copy exists. History names now include the run time (below).
   - The p. 73 `[[review_note]]` proposing to read "�M" as micromolar is rejected and kept, with its reason.
+- **e63c re-run after the step 8 rebuild** (2026-10-21). The unit text changed: "Pymetrozine 50% WG 300g" moved from the WBPH row to the end of the BPH row. The v3 answer was revised in two places, and the previous run is kept in `v3/history/`:
+  - e63c#35 (BPH) gains option 19, Pymetrozine 300 g per ha, and its quote ends with that line;
+  - the WBPH Pymetrozine fact (old e63c#36, held for no operation) is removed.
+
+  So **e63c facts after #35 are one lower than before**: the WBPH spray list is now #36, and the BPH resurgence caution #67 (was #68). 71 facts.
 - "a week before harvest" and "second a week later" keep their words in `timing_raw`, with no offset: turning "a week" into 7 days would be a unit conversion.
 
 - **Raw model** (`kg/extract/model.py`), separate from `kg/schema`:
@@ -468,9 +493,9 @@ No model. Input: the latest run of every unit under the latest prompt version, `
   - a `fact_key` collision within the unit.
 
   An unlinked *step* or *clause* stage keeps its words in `timing_raw`/`raw`, and the fact goes to review.
-- **`fact_key`:** a hash of the source, section path, subtype, linked applicability, identity (incl. Caution `about_ids`), step slots (order, alt group, option, operation, method, anchor, target IDs; method and anchor added for v1.3) and the quote's first passage ref. Values are excluded. With the v3 runs and the v1.3 concepts: 124 facts in, **100 validated, 24 held** (68 held under v1.2; 2026-10-21, after the C2#4 re-run). Still held:
+- **`fact_key`:** a hash of the source, section path, subtype, linked applicability, identity (incl. Caution `about_ids`), step slots (order, alt group, option, operation, method, anchor, target IDs; method and anchor added for v1.3) and the quote's first passage ref. Values are excluded. With the v3 runs and the v1.3 concepts: 123 facts in, **100 validated, 23 held** (68 held under v1.2; 2026-10-21, after the step 8 rebuild's e63c re-run; 124/100/24 before it). Still held (a fact can have several reasons):
 - 14 for a generic target ("Pest", "weeds", "disease");
-- 13 for a step with no operation (advice like "avoid close planting", owl perches, options with no verb or formulation code);
+- 12 for a step with no operation (advice like "avoid close planting", owl perches, options with no verb or formulation code);
 - KKM (unidentified);
 - the GLH resurgence caution: "GLH, Nephotettix virescens" doesn't match the seeded three-species scientific name;
 - "direct sowing";
@@ -539,7 +564,8 @@ No model. Input: the facts step 10 validated (`data/normalized/<id>/facts.jsonl`
        - 1 paraphrased maturity sign (8e1d#1 "dehusked rice is clear and firm (hard dough stage)"; p. 39 prints "If the rice is clear and firm, it is in hard dough stage.");
        - 11 generic "Pest" targets the book doesn't print (all held);
        - 5 observations ("leafhoppers" in e63c#17's four clauses; e63c#15 "seedlings with rolling of the first and second leaves");
-       - the earlier 9: b879#0–3 "seed" (from the "Seed rate" heading), f5b0#9–11 N/P/K (from "NPK"), e63c#43 Notchi/Ipomoea, e63c#53 Pseudomonas.
+       - the earlier 9: b879#0–3 "seed" (from the "Seed rate" heading), f5b0#9–11 N/P/K (from "NPK"), e63c#43 Notchi/Ipomoea, e63c#53 Pseudomonas (now e63c#42 and #52).
+       - These counts are from before the e63c re-run. After it, the validated facts fail printed_text 20 times, the same facts as before: e63c's reworded methods are now #37, #43, #57 and #58.
      - **Prompt v4 candidates:**
        - copy `method`, `observation` and maturity sign text verbatim from the quote (decided 2026-10-21);
        - never write a generic "Pest" target.
@@ -583,6 +609,8 @@ Input: the step 11 facts (`data/validated/<id>/facts.jsonl`). The URL and model 
   - **Selection:** the kinds take turns, each going round-robin over the units, so TNAU has 20 of each, sent in 3 requests.
   - **Never used:** a number or unit control whose changed words (with a neighbouring word, "60 kg") the unit prints, because it could be true there. Every seeded pest is printed somewhere in unit e63c, which is why pest swaps use the line check.
   - **TNAU P(yes):** number at most 0.10 and pest at most 0.09. Unit swaps go up to 0.66: 4 of 20 are ≥ 0.5, all ml → litres on sprays.
+  - After the e63c re-run (all 199 e63c claims asked again, since the unit text is part of the key): number at most 0.14, pest 0.09, unit 0.60, with 2 unit swaps ≥ 0.5.
+  - The new BPH Pymetrozine claim: P(yes) 0.98.
   - **Backlog** (recorded 2026-10-21, not done): `_changed` changes `max_moisture_pct` but never `min_moisture_pct`, so a StorageRule with only a lower moisture bound gets no number control. No TNAU fact has only a lower bound.
 - **Requests:** one per unit, with the unit text exactly as step 9 rendered it as the state and all pending claims as `noul` questions (P(yes)).
   - A request is split only past an estimated 60k tokens (characters ÷ 4 × 1.2).
@@ -626,6 +654,12 @@ Step 13. Input: step 12's facts (status, verifier), step 11's (the fact, review 
   - C2#4 (sodium nitroprusside 80 µM, P(yes) 0.95) is the only new fact; load 1 created 3 nodes and 9 relationships. Load 2 created none, with the snapshot identical (`c59e3e47…`, 707 nodes, 1039 relationships).
   - 100 facts: 12 extracted, 88 needs_review. C2#22/#23 became extracted with the check 7 fix. C2#24 is needs_review through the review conflict.
   - No property in the graph contains U+FFFD.
+- **Step 8 rebuild reload** (2026-10-21, no reset):
+  - The BPH fact e63c#35 has a new id (`rec:24266ffe…`) and a new fact_key, because option 19 is a new step slot. So there is no REVISION_OF.
+  - The old BPH node `rec:2ddbd464…` is kept with `missing_in_latest_run = true`. It is needs_review, so it is never fetched.
+  - Load 1 created 22 nodes (the fact, 20 steps, 1 span) and 44 relationships. Load 2 created none, with the snapshot identical (`aa9f3971…`, 729 nodes, 1083 relationships).
+  - 101 Recommendations: 100 current (12 extracted, 88 needs_review), plus the missing one. No other status changed.
+  - No U+FFFD anywhere; the 10 query fixtures still match.
 - **`value_key` excludes a Caution's `text_en`:** its wording, not a value. Two cautions against synthetic pyrethroids in other words don't conflict.
 - **Schema v1.3 in the loader:**
   - `ABOUT` edges (Caution → pest);
@@ -723,7 +757,7 @@ No model. Input: the latest step 9 run of each unit (held facts included), the s
     - **An extracted atom with no gold row** is a row with field `extra`, no gold_id, and its name and quote. It is keyed by name and quote, not the atom id, which shifts on re-extraction. Judged extraction or both, it counts as correct: the gold set lacks it.
     - **Decided 2026-10-21:**
       - C16 page → extraction: extraction correct, gold page wrong (quote on p. 75);
-      - the 16 concerns of the BPH resurgence list (e63c#68, p. 69) → extraction; gold incomplete.
+      - the 16 concerns of the BPH resurgence list (e63c#68, now #67, p. 69) → extraction; gold incomplete.
 
       With these, precision found is 108/109 (B 43/43).
   - "Agree" stays a range until every disagreement has a verdict.
@@ -742,6 +776,13 @@ No model. Input: the latest step 9 run of each unit (held facts included), the s
   - **Disagreements:** 126 on 80 rows, mostly timing (44) and condition (40), e.g. the B list intro "spray any one of the following insecticides per ha" kept as a gold condition (18 rows).
   - **Threshold:** no threshold yet. Population (b) has 10 facts (1 correct, 9 open). Even if every open disagreement goes to the extraction, a lower bound ≥ 0.90 needs 35 facts above the cut-off, about 250 scored gold rows at today's 1.9 rows per fact and 26 % `extracted`.
   - **Controls:** none of the 60 at ≥ 0.7 (Wilson upper 6 %); 4 unit swaps at ≥ 0.5.
+- **TNAU, after the step 8 rebuild** (2026-10-21; 2 verdicts recorded):
+  - **Recall:** found 90/90 (96–100 %); pipeline 77/90.
+  - **B23** (Pymetrozine 50% WG 300 g) now matches the BPH fact e63c#35. Its one disagreement is the list-intro condition, the same as the other 18 B rows.
+  - **Precision found:** 109/110 (95–100 %). A 41/41, B 44/44, C 24/25.
+  - **Disagreements:** 127 on 81 rows; 1 adjudicated.
+  - **Threshold:** still no threshold. Population (b): 10 facts, 1 correct.
+  - **Controls:** 2 unit swaps at ≥ 0.5, none at ≥ 0.7.
 
 ## Scope rules for extraction and normalisation
 
@@ -818,8 +859,15 @@ These were found in the committed TNAU conversion while building the schema test
   - The page prints "Medium duration : NPK @ 150:50:60 kg / ha" and "Long duration : NPK @ 150:50:80 kg / ha", one bullet per line. Docling read both labels before both values.
   - An approved `[[reading_order_fix]]` moves ": NPK @ 150:50:60 kg / ha" after "Medium duration", so the unit now has the printed order.
 - **Fixed: `table_ref`.** The new conversion gives every table a `#/tables/N` ref. The ETL table is two parts (p. 63 and p. 64), to be stitched in step 8.
-- **Open (found 2026-10-21, fix pending approval): Docling puts text in the wrong cell, and step 8 doesn't see it.**
-  - **Why step 8 misses it:** its text check compares a cell with the words inside Docling's own box, and the box includes the misplaced text.
+- **Fixed by the step 8 rebuild (2026-10-21), except p. 16: Docling put text in the wrong cell, and step 8 didn't see it.**
+  - **Why the old check missed it:** it compared a cell with the words inside Docling's own box, and the box included the misplaced text. The ruling checks (step 8) now catch it.
+  - **Not fixed:**
+    - #/tables/7 p. 16: the Nilgiris row has no Docling row of its own, so the part keeps Docling's cells and is flagged;
+    - the p. 25 ADT (R) 46 column;
+    - words Docling never read ("-" p. 70, "oryzicola" p. 72);
+    - the pp. 71–72 parts flagged "words follow Docling's boxes".
+
+    All are in review.
   - **Found** by scanning every ruled part of the rice/wheat tables, checked on the rendered pages; all real:
     - **#/tables/57, p. 66:** "Pymetrozine 50% WG 300g" is printed as the BPH cell's last line. It sits in the WBPH cell r4 c1, whose box crosses the ruling at y 215.1. The WBPH fact e63c#36 is held (no operation), so the graph never had it, but the BPH fact e63c#35 lacks it (gold B23).
     - **#/tables/7, p. 16:** the full-width row "a. The Nilgiris" sits in r1 c0 with "Samba".
@@ -827,4 +875,5 @@ These were found in the committed TNAU conversion while building the schema test
     - **#/tables/60, p. 69:** the full-width notes row ("❖ Biocontrol agents are compatible …") is merged into the "Seedling dip" row r2.
     - **#/tables/61, p. 70:** the Blast row's last bullet ("Foliar spray with P. fluorescens TNAU liquid formulation @ 5 ml/l") sits in the Brown spot cell r2 c1.
     - **#/tables/32, p. 34:** the second words of "Old delta", "New delta", "General" and "Annamalai block" are in the P2O5 column (r3, r4, r6, r7 c2: "delta 35").
-  - **Affected facts:** only #/tables/57 is in a unit extracted so far (e63c).
+  - **#/tables/62, p. 71:** the same as p. 70 ("Foliar spray … @ 5ml/l").
+  - **Affected facts:** only #/tables/57 is in a unit extracted so far (e63c). Pymetrozine is now in the BPH row, and e63c was re-run.
