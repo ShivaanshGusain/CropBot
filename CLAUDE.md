@@ -646,13 +646,14 @@ Approved 2026-10-20. `kg.query.answer(driver, template, FarmContext)` returns a 
 
 ## Gold set (`data/gold`, step 15)
 
-- **The frozen gold set** is `data/gold/gold_set_annotations_final.xlsx` (committed 2026-10-21, sha256 `d40725a2…`). It is fixed outside the repo, and its Changelog sheet records every change from v3. **Never edit it.**
+- **The frozen gold set** is `data/gold/gold_set_annotations_final.xlsx` (sha256 `e4214ccd…`, 2026-10-21). It is fixed outside the repo, and its Changelog sheet records every change from v3. **Never edit it.**
+  - The first committed version (`d40725a2…`) had 11 rows shifted one column left (A25–A28, A30, A37, A44, B37, B42, C7, C8).
+  - The current version moves them back, with 11 Changelog entries; no other cell changed (checked cell by cell).
 - `uv run python -m kg.eval.gold` converts it to `data/gold/gold_{A,B,C,changelog}.jsonl` plus `gold_manifest.json`; `--check` compares the committed files and writes nothing.
   - **Nothing is changed:** one record per non-empty row with `_sheet`, `_row` (the Excel row) and every cell as stored. Strings are unstripped, numbers stay numbers, and empty cells are null.
   - **Refused:** a workbook with another sha256 (the hash is pinned in `kg/eval/gold.py`), any formula, and a value outside the header's columns.
-  - **Reported, never fixed:**
-    - 11 rows with an empty `quote` cell whose quote text sits in `other_values`, apparently shifted one column left: A25–A28, A30, A37, A44, B37, B42, C7, C8.
-    - `step` is stored as text in A and C and as a number in B.
+  - **Reported, never fixed:** duplicate ids, rows with no quote, rows that look shifted, and columns with mixed types. The current version has none, apart from `step`.
+  - **One output-only conversion** (approved 2026-10-21): `step` is stored as text in some rows and as a number in others. The jsonl files hold it as an integer, and each of the 28 conversions is logged in `gold_manifest.json`. A step that isn't plain digits is refused.
 - **Contents:** A (wet nursery, 47 rows), B (main-field pest management, 35 rows; only the BPH rows are scored), C (harvest p. 39 and varietal seed production pp. 74–75, 19 rows). 8 rows are `Other`.
 
 ## Scope rules for extraction and normalisation

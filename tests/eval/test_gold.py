@@ -5,8 +5,8 @@ import json
 import pytest
 from openpyxl import Workbook, load_workbook
 
-from kg.eval.gold import (CHANGELOG, FACT_SHEETS, GOLD_DIR, WORKBOOK, GoldError, check, out_name, problems,
-                          read_workbook, render)
+from kg.eval.gold import (CHANGELOG, FACT_SHEETS, GOLD_DIR, WORKBOOK, GoldError, check, out_name, output,
+                          problems, read_workbook, render)
 
 
 @pytest.fixture(scope="module")
@@ -29,9 +29,29 @@ def test_every_cell_is_kept_as_stored(book):
                 assert type(rec[header[c.column - 1]]) is type(c.value) and rec[header[c.column - 1]] == c.value
 
 
+def test_the_output_differs_only_by_logged_integer_steps(book):
+    out, log = output(book)
+    logged = {(c["sheet"], c["row"]): c for c in log}
+    for name, s in book["sheets"].items():
+        for stored, written in zip(s["records"], out["sheets"][name]["records"]):
+            diff = {k for k in stored if stored[k] != written[k] or type(stored[k]) is not type(written[k])}
+            if (name, stored["_row"]) in logged:
+                c = logged[(name, stored["_row"])]
+                assert diff == {"step"} and (c["from"], c["to"]) == (stored["step"], written["step"])
+            else:
+                assert diff == set()
+    assert len(log) == 28 and all(type(r["step"]) is int for n in FACT_SHEETS
+                                  for r in out["sheets"][n]["records"] if r["step"] is not None)
+    with pytest.raises(GoldError, match="not a whole number"):
+        bad = {**book, "sheets": {**book["sheets"], "A": {**book["sheets"]["A"], "records": [
+            {**book["sheets"]["A"]["records"][0], "step": "1a"}]}}}
+        output(bad)
+
+
 def test_jsonl_round_trips_the_records(book):
     files = render(book)
-    for name, s in book["sheets"].items():
+    out, _ = output(book)
+    for name, s in out["sheets"].items():
         lines = files[out_name(name)].splitlines()
         assert [json.loads(line) for line in lines] == s["records"]
         assert {json.loads(line)["_sheet"] for line in lines} == {name}
@@ -59,13 +79,15 @@ def test_formulas_are_refused(tmp_path):
         read_workbook(path, sha256=None)
 
 
-def test_problems_are_reported_not_fixed(book):
+def test_the_corrected_gold_set_has_every_quote_and_consistent_steps(book):
+    """The 2026-10-21 version moved the 11 shifted rows (A25-A28, A30, A37, A44, B37, B42, C7, C8) back."""
     p = problems(book)
-    assert p["rows"] == {"A": 47, "B": 35, "C": 19, "Changelog": 128}
+    assert p["rows"] == {"A": 47, "B": 35, "C": 19, "Changelog": 139}
     assert p["duplicate_fact_ids"] == [] and not p["headers_differ"]
-    shifted = ["A25", "A26", "A27", "A28", "A30", "A37", "A44", "B37", "B42", "C7", "C8"]
-    assert p["possible_column_shift"] == shifted
+    assert p["no_quote"] == [] and p["possible_column_shift"] == []
+    assert set(p["mixed_types"]) == {"step"}                                      # as stored: text and numbers
+    assert problems(output(book)[0])["mixed_types"] == {}                         # output: integers only
     c7 = next(r for r in book["sheets"]["C"]["records"] if r["fact_id"] == "C7")
-    assert c7["quote"] is None and c7["other_values"].startswith("When 90 % of the panicle")   # as stored
+    assert c7["quote"].startswith("When 90 % of the panicle") and c7["other_values"] == "moisture: 20%"
     manifest = json.loads((GOLD_DIR / "gold_manifest.json").read_text(encoding="utf-8"))
-    assert manifest["sha256"] == book["sha256"]
+    assert manifest["sha256"] == book["sha256"] and len(manifest["conversions"]) == 28

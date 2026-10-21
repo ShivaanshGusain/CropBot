@@ -9,6 +9,10 @@ WORKBOOK_SHA256. Conversion changes nothing: one record per non-empty row with `
 row number) and every column as stored in the cell (strings unstripped, numbers as numbers, empty cells null).
 Formulas are refused, because a cached result is not what the annotator typed. Problems are reported,
 never fixed.
+
+One conversion, in the output only (approved 2026-10-21): `step` is stored as text in some rows and as a
+number in others; the jsonl files hold it as an integer, and every conversion is logged in the manifest.
+A step that is not plain digits is refused, not guessed.
 """
 
 import argparse
@@ -24,7 +28,7 @@ from kg.registry import ROOT
 
 GOLD_DIR = ROOT / "data" / "gold"
 WORKBOOK = GOLD_DIR / "gold_set_annotations_final.xlsx"
-WORKBOOK_SHA256 = "d40725a2b47ece2e3ff0d541ca4f80d5b75cdcea9787661c22b4ce7da6480a71"
+WORKBOOK_SHA256 = "e4214ccdcac7c28bda76a250f5bf0e18e60c4dbada699338374ce522f83afa27"   # 2026-10-21: 11 rows unshifted
 FACT_SHEETS = ("A", "B", "C")
 CHANGELOG = "Changelog"
 JSON_TYPES = (str, int, float, bool, type(None))
@@ -83,14 +87,35 @@ def read_workbook(path: Path = WORKBOOK, sha256: str | None = WORKBOOK_SHA256) -
 
 
 def render(book: dict) -> dict[str, str]:
-    """File name -> exact text of the jsonl files and the manifest."""
+    """File name -> exact text of the jsonl files and the manifest (the output, steps as integers)."""
+    out, log = output(book)
     files = {out_name(name): "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in s["records"])
-             for name, s in book["sheets"].items()}
+             for name, s in out["sheets"].items()}
     manifest = {"workbook": WORKBOOK.name, "sha256": book["sha256"],
                 "sheets": {name: {"file": out_name(name), "rows": len(s["records"]), "header": s["header"],
-                                  "empty_rows_skipped": s["empty_rows"]} for name, s in book["sheets"].items()}}
+                                  "empty_rows_skipped": s["empty_rows"]} for name, s in book["sheets"].items()},
+                "conversions": log}
     files["gold_manifest.json"] = json.dumps(manifest, indent=2, ensure_ascii=False) + "\n"
     return files
+
+
+def output(book: dict) -> tuple[dict, list[dict]]:
+    """The book as written to jsonl: fact-sheet `step` text of plain digits becomes an integer. Returns the
+    converted copy and the log of every conversion; the book read from the workbook is left as stored."""
+    log, sheets = [], {}
+    for name, s in book["sheets"].items():
+        records = []
+        for r in s["records"]:
+            r = dict(r)
+            if name in FACT_SHEETS and isinstance(r.get("step"), str):
+                if not r["step"].isdigit():
+                    raise GoldError("%s %s: step %r is not a whole number" % (name, r["fact_id"], r["step"]))
+                log.append({"sheet": name, "row": r["_row"], "fact_id": r["fact_id"], "field": "step",
+                            "from": r["step"], "to": int(r["step"])})
+                r["step"] = int(r["step"])
+            records.append(r)
+        sheets[name] = {**s, "records": records}
+    return {**book, "sheets": sheets}, log
 
 
 def check(book: dict, directory: Path = GOLD_DIR) -> list[str]:
@@ -138,9 +163,17 @@ def main(argv=None) -> int:
         stale = check(book)
         print("gold jsonl %s" % ("up to date" if not stale else "differs from the workbook: %s" % stale))
         return 1 if stale else 0
-    for name, text in render(book).items():
+    try:
+        files = render(book)
+        out, log = output(book)
+    except GoldError as e:
+        print("REFUSED:", e)
+        return 1
+    for name, text in files.items():
         (GOLD_DIR / name).write_text(text, encoding="utf-8", newline="\n")
-    print(json.dumps(problems(book), indent=1, ensure_ascii=False))
+    print("as stored:", json.dumps(problems(book), ensure_ascii=False))
+    print("output   :", json.dumps(problems(out), ensure_ascii=False))
+    print("step converted to an integer in %d rows (logged in gold_manifest.json)" % len(log))
     return 0
 
 
