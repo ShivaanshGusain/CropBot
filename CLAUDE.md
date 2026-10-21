@@ -57,6 +57,10 @@ uv run python -m kg.load.facts source:tnau_agriculture_2020           # step 13:
 uv run python -m kg.load.facts --snapshot                             # hash of the whole graph (idempotency proof)
 uv run python -m kg.eval.gold [--check]                               # frozen gold workbook -> data/gold/*.jsonl, unchanged
 uv run python -m kg.eval source:tnau_agriculture_2020                 # step 15: data/eval/<id>/report.json, data/review/gold_*.csv
+uv run python -m kg.review sheet source:tnau_agriculture_2020 --out data/review/expert_review_tnau.xlsx   # step 16 workbook
+uv run python -m kg.review import data/review/expert_review_tnau.xlsx --check     # check a filled workbook, write nothing
+uv run python -m kg.review import data/review/expert_review_tnau.xlsx [--database cropbot-test]
+uv run python -m pytest tests/review/test_live_review.py --neo4j-test-db cropbot-test   # sample review, loads, rebuild
 
 uv run --project extraction python extraction/extract.py --list   # registry check: included, duplicate, unregistered PDFs
 uv run --project extraction python extraction/extract.py --all --source tnau_agriculture
@@ -830,6 +834,55 @@ No model. Input: the latest step 9 run of each unit (held facts included), the s
   - **Unclear:** the 10 biofertilizer rows.
   - **Threshold:** none yet. Population (b) is 10/10 correct (Wilson lower bound 72 %); 0.90 needs 35 facts above the cut-off, about 255 scored gold rows.
   - **Controls:** 2/60 accepted at 0.5, both unit swaps.
+
+## Expert review (`kg/review`, step 16)
+
+Approved 2026-10-21. Only a person approves or rejects a fact, through the workbook below; code never does.
+- **Workbook** (`kg.review.sheet`, `data/review/expert_review_<…>.xlsx`, not committed):
+  - **Rows:** one per current fact. They are built from step 13's inputs (`kg.load.facts.build`); status, review reasons and Jev score come from the database. A fact not yet loaded, or flagged missing, stops the sheet.
+  - **Order:** DryingSpec, StorageRule, HarvestRule, NutrientDose, SeedRate, Spacing, SeedTreatment, IrrigationRule, PestThreshold, ControlMeasure, Caution; then by PDF page.
+  - **Instruction column:** the fact's code-built Jev claims as statements. Cautions without a claim show their extracted text, marked as such.
+  - **Other columns:**
+    - crop and scope (concept names);
+    - values with their printed raw text;
+    - the exact quote;
+    - PDF page / printed page;
+    - source, status and review reasons;
+    - Jev score and unmapped phrases;
+    - a hidden `row_hash`.
+  - **Highlight:** the Unmapped cell is orange (`F4B183`) for a fact flagged "scope in unmapped". TNAU: the 6 facts of check 10.
+  - **Reviewer columns:** the only unlocked cells (the sheet is protected, no password). They are decision (approve / reject / needs change), reason or correction, applies in Uttarakhand? (yes / no / not sure), reviewer name and date, with dropdowns and a date check.
+  - **Guide:** "How to review" holds the approved guide text, including the two lines on unmapped conditions and on pesticide rows.
+  - **Meta:** a hidden `meta` sheet names the source.
+- **`row_hash`** (`kg.load.facts.row_hash`): fact id + quotes + `value_key` + applicability (regions, exclusions, duration group). The status is not part of it.
+- **Import** (`kg.review.importer`; `--check` writes nothing).
+  - **A row is refused, with its reason, when:**
+    - its fact isn't current, or its hash changed (quote, values or scope);
+    - the decision or the Uttarakhand answer isn't allowed;
+    - a reject or needs change has no reason;
+    - the reviewer name or date is missing or invalid, or the date is in the future;
+    - the fact appears twice;
+    - the fact already has a different decision. A re-review is a deliberate edit of the decisions file.
+  - **No-ops:** a row identical to a recorded decision is "already imported", and rows without a decision are "not reviewed".
+  - **Accepted rows** are applied in one transaction, then appended to `data/review/expert_decisions.csv`:
+    - approve → `approved`;
+    - reject → `rejected`;
+    - needs change → `needs_review`, plus "expert: <note>" in `review_reasons`;
+    - every decision also sets `reviewed_by`, `reviewed_at`, `expert_decision`, `expert_note` and `applies_uttarakhand`.
+
+    The file is committed: `.gitignore` has `data/review/*` and `!data/review/expert_decisions.csv`.
+  - **Never:** a correction never changes a value, and the Uttarakhand answer is only a property, never an IN_REGION edge (Uttarakhand has no seeded region).
+  - **Report:** counts per decision and per subtype, and every refused row.
+- **The loader re-applies the decisions file on every load** (`--decisions`, default the committed file), right after the MERGE. The MERGE rewrites `review_reasons`, so a needs-change note is added back each time.
+  - A decision whose fact isn't in the load, or whose hash changed, is stale: not applied, listed in the report and, for the home database, in `data/review/stale_decisions.csv`.
+  - A re-extracted fact with a new id is a needs_review REVISION_OF the approved one, as before.
+- **Serving:** approval never bypasses fail-closed. A step applying an ingredient that isn't `registered` is dropped from an approved fact too (tested).
+- **Live test** (`tests/review/test_live_review.py`, cropbot-test only). The sample sheet is filled by the test (reviewer "TEST SAMPLE") into a temporary decisions file; the test checks that the committed file is untouched.
+  - Decisions: 8e1d#2 approve, f5b0#20 reject, e63c#17 needs change, e63c#35 approve.
+  - Import, then a re-import (no-op), then two loads: nothing created, snapshot `681aa408…` unchanged (708 nodes, 1041 relationships).
+  - Emptied and reloaded, the database gets the 4 decisions back; a second load changes nothing.
+  - The approved grain-drying fact is served without the unverified label.
+- **TNAU workbook:** `data/review/expert_review_tnau.xlsx`, from the main database (2026-10-21). The committed decisions file holds only its header row; no decision has been imported.
 
 ## Scope rules for extraction and normalisation
 
