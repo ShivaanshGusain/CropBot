@@ -50,12 +50,20 @@ def test_suspected_source_typos_fail_the_dose_check(facts):
         assert r["status"] == "fail" and "kg a.i./ha" in r["reason"]
 
 
-def test_rice_seed_storage_ranges_stored_as_one_bound_go_to_review(result, facts):
-    failed = {k for k, f in facts.items() if f["checks"]["range_narrowed"]["status"] == "fail"}
-    assert failed == {("f5b06c9fd3f8", 22), ("f5b06c9fd3f8", 23)}
-    for k in failed:
-        assert facts[k]["status_before"] == "extracted" and facts[k]["status"] == "needs_review"
-        assert facts[k]["fact"]["max_moisture_pct"] in (13.0, 9.0)                   # the value is never changed
+def test_rice_seed_storage_ranges_keep_both_bounds(result, facts):
+    """Schema v1.3: "12 - 13 %" and "8 - 9 %" (C2#22, #23) store min and max, so nothing is narrowed."""
+    assert not [k for k, f in facts.items() if f["checks"]["range_narrowed"]["status"] == "fail"]
+    for k, bounds in ((("f5b06c9fd3f8", 22), (12.0, 13.0)), (("f5b06c9fd3f8", 23), (8.0, 9.0))):
+        f = facts[k]["fact"]
+        assert (f["min_moisture_pct"], f["max_moisture_pct"]) == bounds
+
+
+def test_no_lost_glyph_and_targets_as_printed(facts):
+    assert all(f["checks"]["lost_glyph"]["status"] == "pass" for f in facts.values())
+    failed = {k for k, f in facts.items() if f["checks"]["printed_text"]["status"] == "fail"}
+    assert failed == {("b879265e483b", i) for i in range(4)} | {("f5b06c9fd3f8", i) for i in (9, 10, 11)}
+    for k in failed:                                     # "seed" from the "Seed rate" heading; N, P, K from "NPK"
+        assert facts[k]["status"] == "needs_review"
 
 
 def test_every_applied_ingredient_fails_closed_while_unknown(facts):

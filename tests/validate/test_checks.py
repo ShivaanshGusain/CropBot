@@ -3,8 +3,9 @@
 import copy
 
 from kg.extract.model import FACT as RAW
-from kg.validate import (check_alternatives, check_ingredients, check_quote_location, check_range_narrowed,
-                         check_raw_numbers, check_review_kept, check_value_ranges)
+from kg.validate import (check_alternatives, check_ingredients, check_lost_glyph, check_printed_text,
+                         check_quote_location, check_range_narrowed, check_raw_numbers, check_review_kept,
+                         check_value_ranges)
 from kg.schema.concepts import ActiveIngredient, Fertilizer
 
 SPAN = {"id": "span:x", "source_id": "source:tnau_agriculture_2020", "pdf_page": 64, "section_path": "s",
@@ -169,6 +170,19 @@ def test_a_printed_range_stored_as_one_bound_fails_and_the_value_is_kept():
                                      raw={"target_moisture_pct_max": "12%"}))["status"] == "pass"
 
 
+def test_min_and_max_prefixed_bounds_are_one_pair():
+    """Schema v1.3 StorageRule names its bounds min_moisture_pct / max_moisture_pct (C2#22, PDF p. 75)."""
+    both = fact(subtype="StorageRule", min_moisture_pct=12.0, max_moisture_pct=13.0,
+                raw={"min_moisture_pct": "12 - 13 %", "max_moisture_pct": "12 - 13 %"})
+    assert check_range_narrowed(both)["status"] == "pass"
+    upper = fact(subtype="StorageRule", min_moisture_pct=None, max_moisture_pct=13.0,
+                 raw={"max_moisture_pct": "12 - 13 %"})
+    assert "max_moisture_pct 13 from '12 - 13 %'" in check_range_narrowed(upper)["reason"]
+    equal = fact(subtype="StorageRule", min_moisture_pct=13.0, max_moisture_pct=13.0,
+                 raw={"min_moisture_pct": "12 - 13 %", "max_moisture_pct": "12 - 13 %"})
+    assert check_range_narrowed(equal)["status"] == "fail"                     # equal bounds still narrow it
+
+
 def test_range_narrowed_covers_amounts_offsets_and_conditions():
     dose = fact(steps=[step(applies=[qty("ai:x", value=1000, unit="ml", raw="Fipronil 5% SC 1000-1500 ml")])])
     assert check_range_narrowed(dose)["status"] == "fail"
@@ -181,3 +195,39 @@ def test_range_narrowed_covers_amounts_offsets_and_conditions():
     cond = fact(steps=[step(conditions=[{"variable": "soil_pH", "op": ">=", "value": 6.5, "value_max": None,
                                          "raw": "pH 6.5 - 7.5"}])])
     assert check_range_narrowed(cond)["status"] == "fail"
+
+
+# 8 lost glyph
+def soak(conc_unit="µM"):
+    """PDF p. 73 prints "80 µM concentration of sodium nitroprusside" (U+00B5 in its text layer)."""
+    data = {"subtype": "SeedTreatment", "summary_en": "s", "quote": "80 µM concentration of sodium nitroprusside",
+            "steps": [{"order": 1, "operation": "seed_treatment",
+                       "applies": [{"target": "sodium nitroprusside", "conc_value": 80, "conc_unit": conc_unit,
+                                    "conc_raw": "80 %s concentration" % conc_unit}]}]}
+    return RAW.validate_python(data).model_dump(mode="json")
+
+
+def test_a_replacement_character_in_any_stored_text_fails():
+    assert check_lost_glyph(fact(), soak())["status"] == "pass"
+    r = check_lost_glyph(fact(), soak("�M"))                                  # the v3 hand-run typo
+    assert r["status"] == "fail"
+    assert "step 9 steps[0].applies[0].conc_unit" in r["reason"] and "conc_raw" in r["reason"]
+    good = soak()
+    stored = fact(evidence=[{**SPAN, "quote": "80 �M"}])                       # the stored fact counts too
+    assert "fact evidence[0].quote" in check_lost_glyph(stored, good)["reason"]
+
+
+# 9 printed text
+def test_each_quantity_unit_and_target_appear_in_the_quote_as_printed():
+    assert check_printed_text(raw())["status"] == "pass"
+    wrong_target = raw(steps=[{"order": 1, "operation": "fertilizer_application",
+                               "applies": [{"target": "urea", "value": 40, "unit": "kg", "raw": "40 kg of DAP"}]}])
+    assert check_printed_text(wrong_target)["reason"] == "step 1 target 'urea' is not in the quote"
+    wrong_unit = raw(steps=[{"order": 1, "operation": "fertilizer_application",
+                             "applies": [{"target": "DAP", "value": 40, "unit": "g", "raw": "40 kg of DAP"}]}])
+    assert check_printed_text(wrong_unit)["reason"] == "step 1 unit 'g' is not in the quote"   # "g" is not in "kg"
+    assert check_printed_text(soak())["status"] == "pass"
+    assert check_printed_text(soak("�M"))["reason"] == "step 1 conc_unit '�M' is not in the quote"
+    counted = raw(quote="Release Trichogramma 5 cc/ha", steps=[{"order": 1, "operation": "release",
+                  "applies": [{"target": "Trichogramma", "value": 5, "unit": "count", "raw": "Trichogramma 5"}]}])
+    assert check_printed_text(counted)["status"] == "pass"                     # prompt v2's placeholder unit

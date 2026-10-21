@@ -14,6 +14,8 @@ Output: data/validated/<id>/{facts.jsonl, report.json} and data/review/validatio
   5 ingredients      every applied active ingredient is registered; unknown, restricted, banned fail (closed)
   6 review_kept      a flagged or inferred fact is needs_review
   7 range_narrowed   a printed range ("12 - 13 %") is not stored as a single bound
+  8 lost_glyph       no stored text, on the fact or its step 9 fact, contains U+FFFD
+  9 printed_text     each quantity's unit and target name, as printed, appear in its quote
 """
 
 import json
@@ -31,8 +33,10 @@ NORMALIZED_DIR = ROOT / "data" / "normalized"
 VALIDATED_DIR = ROOT / "data" / "validated"
 REVIEW_CSV = ROOT / "data" / "review" / "validation.csv"
 CHECKS = ("quote_location", "raw_numbers", "value_ranges", "alternatives", "ingredients", "review_kept",
-          "range_narrowed")
+          "range_narrowed", "lost_glyph", "printed_text")
 NARROWED = "printed range stored as a single bound"
+LOST_GLYPH = "�"                       # the Unicode replacement character
+PLACEHOLDER_UNITS = {"count"}               # prompt v2: organisms or items with no printed unit
 PRINTED_RANGE = re.compile(r"(\d+(?:\.\d+)?)\s*%?\s*(?:-|to)\s*(\d+(?:\.\d+)?)")
 NUMBER_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
                 "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "twenty": 20, "hundred": 100}
@@ -274,6 +278,9 @@ def check_range_narrowed(fact: dict) -> dict:
         if name.endswith("_min") or name.endswith("_max"):
             base = name[:-4]
             single(fact.get(base + "_min"), fact.get(base + "_max"), text, name)
+        elif name.startswith("min_") or name.startswith("max_"):        # v1.3 StorageRule min_/max_moisture_pct
+            base = name[4:]
+            single(fact.get("min_" + base), fact.get("max_" + base), text, name)
         else:
             single(fact.get(name), None, text, name)
     for s in fact["steps"]:
@@ -295,6 +302,56 @@ def check_range_narrowed(fact: dict) -> dict:
     if problems:
         return result("fail", "%s: %s" % (NARROWED, "; ".join(problems)))
     return result("pass")
+
+
+# --- 8 lost glyph ----------------------------------------------------------------------------
+
+def _strings(obj, path=""):
+    """(path, text) for every string in a nested fact, keys included."""
+    if isinstance(obj, str):
+        yield path, obj
+    elif isinstance(obj, dict):
+        for k, v in obj.items():
+            sub = "%s.%s" % (path, k) if path else k
+            yield sub + " (key)", k
+            yield from _strings(v, sub)
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj):
+            yield from _strings(v, "%s[%d]" % (path, i))
+
+
+def check_lost_glyph(fact: dict, raw_fact: dict) -> dict:
+    """A replacement character means a glyph was lost somewhere before it was stored."""
+    bad = ["%s %s" % (where, p) for where, obj in (("fact", fact), ("step 9", raw_fact))
+           for p, text in _strings(obj) if LOST_GLYPH in text]
+    return result("fail", "U+FFFD in " + ", ".join(bad)) if bad else result("pass")
+
+
+# --- 9 printed text --------------------------------------------------------------------------
+
+def _printed_in(text: str, q: str) -> bool:
+    """`text` occurs in `q` (both normalised), not inside a longer word or number: "g" is not in "kg"."""
+    t = normalise(text)
+    for m in re.finditer(re.escape(t), q):
+        before = q[m.start() - 1] if m.start() else ""
+        after = q[m.end()] if m.end() < len(q) else ""
+        if not ((t[0].isalpha() and before.isalpha()) or (t[0].isdigit() and before.isdigit())
+                or (t[-1].isalpha() and after.isalpha()) or (t[-1].isdigit() and after.isdigit())):
+            return True
+    return False
+
+
+def check_printed_text(raw_fact: dict) -> dict:
+    """On the step 9 fact: each quantity's target name, unit and strength unit as printed (case kept)."""
+    q = normalise(raw_fact["quote"])
+    problems = []
+    for s in raw_fact["steps"]:
+        for a in s["applies"]:
+            texts = [("target", a["target"]), ("unit", a.get("unit")), ("conc_unit", a.get("conc_unit"))]
+            for what, text in texts:
+                if text and not (what == "unit" and text in PLACEHOLDER_UNITS) and not _printed_in(text, q):
+                    problems.append("step %d %s %r is not in the quote" % (s["order"], what, text))
+    return result("fail", "; ".join(problems)) if problems else result("pass")
 
 
 # --- running ---------------------------------------------------------------------------------
@@ -339,6 +396,8 @@ def run(entry) -> dict:
             "ingredients": check_ingredients(fact, ais),
             "review_kept": check_review_kept(rec, step9["fact"]),
             "range_narrowed": check_range_narrowed(fact),
+            "lost_glyph": check_lost_glyph(fact, step9["fact"]),
+            "printed_text": check_printed_text(step9["fact"]),
         }
         reasons = ["%s: %s" % (k, c["reason"]) for k, c in checks.items() if c["status"] == "fail"]
         alt = checks["alternatives"]
