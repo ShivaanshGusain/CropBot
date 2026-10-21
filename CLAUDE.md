@@ -56,6 +56,7 @@ uv run python -m kg.load.facts source:tnau_agriculture_2020 --check   # step 13:
 uv run python -m kg.load.facts source:tnau_agriculture_2020           # step 13: one write transaction
 uv run python -m kg.load.facts --snapshot                             # hash of the whole graph (idempotency proof)
 uv run python -m kg.eval.gold [--check]                               # frozen gold workbook -> data/gold/*.jsonl, unchanged
+uv run python -m kg.eval source:tnau_agriculture_2020                 # step 15: data/eval/<id>/report.json, data/review/gold_*.csv
 
 uv run --project extraction python extraction/extract.py --list   # registry check: included, duplicate, unregistered PDFs
 uv run --project extraction python extraction/extract.py --all --source tnau_agriculture
@@ -555,8 +556,15 @@ Input: the step 11 facts (`data/validated/<id>/facts.jsonl`). The URL and model 
     - a Caution names its ABOUT pest ("… for BPH").
   - A fact with no claim (the two cautions with no `concerns`, and the saline Spacing with no values) is marked "human review required: no code-built claim" and can never be auto_verified.
   - The key is `c_` + hash(fact_key + claim).
-- **Controls:** 5 deliberately wrong claims, one number changed (×2, or +10 points for a percentage) on the first numeric claim of facts taken round-robin over units. Keys are `x_…`; they're excluded from scores and reported separately. Step 15 raises them to about 10 % of claims.
-  - **Backlog** (recorded 2026-10-21, not done): `_changed` changes `max_moisture_pct` but never `min_moisture_pct`, so a StorageRule with only a lower moisture bound gets no control. No TNAU fact has only a lower bound.
+- **Controls:** 60 deliberately wrong claims (approved 2026-10-21 for step 15; there were 5 before). Keys are `x_…`; they're excluded from scores and reported separately, with their `control_kind`.
+  - **Kinds:**
+    - `number`: one number ×2, or +10 points for a percentage;
+    - `unit`: kg↔g, l↔ml, t→kg on the first quantity;
+    - `pest`: the fact's pest, target or ABOUT is swapped for the first seeded pest that no line of the unit pairs with the fact's products, concerns or observations (names, labels and scientific names compared with spaces ignored).
+  - **Selection:** the kinds take turns, each going round-robin over the units, so TNAU has 20 of each, sent in 3 requests.
+  - **Never used:** a number or unit control whose changed words (with a neighbouring word, "60 kg") the unit prints, because it could be true there. Every seeded pest is printed somewhere in unit e63c, which is why pest swaps use the line check.
+  - **TNAU P(yes):** number at most 0.10 and pest at most 0.09. Unit swaps go up to 0.66: 4 of 20 are ≥ 0.5, all ml → litres on sprays.
+  - **Backlog** (recorded 2026-10-21, not done): `_changed` changes `max_moisture_pct` but never `min_moisture_pct`, so a StorageRule with only a lower moisture bound gets no number control. No TNAU fact has only a lower bound.
 - **Requests:** one per unit, with the unit text exactly as step 9 rendered it as the state and all pending claims as `noul` questions (P(yes)).
   - A request is split only past an estimated 60k tokens (characters ÷ 4 × 1.2).
   - `--dry-run` writes `claims.jsonl` and sizes and sends nothing.
@@ -655,6 +663,58 @@ Approved 2026-10-20. `kg.query.answer(driver, template, FarmContext)` returns a 
   - **Reported, never fixed:** duplicate ids, rows with no quote, rows that look shifted, and columns with mixed types. The current version has none, apart from `step`.
   - **One output-only conversion** (approved 2026-10-21): `step` is stored as text in some rows and as a number in others. The jsonl files hold it as an integer, and each of the 28 conversions is logged in `gold_manifest.json`. A step that isn't plain digits is refused.
 - **Contents:** A (wet nursery, 47 rows), B (main-field pest management, 35 rows; only the BPH rows are scored), C (harvest p. 39 and varietal seed production pp. 74–75, 19 rows). 8 rows are `Other`.
+
+## Evaluation (`kg/eval`, step 15)
+
+No model. Input: the latest step 9 run of each unit (held facts included), the step 10 and 12 outputs, and the gold jsonl. Output: `data/eval/<id>/report.json`, `data/review/gold_disagreements.csv` and `data/review/gold_unmatched.csv` (all gitignored). Approved 2026-10-21.
+- **Atoms:** one gold row is one value, so each step 9 fact is split into atoms:
+  - one per applied quantity;
+  - one per field value (moisture, depth, spacing);
+  - one per threshold clause, Caution concern and maturity sign;
+  - one per step with no quantity;
+  - the whole fact, when none of these apply.
+
+  Atom ids use the step's position (`b879#4/q2.1`), because options share an order.
+- **Matching:**
+  - A candidate's quote contains the gold quote, or the reverse, or the two share 80 % of the shorter one's words. It must be on the gold row's page; another page is allowed only for a containing quote, which is listed as a page disagreement.
+  - A candidate must also share a number or a name word (`input` + `action`) with the gold row.
+  - Score = quote + 2 × numbers + name + other_values numbers + condition words + page. Pairs are taken greedily, one to one.
+  - A BPH row never matches an atom that names a specific other seeded pest (the WBPH row's products).
+- **Granularity**, listed and never counted as a miss or an extra:
+  - a gold row naming two values ("FYM or compost");
+  - one value split across facts ("short and medium duration");
+  - a second value in `other_values` ("moisture: 20%");
+  - a maturity sign inside the row's quote;
+  - one atom holding several rows;
+  - a row that is the method every step shares (B6, "Direct spray towards the base of the plants").
+- **Context steps:** a step without a value, in a fact the gold set annotated, is that fact's context ("soak the seeds in water") unless a gold row names it. It is listed, not counted.
+- **Scored rows:**
+  - all rows of A and C, and only B's rows with the BPH pest marker;
+  - `Other` rows and B's non-BPH rows (B38b, B39–B41) are scored apart;
+  - a row matching a step 9 not-extracted entry gets strict and lenient recall.
+- **Precision scope:**
+  - A: unit b879;
+  - B: e63c atoms naming BPH (whole words, so "WBPH" doesn't count), plus p. 63 Cautions whose quote names BPH;
+  - C: 8e1d, plus f5b0's Harvesting, Threshing, Drying, Pre-storage seed treatment and Storage sub-headings.
+- **Disagreements** are value, unit, basis, condition, alternative (row label and group structure), purpose, subtype, timing, page and granularity.
+  - Equality uses only step 10's unit and basis tables (gold `per` is read with "per" in front; "not stated" = no printed basis) and exact normalised text.
+  - Nothing is decided in code. Verdicts come back only from `data/gold/adjudications.csv`: columns gold_id, field, verdict (extraction | gold | both | unclear) and note, written by a person.
+  - "Agree" stays a range until every disagreement has a verdict.
+- **Calibration:** facts matched to gold rows, by `verifier_score` cut-off (0.5–0.99), for three populations:
+  - (a) all with a score;
+  - (b) `extracted` facts only;
+  - (c) their claims, each carrying its fact's label.
+
+  The proposed threshold is the lowest cut-off whose Wilson 95 % lower bound on (b)'s precision (open disagreements counted wrong) is ≥ 0.90. If none qualifies, the report says "no threshold yet" with the gold rows needed. Nothing is written to `config/verify.toml`.
+- **TNAU, first run (2026-10-21, nothing adjudicated):**
+  - **Rows:** 101 gold rows, 90 scored.
+  - **Recall:** found 89/90 (Wilson 95 % 94–100 %); pipeline 76/90 (13 found rows sit in facts held at step 10).
+  - **Missed:** only B23 (Pymetrozine 50% WG 300 g, PDF p. 66). The unit's BPH row (`#/tables/57 row 3`) prints no Pymetrozine; the WBPH row does. Adjudicate against the PDF.
+  - **Precision found:** 92/109 (76–90 %). A 41/41, B 27/43, C 24/25.
+  - **Extras:** the 16 concerns of the BPH resurgence caution (e63c#68, "BPH, Nilaparvata lugens : acephate, carbofuran, …"), which have no gold rows, and one maturity sign of 8e1d#1.
+  - **Disagreements:** 126 on 80 rows, mostly timing (44) and condition (40), e.g. the B list intro "spray any one of the following insecticides per ha" kept as a gold condition (18 rows).
+  - **Threshold:** no threshold yet. Population (b) has 10 facts (1 correct, 9 open). Even if every open disagreement goes to the extraction, a lower bound ≥ 0.90 needs 35 facts above the cut-off, about 250 scored gold rows at today's 1.9 rows per fact and 26 % `extracted`.
+  - **Controls:** none of the 60 at ≥ 0.7 (Wilson upper 6 %); 4 unit swaps at ≥ 0.5.
 
 ## Scope rules for extraction and normalisation
 
