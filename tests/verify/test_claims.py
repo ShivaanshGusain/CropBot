@@ -2,7 +2,7 @@
 
 import pytest
 
-from kg.verify.claims import claim_key, claims_for, control_claim, printed_names
+from kg.verify.claims import claim_key, claims_for, control_claim, printed_in_unit, printed_names
 
 NAMES = {"fertilizer:dap": "Diammonium phosphate (DAP)", "pest:brown_planthopper": "Brown planthopper",
          "purpose:seed": "Seed", "ai:quinalphos": "Quinalphos", "organic_input:azospirillum": "Azospirillum",
@@ -96,7 +96,47 @@ def test_keys_are_stable_and_controls_change_one_number():
     assert control_claim(fact("Caution", concerns=["ai:quinalphos"]), NAMES) is None
 
 
-UREA = {**DAP, "target_id": "fertilizer:urea", "value": 0.8, "raw": "16 kg of urea"}
+def test_controls_also_swap_a_unit_or_name_another_pest():
+    f = fact(steps=[step(timing_raw="before the last puddling", applies=[DAP])])
+    assert control_claim(f, NAMES, kind="unit") == ("Does the passage state that Diammonium phosphate (DAP) is "
+                                                    "applied at 40 g per 20 cents of nursery before the last puddling?")
+    names = {**NAMES, "pest:army_worm": "Army worm"}
+    th = fact("PestThreshold", pest_ids=["pest:brown_planthopper"], clauses=[
+        {"observation": "hoppers", "value": 1, "unit": "count", "sampling_unit": "per_tiller", "conditions": []}])
+    printed = {"applies": [], "pest_ids": ["BPH"], "target_ids": [], "concerns": [], "about_ids": []}
+    assert claims_for(th, names, printed)[0].startswith("Does the passage state that action against BPH ")
+    assert control_claim(th, names, printed, kind="pest").startswith(
+        "Does the passage state that action against Army worm ")                    # first other seeded pest
+    assert control_claim(th, names, printed, kind="unit") is None                   # no amount with a unit
+    names["pest:zz_beetle"] = "ZZ beetle"
+    unit = "Army worm: 2 hoppers / tiller\nZZ beetle: hand picking\nBPH, Nilaparvata lugens : 1 hoppers/tiller"
+    swapped = control_claim(th, names, printed, kind="pest", unit_text=unit)
+    assert swapped.startswith("Does the passage state that action against ZZ beetle ")   # Army worm shares a line
+    terms = {"pest:army_worm": {"Army worm"}, "pest:zz_beetle": {"ZZ beetle", "ZZB"}}     # with "hoppers"
+    assert control_claim(th, names, printed, kind="pest", unit_text=unit + "\nZZB 5 hoppers per hill",
+                         pest_terms=terms) is None                                      # a label counts too
+    assert control_claim(th, {**NAMES}, printed, kind="pest", unit_text="x") is None     # no other pest seeded
+    spaced = {"pest:army_worm": {"Blue leafhopper / white leafhopper"}}
+    assert control_claim(th, {**NAMES, "pest:army_worm": "Blue leafhopper / white leafhopper"}, printed,
+                         kind="pest", unit_text="Blue leafhopper/ white leafhopper 5 hoppers",
+                         pest_terms=spaced) is None                                     # spaces are ignored
+    caution = fact("Caution", concerns=["ai:quinalphos"], about_ids=["pest:brown_planthopper"])
+    assert control_claim(caution, names, kind="pest") == ("Does the passage state that it advises against using "
+                                                          "Quinalphos for Army worm?")
+    with pytest.raises(ValueError, match="unknown control kind"):
+        control_claim(f, NAMES, kind="colour")
+
+
+def test_a_control_the_unit_prints_elsewhere_is_not_used():
+    """b879: 30 kg x2 = 60 kg, which the unit prints for short duration varieties."""
+    unit = "[p.29] 30 kg for long duration [p.29] 60 kg for short duration varieties"
+    claim = "Does the passage state that, for long duration varieties, seed is applied at 30 kg per hectare?"
+    assert printed_in_unit(claim, claim.replace("30 kg", "60 kg"), unit)
+    assert not printed_in_unit(claim, claim.replace("30 kg", "30 g"), unit)
+    assert printed_in_unit(claim, claim.replace("30 kg", "60 kg"), "60kg for short")         # printed without a space
+
+
+UREA ={**DAP, "target_id": "fertilizer:urea", "value": 0.8, "raw": "16 kg of urea"}
 SSP = {**DAP, "target_id": "fertilizer:ssp", "value": 6, "raw": "120 kg of super phosphate"}
 
 

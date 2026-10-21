@@ -28,13 +28,13 @@ from kg.registry import ROOT
 from kg.schema.concepts import Label
 from kg.validate import VALIDATED_DIR, step9_runs
 
-from .claims import NO_CLAIM, claim_key, claims_for, control_claim, printed_names
+from .claims import CONTROL_KINDS, NO_CLAIM, claim_key, claims_for, control_pair, printed_in_unit, printed_names
 
 VERIFIED_DIR = ROOT / "data" / "verified"
 CONFIG = ROOT / "config" / "verify.toml"
 EXAMPLE = ROOT / "docs" / "jev_example.md"
 MAX_TOKENS = 60_000                 # stay under the 64k request limit
-N_CONTROLS = 5
+N_CONTROLS = 60                     # step 15 (approved 2026-10-21): number, unit and pest changes
 BACKOFF = (2, 4, 8, 16, 32)
 KEY_LIKE = re.compile(r"sk-[A-Za-z0-9_-]{8,}|Bearer\s+\S")
 CRITERIA = {"true": "The passage states this, with these values.",
@@ -67,6 +67,17 @@ def concept_names() -> dict:
     return {n.id: n.name_en for n in read_seed().nodes if not isinstance(n, Label)}
 
 
+def pest_terms() -> dict:
+    """Every way the seed spells each pest: name_en, scientific_name and its labels ("BPH")."""
+    out = {}
+    for n in read_seed().nodes:
+        if isinstance(n, Label) and n.concept_id.startswith("pest:"):
+            out.setdefault(n.concept_id, set()).add(n.text)
+        elif n.id and n.id.startswith("pest:"):
+            out.setdefault(n.id, set()).update(t for t in (n.name_en, getattr(n, "scientific_name", None)) if t)
+    return out
+
+
 # --- planning ----------------------------------------------------------------------------------
 
 def plan(entry, model: str) -> dict:
@@ -90,30 +101,46 @@ def plan(entry, model: str) -> dict:
         for t in texts:
             claims.append({"key": claim_key(fact["fact_key"], t), "claim": t, "control": False,
                            "fact_id": fact["id"], "unit_id": rec["unit_id"], "raw_index": rec["raw_index"]})
-    # controls: the first numeric claim of facts taken round-robin over the units, deterministic
-    by_unit = {}
-    for rec in records:
-        by_unit.setdefault(rec["unit_id"], []).append(rec)
-    controls, order = [], sorted(by_unit)
-    while len(controls) < N_CONTROLS and any(by_unit.values()):
-        for uid in order:
-            while by_unit[uid]:
-                rec = by_unit[uid].pop(0)
-                if rec in no_claim:
-                    continue
-                text = control_claim(rec["fact"], names, printed[rec["fact"]["id"]])
-                if text:
-                    controls.append({"key": claim_key(rec["fact"]["fact_key"], text, control=True), "claim": text,
-                                     "control": True, "fact_id": rec["fact"]["id"], "unit_id": uid,
-                                     "raw_index": rec["raw_index"]})
-                    break
-            if len(controls) == N_CONTROLS:
-                break
-    claims += controls
+    claims += controls_for(records, no_claim, names, printed, units)
     for c in claims:
         c["unit_text_sha"] = sha(units[c["unit_id"]])
         c["cache_key"] = sha(c["unit_text_sha"] + "\n" + c["claim"] + "\n" + model)
     return {"records": records, "units": units, "claims": claims, "no_claim": no_claim}
+
+
+def controls_for(records: list[dict], no_claim: list[dict], names: dict, printed: dict, units: dict,
+                 n: int = N_CONTROLS) -> list[dict]:
+    """Deliberately wrong claims, deterministic. The kinds take turns (number, unit, pest, number, ...);
+    each kind goes round-robin over the units, and within a unit through its facts in order. A kind with
+    nothing left gives its turn away, so the mix stays even while every kind has candidates. Stops at n
+    or when none is left. A fact gets at most one control of each kind. A control whose changed words the
+    unit prints elsewhere is not used (`printed_in_unit`): it might be true there."""
+    order = sorted({r["unit_id"] for r in records})
+    queues = {(uid, kind): [] for uid in order for kind in CONTROL_KINDS}
+    terms = pest_terms()
+    for rec in records:
+        if rec in no_claim:
+            continue
+        text = units[rec["unit_id"]]
+        for kind in CONTROL_KINDS:
+            pair = control_pair(rec["fact"], names, printed[rec["fact"]["id"]], kind, text, terms)
+            # a pest swap has its own line check (claims._changed_pest); the pest name itself is printed
+            if pair and (kind == "pest" or not printed_in_unit(*pair, text)):
+                queues[rec["unit_id"], kind].append((rec, pair[1]))
+    turn = {kind: 0 for kind in CONTROL_KINDS}            # the next unit to ask, per kind
+    controls = []
+    while len(controls) < n and any(queues.values()):
+        for kind in CONTROL_KINDS:
+            for k in range(len(order)):
+                uid = order[(turn[kind] + k) % len(order)]
+                if queues[uid, kind] and len(controls) < n:
+                    rec, text = queues[uid, kind].pop(0)
+                    turn[kind] = (turn[kind] + k + 1) % len(order)
+                    controls.append({"key": claim_key(rec["fact"]["fact_key"], text, control=True), "claim": text,
+                                     "control": True, "control_kind": kind, "fact_id": rec["fact"]["id"],
+                                     "unit_id": uid, "raw_index": rec["raw_index"]})
+                    break
+    return controls
 
 
 def body_for(model: str, state: str, claims: list[dict]) -> dict:
@@ -243,6 +270,7 @@ def results(entry, p: dict, model: str) -> dict:
     for c in p["claims"]:
         a = answers.get(c["cache_key"])
         by_fact.setdefault(c["fact_id"], []).append({**{k: c[k] for k in ("key", "claim", "control")},
+                                                     **({"control_kind": c["control_kind"]} if c["control"] else {}),
                                                      "p_yes": a["p_yes"] if a else None,
                                                      "response": a["response"] if a else None})
     facts = []

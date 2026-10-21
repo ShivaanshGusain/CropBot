@@ -13,6 +13,7 @@ is urea 16 kg and super phosphate 120 kg per 20 cents of nursery").
 import copy
 import hashlib
 import re
+from difflib import SequenceMatcher
 
 from kg.schema.vocab import COUNT_WORDS, INTERVAL_WORDS
 
@@ -356,10 +357,105 @@ def _changed(fact: dict) -> dict | None:
     return None
 
 
-def control_claim(fact: dict, names: dict, printed: dict | None = None) -> str | None:
-    """A deliberately wrong claim: the fact's first numeric claim with one number changed."""
-    changed = _changed(fact)
+CONTROL_KINDS = ("number", "unit", "pest")
+UNIT_SWAP = {"kg": "g", "g": "kg", "l": "ml", "ml": "l", "t": "kg"}       # same kind of unit, wrong size
+PEST_KEYS = ("pest_ids", "target_ids", "about_ids")
+
+
+def _changed_unit(fact: dict) -> dict | None:
+    """A copy with the first quantity's unit swapped (kg <-> g, l <-> ml, t -> kg). None if no such unit."""
+    f = copy.deepcopy(fact)
+    for s in f["steps"]:
+        for a in s["applies"]:
+            if a.get("unit") in UNIT_SWAP and any(a.get(k) is not None for k in ("value", "min", "max")):
+                a["unit"] = UNIT_SWAP[a["unit"]]
+                return f
+    return None
+
+
+def _squash(text: str) -> str:
+    return re.sub(r"\s+", "", text).casefold()
+
+
+def subject_terms(fact: dict, printed: dict | None) -> list[str]:
+    """What a pest-swapped claim pairs the new pest with: the products as printed, the concerns, and
+    the threshold observations."""
+    p = printed or {}
+    terms = [t for s in p.get("applies") or [] for t in s] + list(p.get("concerns") or [])
+    terms += [c["observation"] for c in fact.get("clauses") or [] if c.get("observation")]
+    return [t for t in terms if t]
+
+
+def _changed_pest(fact: dict, names: dict, printed: dict | None, unit_text: str | None = None,
+                  pest_terms: dict | None = None) -> tuple[dict, dict | None] | None:
+    """A copy naming another seeded pest in place of the fact's first pest, target or ABOUT pest: the
+    first `pest:` id in sorted order that the fact does not name. Given the unit text, the new pest must
+    share no line with the fact's subject (`subject_terms`): every pest is discussed somewhere in a pest
+    unit, but a claim pairing it with this product, concern or observation is only true on such a line.
+    Pest names, labels ("BPH") and scientific names (`pest_terms`) are compared with spaces removed
+    ("Blue leafhopper/ white leafhopper"). None if no pest qualifies."""
+    named = {i for k in PEST_KEYS for i in fact.get(k) or []}
+    if unit_text is not None:
+        lines = [_squash(line) for line in unit_text.splitlines()]
+        subject = [_squash(t) for t in subject_terms(fact, printed)]
+        if not subject:
+            return None                                     # nothing to check the new pest against
+
+    def clear(pid):
+        if unit_text is None:
+            return True
+        terms = [_squash(t) for t in (pest_terms or {}).get(pid, {names[pid]})]
+        return not any(any(t in line for t in terms) and any(s in line for s in subject) for line in lines)
+
+    other = next((i for i in sorted(names) if i.startswith("pest:") and i not in named and clear(i)), None)
+    for key in PEST_KEYS:
+        if fact.get(key) and other:
+            f, p = copy.deepcopy(fact), copy.deepcopy(printed)
+            f[key] = [other] + f[key][1:]
+            if p is not None:
+                p[key] = [names[other]] + p[key][1:]
+            return f, p
+    return None
+
+
+def control_pair(fact: dict, names: dict, printed: dict | None = None, kind: str = "number",
+                 unit_text: str | None = None, pest_terms: dict | None = None) -> tuple[str, str] | None:
+    """(the true claim, its deliberately wrong copy), or None; see control_claim."""
+    if kind == "number":
+        changed, changed_printed = _changed(fact), printed
+    elif kind == "unit":
+        changed, changed_printed = _changed_unit(fact), printed
+    elif kind == "pest":
+        changed, changed_printed = _changed_pest(fact, names, printed, unit_text, pest_terms) or (None, None)
+    else:
+        raise ValueError("unknown control kind %r" % kind)
     if changed is None:
         return None
-    pairs = zip(claims_for(fact, names, printed), claims_for(changed, names, printed))
-    return next((b for a, b in pairs if a != b), None)
+    pairs = zip(claims_for(fact, names, printed), claims_for(changed, names, changed_printed))
+    return next(((a, b) for a, b in pairs if a != b), None)
+
+
+def printed_in_unit(claim: str, control: str, unit_text: str) -> bool:
+    """Whether the control's changed words, each with a neighbouring word ("60 kg", "2 hoppers"), are
+    printed in the unit: then the control may be true elsewhere in the unit, or false only through its
+    condition ("60 kg for short duration" made into long duration's 60 kg), and is not used."""
+    text = re.sub(r"\s+", " ", unit_text).casefold()
+    a, b = claim.casefold().split(), control.casefold().split()
+    for op, _, _, j1, j2 in SequenceMatcher(a=a, b=b, autojunk=False).get_opcodes():
+        if op == "equal":
+            continue
+        window = b[max(j1 - 1, 0):j2 + 1]
+        for k in range(len(window) - 1):
+            pair = window[k:k + 2]
+            if " ".join(pair) in text or "".join(pair) in text:
+                return True
+    return False
+
+
+def control_claim(fact: dict, names: dict, printed: dict | None = None, kind: str = "number",
+                  unit_text: str | None = None, pest_terms: dict | None = None) -> str | None:
+    """A deliberately wrong claim: the fact's first claim that the change alters. `number`: one number
+    changed (x2, or +10 points for a percentage); `unit`: one unit swapped; `pest`: another pest named,
+    one no line of the unit pairs with the fact's subject."""
+    pair = control_pair(fact, names, printed, kind, unit_text, pest_terms)
+    return pair[1] if pair else None

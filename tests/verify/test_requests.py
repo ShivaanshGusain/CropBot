@@ -32,7 +32,7 @@ class Session:
 
 def claim(key, unit="unit:x:aaa", control=False):
     return {"key": key, "claim": "Does the passage state that %s?" % key, "control": control, "fact_id": "rec:" + key,
-            "unit_id": unit, "raw_index": 0, "cache_key": "ck_" + key}
+            "unit_id": unit, "raw_index": 0, "cache_key": "ck_" + key, **({"control_kind": "number"} if control else {})}
 
 
 @pytest.fixture

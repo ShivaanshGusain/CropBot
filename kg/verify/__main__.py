@@ -16,7 +16,8 @@ def report(entry, p, res, sent_logs) -> dict:
     for log in logs:
         for k, v in (log.get("usage") or {}).items():
             usage[k] += v
-    controls = [{"fact": "%s#%d" % (c["unit_id"].rsplit(":", 1)[1], c["raw_index"]), "claim": c["claim"],
+    controls = [{"fact": "%s#%d" % (c["unit_id"].rsplit(":", 1)[1], c["raw_index"]), "kind": c["control_kind"],
+                 "claim": c["claim"],
                  "p_yes": next((x["p_yes"] for f in res["facts"] for x in f["claims"] if x["key"] == c["key"]), None)}
                 for c in p["claims"] if c["control"]]
     return {
@@ -49,8 +50,9 @@ def main(argv=None) -> int:
     with open(d / "claims.jsonl", "w", encoding="utf-8") as f:
         for c in p["claims"]:
             f.write(json.dumps(c, ensure_ascii=False) + "\n")
-    print("model %s; claims %d (+%d controls); cached %d; pending %d; requests %d"
+    print("model %s; claims %d (+%d controls %s); cached %d; pending %d; requests %d"
           % (model, sum(not c["control"] for c in p["claims"]), sum(c["control"] for c in p["claims"]),
+             dict(Counter(c["control_kind"] for c in p["claims"] if c["control"])),
              len(p["claims"]) - len(pending), len(pending), len(reqs)))
     for r in reqs:
         print("  request %s part %d: %d questions, ~%d tokens" % (r["unit_id"].rsplit(":", 1)[1], r["part"],
