@@ -840,6 +840,20 @@ The code does these; the v1.3 doc doesn't say them, or says them differently (re
 4. **An APPLIES may have no dose:** a strength, ratio or share alone ("1% KCl solution", "basal (50%)"). The doc says these sit "beside the dose".
 5. **Fertilizer percentages are optional** (blank = no sourced grade); the alternatives check uses approved percentages only.
 
+Proposed, not built (recorded 2026-10-21; the code does not do this yet):
+
+6. **fact_key should not change when an option is added to or removed from an alternative list.**
+   - **Today:** `kg.normalize.fact_key_parts` keys every step slot as `[order, alt_group, alt_option, operation, method, anchor, sorted targets]`. Adding Pymetrozine to the BPH list (e63c#35, after the step 8 rebuild) added a slot, so the fact got a new fact_key. The old fact was left `missing_in_latest_run`, with no REVISION_OF link to the new one. Removing an option, or renumbering options, does the same.
+   - **Proposed key:** identity stays at the list level.
+     - A step outside any alternative group keeps its full slot `[order, operation, method, anchor, sorted targets]`. Changing it is a different instruction.
+     - An alternative group becomes one slot, `[order, alt_group, "options"]`. Option numbers, the operation, method and anchor of each option, and its targets are left out.
+     - Source, section, subtype, applicability, identity (pests, targets, kind, concerns, control class, dose basis, storage term, ABOUT, conditions) and the quote's first passage ref stay as they are.
+   - **The options move to `value_key`** and to the id (`rec:` + hash of key and values). Each option contributes its operation, method, anchor, target with formulation, and amounts, sorted so that renumbering alone changes nothing. A changed list then gives a new id with the same fact_key. The loader already turns that into a needs_review node with `(new)-[:REVISION_OF]->(old)`, and an approved old node keeps serving.
+   - **conflict_key stays per option:** two books recommending the same product for the same pest should still compare amounts. A list-level conflict_key would make every pair of different insecticide lists a conflict.
+   - **Risk:** two facts in one unit that differ only in their option lists would now share a fact_key. Today's rule already holds both at step 10 (a `fact_key` collision), so the change fails safe. In TNAU the passage ref and the pest separate the BPH and WBPH lists.
+   - **Migration:** every fact with an alternative group gets a new fact_key and id, so the change needs a one-time `--reset-source` (refused if any fact is approved, rejected or reviewed), like the v1.3 reload.
+   - **Tests when built:** the old and new e63c#35 share a fact_key and load as REVISION_OF; removing, adding or renumbering an option keeps the key; changing a step outside the group changes it; a collision within a unit still holds both facts.
+
 ## Known issues for segmentation and tables (steps 6–7)
 
 These were found in the committed TNAU conversion while building the schema tests.
