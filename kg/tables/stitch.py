@@ -33,6 +33,7 @@ class Part:
     cells: list[dict]                  # unique cells: row, col, row_span, col_span, text, header, bbox
     rows: list[list[dict]]             # cells grouped by start row, ordered by column
     bbox: dict | None = None           # table box on the page
+    docling_cells: list[dict] | None = None   # Docling's own cells, when kg.tables.rebuild changed any
 
 
 @dataclass
@@ -103,8 +104,9 @@ def _start(unit: dict, part: Part) -> Table:
     return t
 
 
-def stitch_unit(unit: dict, items_by_ref: dict) -> list[Table]:
-    """Tables of one unit, with continuations stitched on."""
+def stitch_unit(unit: dict, items_by_ref: dict, prepare=None) -> list[Table]:
+    """Tables of one unit, with continuations stitched on. `prepare` (kg.tables.rebuild) may replace each
+    part before stitching, so a page-break merge continues the corrected cells."""
     order = [i for i in unit["items"]]
     tables: list[Table] = []
     last_index = None
@@ -112,6 +114,8 @@ def stitch_unit(unit: dict, items_by_ref: dict) -> list[Table]:
         if item["kind"] != "table":
             continue
         part = part_from(items_by_ref[item["ref"]])
+        if prepare is not None:
+            part = prepare(part)
         prev = tables[-1] if tables else None
         between_only_tables = last_index is not None and all(
             order[k]["kind"] == "table" for k in range(last_index + 1, idx))

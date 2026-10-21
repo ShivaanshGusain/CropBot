@@ -1,4 +1,5 @@
-"""Tables (step 8, no LLM): stitch, check against the page, pivot variety tables.
+"""Tables (step 8, no LLM): rebuild ruled parts from the text layer (kg.tables.rebuild), stitch, check
+against the page, pivot variety tables.
 
   uv run python -m kg.tables source:tnau_agriculture_2020 [--chapters RICE,WHEAT]
 
@@ -14,7 +15,8 @@ from collections import Counter
 from kg.registry import ROOT
 
 from .check import PageChecker
-from .stitch import Table, stitch_unit
+from .rebuild import Rebuilt, crossings, rebuild
+from .stitch import Part, Table, stitch_unit
 from .varieties import (duration_group_of, duration_outliers, duration_reference, is_variety_table,
                         pivot, possible_duplicates, variety_mentions)
 
@@ -35,11 +37,20 @@ def run(entry, docling_dir, units_path, chapters: tuple[str, ...]) -> dict:
     units = [u for u in units if u["chapter"]["title"] in chapters]
     chapter_by_title = {c.path_label(): c for c in entry.chapters}
 
+    checker = PageChecker(ROOT / entry.file)
+    rebuilt: dict[str, Rebuilt] = {}         # by part ref, with Docling's own part kept for the checks
+    originals: dict[str, Part] = {}
+
+    def prepare(part: Part) -> Part:
+        if part.ref not in rebuilt:
+            originals[part.ref] = part
+            rebuilt[part.ref] = rebuild(part, checker.page(part.pdf_page))
+        return rebuilt[part.ref].part
+
     tables: list[Table] = []
     for u in units:
-        tables += stitch_unit(u, items_by_ref)
+        tables += stitch_unit(u, items_by_ref, prepare)
 
-    checker = PageChecker(ROOT / entry.file)
     checks, review, checked = [], [], set()
     for t in tables:
         for m in t.merged_rows:
@@ -50,9 +61,24 @@ def run(entry, docling_dir, units_path, chapters: tuple[str, ...]) -> dict:
             if part.ref in checked:          # a split table shares its part with the table before it
                 continue
             checked.add(part.ref)
-            summary, problems = checker.check(part)
+            original, res = originals[part.ref], rebuilt[part.ref]
+            summary, problems = checker.check(original)          # the page check reads Docling's own cells
             checks.append(summary)
             review += [{**p, "chapter": t.chapter} for p in problems]
+            for p in crossings(original, checker.page(part.pdf_page)):
+                fixed = (p["row"], p["col"]) in res.changes
+                review.append({**{k: p[k] for k in ("table_ref", "pdf_page", "check", "docling", "page")},
+                               "chapter": t.chapter, "detail": "%s (%s)" % (
+                                   p["detail"], "resolved by the rebuild" if fixed else "not resolved")})
+            for (r, c), (text, new_col) in sorted(res.changes.items()):
+                before = next(x for x in original.cells if (x["row"], x["col"]) == (r, c))
+                review.append({"chapter": t.chapter, "check": "rebuilt from rulings", "table_ref": part.ref,
+                               "pdf_page": part.pdf_page, "docling": before["text"], "page": text,
+                               "detail": "row %d col %d%s" % (r, c, ", now col %d span %d" % new_col
+                                                              if new_col else "")})
+            review += [{"chapter": t.chapter, "check": "rebuild", "table_ref": part.ref,
+                        "pdf_page": part.pdf_page, "detail": f}
+                       for f in res.flags if not f.startswith("no rulings")]
 
     reference, reference_ref = duration_reference(tables)
     varieties, seen = [], {}
@@ -102,7 +128,7 @@ def table_record(t: Table) -> dict:
                                          "continued_from") if k in c}
                       for c in row] for row in t.rows],
             "stitch_log": t.stitch_log, "merged_rows": t.merged_rows,
-            "original_cells": {p.ref: p.cells for p in t.parts}}
+            "original_cells": {p.ref: p.docling_cells or p.cells for p in t.parts}}
 
 
 def write(entry, result) -> dict:

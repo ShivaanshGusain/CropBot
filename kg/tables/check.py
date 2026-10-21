@@ -30,6 +30,21 @@ def _bottom_left(box: dict, height: float) -> tuple[float, float, float, float]:
     return box["l"], height - box["b"], box["r"], height - box["t"]
 
 
+def rulings(part: Part, page: dict) -> tuple[list, list]:
+    """The ruling segments in a part's table box: horizontal (y, x0, x1) and vertical (x, y0, y1)."""
+    h = page["height"]
+    l, b, r, t = _bottom_left(part.bbox, h)
+
+    def inbox(x0, y0, x1, y1):
+        return l - 4 <= min(x0, x1) and max(x0, x1) <= r + 4 and b - 4 <= min(y0, y1) and max(y0, y1) <= t + 4
+
+    H = [(y0, min(x0, x1), max(x0, x1)) for (x0, y0), (x1, y1) in page["segments"]
+         if abs(y0 - y1) < 1.5 and abs(x1 - x0) > 15 and inbox(x0, y0, x1, y1)]
+    V = [(x0, min(y0, y1), max(y0, y1)) for (x0, y0), (x1, y1) in page["segments"]
+         if abs(x0 - x1) < 1.5 and abs(y1 - y0) > 6 and inbox(x0, y0, x1, y1)]
+    return H, V
+
+
 class PageChecker:
     def __init__(self, pdf_path):
         from docling_parse.pdf_parser import DoclingPdfParser
