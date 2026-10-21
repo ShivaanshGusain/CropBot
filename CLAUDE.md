@@ -370,6 +370,10 @@ uv run python -m kg.extract compare source:tnau_agriculture_2020 --unit <unit_id
 `--prompt` defaults to the latest version, v3 (schema v1.3), since 2026-10-21.
 - The four units (8e1d, b879, e63c, f5b0) were hand-run under v3 by revising the v2 answers fact by fact; every changed value was written from the unit text and the v3 rules.
 - C2#10/#11 now quote the printed order that the approved p. 74 reading-order fix restored, without `line_order_pairing`.
+- **C2#4 (PDF p. 73) prints "80 µM" with U+00B5.** The PDF text layer, the conversion and the v2 answer all have µ. The first v3 answer had U+FFFD there: a typo made in the hand-run, because the PowerShell console showed µ as "�". It was re-run on 2026-10-21. Check text by code point (`python -X utf8`, `hex(ord(c))`), never by what the console shows.
+  - The wrong run is kept in `v3/history/f5b06c9fd3f8.e33b29d52cdc.json`. Its `previous_run` points at itself.
+  - The run before it, the first failed v3 f5b0 run (the old C2#10/#11 quotes), was lost. A `--force` re-run with the same cache key wrote its history copy over it, and no other copy exists. History names now include the run time (below).
+  - The p. 73 `[[review_note]]` proposing to read "�M" as micromolar is rejected and kept, with its reason.
 - "a week before harvest" and "second a week later" keep their words in `timing_raw`, with no offset: turning "a week" into 7 days would be a unit conversion.
 
 - **Raw model** (`kg/extract/model.py`), separate from `kg/schema`:
@@ -405,7 +409,12 @@ uv run python -m kg.extract compare source:tnau_agriculture_2020 --unit <unit_id
   - Each file records the prompt version and sha256, `extraction_model`, the unit text sha256, the time, the raw answer, every fact and its check results.
   - Cache key: unit text + prompt version + prompt hash + model.
   - `ingest` refuses to replace an answer with the same key unless given `--force`.
-  - Runs under different versions sit side by side. A new run of the same unit and version moves the earlier answer to `<version>/history/<hash>.<cache key[:12]>.json`, recorded as `previous_run`; nothing is overwritten. `prepare` does the same for an earlier prompt with a different key (`history/<hash>.<key[:12]>.md`; the key sits in `prompts/<hash>.key`).
+  - Runs under different versions sit side by side. A new run of the same unit and version moves the earlier answer to `<version>/history/<hash>.<cache key[:12]>.<run time, UTC>.json`, recorded as `previous_run`.
+    - The run time is in the name because a `--force` re-run keeps the cache key.
+    - An existing history file is never overwritten: `ingest` refuses and writes nothing.
+    - Files kept before 2026-10-21 have the old name without the time.
+  - `prepare` does the same for an earlier prompt with a different key (`history/<hash>.<key[:12]>.md`; the key sits in `prompts/<hash>.key`). A kept prompt is rewritten only with identical bytes; anything else is refused.
+  - **Prompt v4 candidates:** the "Seed rate" target ("seed", from the sub-heading) should carry `target_from_heading`.
   - `compare --from/--to` takes a version (its latest run) or a run file. It matches facts by subtype and quote (then by one quote containing the other) and ignores `instruction_en`. Runs are labelled `<version>@<cache key[:8]>`.
 - **Hand-runs:** the JSON answer is written directly from the rendered prompt; no template generates any field.
 - **Checks here only:**
@@ -423,7 +432,7 @@ uv run python -m kg.extract compare source:tnau_agriculture_2020 --unit <unit_id
 
 ## Normalisation and linking (`kg/normalize`)
 
-No model. Input: the latest v2 run of every unit (a run that failed step 9 stops it). Each raw fact either validates against `kg.schema.FACT` and goes to `data/normalized/<id>/facts.jsonl`, or is held in `held.jsonl` with every blocking reason. Nothing is forced or dropped.
+No model. Input: the latest run of every unit under the latest prompt version, `kg.extract.versions.LATEST` (v3); a run that failed step 9 stops it. Each raw fact either validates against `kg.schema.FACT` and goes to `data/normalized/<id>/facts.jsonl`, or is held in `held.jsonl` with every blocking reason. Nothing is forced or dropped.
 
 - **Scope:**
   - **Crop:** the chapter's crop_id, only if the chapter is approved.
@@ -436,7 +445,7 @@ No model. Input: the latest v2 run of every unit (a run that failed step 9 stops
   - `basis_rule` must be one of the unit's approved default-scope rules.
 - **`quantity_ref`:** copied from the one earlier fact of the unit that gives the same target an amount, with `inherited: true`; zero or several such facts hold it. A fact inheriting from a held fact is held too (chains included) until its source validates.
 - **Schema v1.3 fields, read by code** (`kg/normalize/units.py`; every reading is logged, anything unreadable holds the fact):
-  - strength units: "%", "w/w" → pct; "N" → normal; "µM" → micromolar. A damaged glyph ("�M") holds the fact;
+  - strength units: "%", "w/w" → pct; "N" → normal; "µM" → micromolar. Any other unit holds the fact;
   - `ratio_whole` = printed part + rest;
   - repeat words via the fixed word table in `kg.schema.vocab` (once/twice/thrice; daily/weekly/fortnightly) or printed digits ("4 times", "at 10 days interval"). "second a week later" holds;
   - sample sizes in `sampling_unit` ("/25 net sweeps", "/100 ear heads", "in 12 passes") → `sampling_count` + `sampling_object`.
@@ -455,14 +464,13 @@ No model. Input: the latest v2 run of every unit (a run that failed step 9 stops
   - a `fact_key` collision within the unit.
 
   An unlinked *step* or *clause* stage keeps its words in `timing_raw`/`raw`, and the fact goes to review.
-- **`fact_key`:** a hash of the source, section path, subtype, linked applicability, identity (incl. Caution `about_ids`), step slots (order, alt group, option, operation, method, anchor, target IDs; method and anchor added for v1.3) and the quote's first passage ref. Values are excluded. With the v3 runs and the v1.3 concepts: 124 facts in, **99 validated, 25 held** (68 held under v1.2, 2026-10-21). Still held:
+- **`fact_key`:** a hash of the source, section path, subtype, linked applicability, identity (incl. Caution `about_ids`), step slots (order, alt group, option, operation, method, anchor, target IDs; method and anchor added for v1.3) and the quote's first passage ref. Values are excluded. With the v3 runs and the v1.3 concepts: 124 facts in, **100 validated, 24 held** (68 held under v1.2; 2026-10-21, after the C2#4 re-run). Still held:
 - 14 for a generic target ("Pest", "weeds", "disease");
 - 13 for a step with no operation (advice like "avoid close planting", owl perches, options with no verb or formulation code);
 - KKM (unidentified);
 - the GLH resurgence caution: "GLH, Nephotettix virescens" doesn't match the seeded three-species scientific name;
 - "direct sowing";
-- ADT 46;
-- the lost µ (C2#4, review note proposed).
+- ADT 46.
 - **Generic words:** a generic target links only through an approved label ("rodent" → `pest:rat`); without one it holds.
   - Identity covers pests, targets, kind, concerns, control class, dose basis, DryingSpec `storage_term_raw`, and every condition of the fact (variable, op, raw).
   - There is no sentence position; facts that still collide stay held. `id` is `rec:` plus a hash of the key and the values.
@@ -506,12 +514,20 @@ No model. Input: the facts step 10 validated (`data/normalized/<id>/facts.jsonl`
   4. **alternatives:** fertilizer-only alternatives agree within 15 % on N, P2O5 and K2O, using **approved** Fertilizer percentages only. Without them it skips with a review reason.
   5. **ingredients:** every applied active ingredient must be `registered`; unknown, restricted, banned and not seeded all fail (fail closed). A Caution's `concerns` aren't checked.
   6. **review_kept:** a fact with flags, an inferred or context basis, an inherited amount, an exclusion or any step 10 review reason must be `needs_review`.
-  7. **range_narrowed:** a value stored as one bound (or equal bounds) that is an end of a range printed in its raw text fails with "printed range stored as a single bound (pending v1.3 min_moisture_pct)". It covers every raw field, quantity, step offset and condition, and the value is never changed. TNAU: rice seed storage "12 - 13 %" and "8 - 9 %" (C2#22, #23), stored as `max_moisture_pct` only.
+  7. **range_narrowed:** a value stored as one bound (or equal bounds) that is an end of a range printed in its raw text fails with "printed range stored as a single bound". It covers every raw field, quantity, step offset and condition, and the value is never changed.
+     - A pair is `X_min`/`X_max` or, since 2026-10-21, `min_X`/`max_X` (StorageRule `min_`/`max_moisture_pct`). Before that fix the check failed C2#22/#23 under v3 although both bounds were stored.
+     - TNAU: nothing fails. Rice seed storage "12 - 13 %" and "8 - 9 %" (C2#22, #23) keep both bounds.
+  8. **lost_glyph:** any stored text on the fact or its step 9 fact containing U+FFFD fails. TNAU: none. Run by hand over the kept history run, it catches the v3 C2#4 typo; step 11 itself reads only the latest runs.
+  9. **printed_text:** on the step 9 fact, each quantity's target name, unit and strength unit, as printed, appear in its quote (normalised, case kept, not inside a longer word or number; prompt v2's placeholder unit "count" is exempt). TNAU: 9 facts fail and go to review as they are; no value changes.
+     - b879#0–3 (SeedRate): target "seed", taken from the "Seed rate" heading.
+     - f5b0#9–11: N, P and K split from "NPK".
+     - Two held facts: e63c#43 ("Notchi leaf extract" and "Ipomoea leaf extract" built from "Notchi or Ipomoea or Prosopis leaf extract") and e63c#53 (Pseudomonas from the heading, flagged `target_from_heading`).
 - **Review notes:** `[[review_note]]` in the registry is printed text on a PDF page plus a note, with a status.
   - Step 11 attaches an approved note to every fact whose quote contains that text on that page, as a review reason; the value never changes.
   - An approved note that matches no fact is reported as stale.
   - TNAU: the Fipronil note (p. 64) is approved. The two Imidacloprid notes (pp. 66, 67) are approved: "inconsistent units for the same product in the source: g/ha on pp. 287–288, kg/ha on pp. 66, 67 and once on p. 288".
   - A quote in a row merged across pages records every piece's page (step 9), so the WBPH row (pp. 66–67) matches both Imidacloprid notes. Identical note text is listed once per fact.
+  - A rejected note keeps its entry and gets a `reason`. TNAU p. 73 "80 �M" is rejected: it was based on a U+FFFD typo in the hand-run answer, and the PDF text layer prints µ.
 - **Known source typos** (checked on the rendered pages 2026-10-20): "Fipronil 80%WG 50- 62.5 kg" (PDF p. 64) and "Imidacloprid 70% WG 30-35 kg" (pp. 66, 67) are printed in kg. The same Fipronil product is printed as "50-62.5 g" on p. 65. Extraction and normalisation keep the book's kg, check 3 fails them, and they go to review as suspected typos.
 
 ## Verification with Jev (`kg/verify`)
@@ -577,6 +593,10 @@ Step 13. Input: step 12's facts (status, verifier), step 11's (the fact, review 
   - `--reset-source` deleted 56 facts, 149 Steps/Clauses/Conditions and 55 spans;
   - load 1 created 412 nodes and 872 relationships; load 2 created none, with the snapshot identical (`8fbf4e4d…`, 704 nodes, 1030 relationships);
   - 99 facts (10 extracted, 89 needs_review); one `CONFLICTS_WITH {origin: "review"}`, none detected.
+- **C2#4 reload** (2026-10-21, no reset):
+  - C2#4 (sodium nitroprusside 80 µM, P(yes) 0.95) is the only new fact; load 1 created 3 nodes and 9 relationships. Load 2 created none, with the snapshot identical (`c59e3e47…`, 707 nodes, 1039 relationships).
+  - 100 facts: 12 extracted, 88 needs_review. C2#22/#23 became extracted with the check 7 fix. C2#24 is needs_review through the review conflict.
+  - No property in the graph contains U+FFFD.
 - **`value_key` excludes a Caution's `text_en`:** its wording, not a value. Two cautions against synthetic pyrethroids in other words don't conflict.
 - **Schema v1.3 in the loader:**
   - `ABOUT` edges (Caution → pest);
@@ -620,7 +640,7 @@ Approved 2026-10-20. `kg.query.answer(driver, template, FarmContext)` returns a 
   - Facts are named by a quote snippet (plus `duration_group`, or `"exact": true`, where one quote contains another), never by rec id, so re-extraction doesn't break them.
   - All 10 match the v3 data (2026-10-21).
   - Q12 for grain changed with the data: the NaCl harvest-hastening spray (8e1d#3) now validates and applies to grain. It is an unreviewed dose, so the answer is "No verified guidance available" instead of "No local guidance available".
-  - Rice seed storage C2#22/#23 are served as "at most 13 %" and "at most 9 %", labelled unverified. The book prints "12 - 13 %" and "8 - 9 %" (range_narrowed, pending v1.3 `min_moisture_pct`).
+  - Rice seed storage C2#22/#23 are served with both bounds, 12–13 % and 8–9 % (`min_moisture_pct` beside `max_moisture_pct`), labelled unverified.
 
 ## Scope rules for extraction and normalisation
 
@@ -640,7 +660,7 @@ Decisions on gaps that don't change the doc:
 - Every NutrientDose step has `APPLIES` quantities, and a ControlMeasure has at least one Step.
 - `CONFLICTS_WITH` is recorded on both facts. Conflict detection must never create duplicate links: one link per pair of facts, however often detection runs.
 
-**Schema v1.3** (`docs/schema_v1.3.md`, committed 2026-10-20) now covers every item below. Its implementation is in progress; until it lands, the old behaviour described here still applies.
+**Schema v1.3** (`docs/schema_v1.3.md`, committed 2026-10-20) now covers every item below, and it is built (2026-10-21). The lists below record why each change was made.
 
 Found in the step 9 hand-run; until v1.3 is built, extraction keeps the phrases in `unmapped`:
 - StorageRule needs `min_moisture_pct` (+ `_inclusive`), so "12 - 13 %" keeps its lower bound (it has only `max_moisture_pct` now).
