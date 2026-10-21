@@ -1,0 +1,244 @@
+"""The expert review workbook (step 16): one row per current fact, for an agronomist.
+
+Rows are built from step 13's inputs (kg.load.facts.build, the facts the loader writes), so each row's hash
+(kg.load.facts.row_hash) is the one the loader and the import check. The current status, review reasons and
+Jev score come from the database; a fact that is not in it yet, or is flagged missing_in_latest_run, stops
+the sheet. Only the reviewer columns are unlocked; row_hash is a hidden column, and a hidden "meta" sheet
+names the source.
+"""
+
+import datetime as dt
+import re
+
+from kg.load.facts import row_hash
+from kg.schema.vocab import SCOPE_IN_UNMAPPED_REASON
+
+ORDER = ("DryingSpec", "StorageRule", "HarvestRule", "NutrientDose", "SeedRate", "Spacing", "SeedTreatment",
+         "IrrigationRule", "PestThreshold", "ControlMeasure", "Caution")
+FACTS, GUIDE, META = "Facts", "How to review", "meta"
+# (key, header, width); the reviewer columns are the only editable cells
+COLUMNS = (("review_no", "Review no.", 8), ("fact_id", "Fact id", 22), ("subtype", "Subtype", 15),
+           ("instruction", "Instruction (code-built from the stored fact)", 60), ("crop", "Crop", 10),
+           ("scope", "Scope (variety / duration, purpose, soil, region)", 34),
+           ("values", "Values (with the printed text)", 50), ("quote", "Quote (exact, from the book)", 60),
+           ("pages", "PDF page / printed page", 12), ("source", "Source", 24), ("status", "Current status", 14),
+           ("review_reasons", "Review reasons", 50), ("jev_score", "Jev score", 9),
+           ("unmapped", "Unmapped phrases", 30),
+           ("decision", "DECISION: approve / reject / needs change", 18),
+           ("note", "REASON OR CORRECTION", 40),
+           ("uttarakhand", "APPLIES IN UTTARAKHAND? yes / no / not sure", 18),
+           ("reviewer", "REVIEWER NAME", 18), ("date", "DATE (yyyy-mm-dd)", 14),
+           ("row_hash", "row_hash", 10))
+REVIEWER = ("decision", "note", "uttarakhand", "reviewer", "date")
+GUIDE_LINES = (
+    "You are checking whether each row says exactly what the book says, and whether it is safe to give to a farmer.",
+    "Read the quote and page. If the instruction matches the book and is good advice: approve.",
+    "If the book is wrong or outdated, or the advice is unsafe: reject, and say why.",
+    "If it's almost right but the scope or a value needs fixing: needs change, and write the correction.",
+    "\"Applies in Uttarakhand?\" is separate: this book is from Tamil Nadu. Say whether the advice also holds for "
+    "Uttarakhand conditions.",
+    "Don't edit any other column.",
+    "If the Unmapped column shows a condition (e.g. 'for hybrids', 'in BPH prone areas'), the instruction as shown "
+    "applies everywhere. Approve only if the advice is correct without that condition; otherwise choose "
+    "'needs change' and write the condition.",
+    "Approving a pesticide row records that it matches the book; it is still not shown to farmers until the "
+    "product's official registration status has been checked.",
+)
+SCOPE_FILL = "F4B183"            # orange: the Unmapped cell of a fact flagged "scope in unmapped"
+REVIEWER_HEAD, REVIEWER_CELL, HEAD = "FFD966", "FFF2CC", "D9E1F2"
+SHEET_VERSION = "1"
+
+
+class SheetError(Exception):
+    def __init__(self, problems: list[str]):
+        super().__init__("\n".join(problems))
+        self.problems = problems
+
+
+def statement(claim: str) -> str:
+    """A code-built Jev claim as a plain statement: "Does the passage state that X?" -> "X."."""
+    s = re.sub(r"^Does the passage state that,?\s*", "", claim.strip()).rstrip("?").strip()
+    return s[:1].upper() + s[1:] + "."
+
+
+def instruction(rec: dict) -> str:
+    claims = rec["props"].get("verifier_claims") or []
+    if claims:
+        return "\n".join(statement(c) for c in claims)
+    fact = rec["fact"]
+    steps = [s["instruction_en"] for s in fact["steps"] if s.get("instruction_en")]
+    text = fact.get("text_en") or "; ".join(steps) or fact.get("summary_en") or ""
+    return "(no code-built claim; as extracted) " + text
+
+
+def _name(names: dict, cid: str) -> str:
+    return names.get(cid, cid)
+
+
+def scope(fact: dict, names: dict) -> str:
+    parts = []
+    for label, key in (("variety", "variety_ids"), ("season", "season_ids"), ("system", "system_ids"),
+                       ("soil", "soil_ids"), ("purpose", "purpose_ids"), ("stage", "stage_ids")):
+        if fact.get(key):
+            parts.append("%s: %s" % (label, ", ".join(_name(names, x) for x in fact[key])))
+    if fact.get("duration_group"):
+        parts.append("duration: %s" % fact["duration_group"])
+    parts.append("region: %s" % ", ".join(_name(names, r["id"]) for r in fact["regions"]))
+    if fact.get("excluded_regions"):
+        parts.append("except: %s" % ", ".join(r["raw"] for r in fact["excluded_regions"]))
+    return "\n".join(parts)
+
+
+TEXT_FIELDS = ("maturity_signs", "structure", "storage_term_raw", "criterion")
+
+
+def values(fact: dict, names: dict) -> str:
+    """Every stored value with the text the book prints for it."""
+    lines = ["%s: %s (printed: %s)" % (k, fact.get(k), raw) for k, raw in sorted((fact.get("raw") or {}).items())]
+    lines += ["%s: %s" % (k, "; ".join(fact[k]) if isinstance(fact[k], list) else fact[k])
+              for k in TEXT_FIELDS if fact.get(k)]
+    lines += ["if: %s" % c["raw"] for c in fact.get("conditions") or []]
+    for s in fact["steps"]:
+        head = "step %d%s: %s" % (s["order"], " option %d" % s["alt_option"] if s.get("alt_option") else "",
+                                  s.get("operation") or "")
+        if s.get("method"):
+            head += " (%s)" % s["method"]
+        if s.get("timing_raw"):
+            head += ", %s" % s["timing_raw"]
+        lines.append(head)
+        lines += ["    %s: %s" % (_name(names, a["target_id"]), a.get("raw") or "") for a in s["applies"]]
+        lines += ["    if: %s" % c["raw"] for c in s.get("conditions") or []]
+    for i, c in enumerate(fact.get("clauses") or []):
+        lines.append("clause %d: %s %s" % (i + 1, c.get("observation") or "", c.get("raw") or ""))
+    return "\n".join(lines)
+
+
+def rows(entry, built: dict, current: dict, names: dict) -> list[dict]:
+    """One row per fact of the load, post-harvest first. `current` is the database's view of each fact id:
+    status, review_reasons, verifier_score, missing_in_latest_run."""
+    problems, out = [], []
+    for rec in built["recs"]:
+        db = current.get(rec["id"])
+        if db is None:
+            problems.append("%s (%s) is not in the database; load it first" % (rec["id"], rec["short"]))
+            continue
+        if db.get("missing_in_latest_run"):
+            problems.append("%s is flagged missing_in_latest_run" % rec["id"])
+            continue
+        fact = rec["fact"]
+        ev = fact["evidence"]
+        out.append({
+            "fact_id": rec["id"], "subtype": rec["subtype"], "instruction": instruction(rec),
+            "crop": ", ".join(_name(names, c) for c in fact["crop_ids"]), "scope": scope(fact, names),
+            "values": values(fact, names), "quote": "\n".join(e["quote"] for e in ev),
+            "pages": "\n".join("%s / %s" % (e["pdf_page"], e.get("printed_page") or "-") for e in ev),
+            "source": entry.title, "status": db["status"],
+            "review_reasons": "\n".join(db.get("review_reasons") or []), "jev_score": db.get("verifier_score"),
+            "unmapped": "\n".join(fact.get("unmapped") or []),
+            "scope_flag": SCOPE_IN_UNMAPPED_REASON in (db.get("review_reasons") or []),
+            "row_hash": row_hash(fact), "_page": ev[0]["pdf_page"] if ev else 0})
+    unknown = sorted({r["subtype"] for r in out} - set(ORDER))
+    if unknown:
+        problems.append("no review order for subtypes %s" % unknown)
+    if problems:
+        raise SheetError(problems)
+    out.sort(key=lambda r: (ORDER.index(r["subtype"]), r["_page"], r["fact_id"]))
+    for i, r in enumerate(out, 1):
+        r["review_no"] = i
+    return out
+
+
+def current_from_db(driver, database=None) -> dict:
+    found, _, _ = driver.execute_query(
+        "MATCH (r:Recommendation) RETURN r.id AS id, r.status AS status, r.review_reasons AS review_reasons, "
+        "r.verifier_score AS verifier_score, coalesce(r.missing_in_latest_run, false) AS missing_in_latest_run",
+        database_=database)
+    return {r["id"]: r.data() for r in found}
+
+
+def write_workbook(path, entry, sheet_rows: list[dict], database: str | None) -> None:
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill, Protection
+    from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    wb = Workbook()
+    guide = wb.active
+    guide.title = GUIDE
+    guide["A1"] = "How to review"
+    guide["A1"].font = Font(bold=True, size=14)
+    for i, line in enumerate(GUIDE_LINES, 3):
+        guide.cell(i, 1, "• " + line).alignment = Alignment(wrap_text=True, vertical="top")
+    guide.column_dimensions["A"].width = 120
+
+    ws = wb.create_sheet(FACTS)
+    keys = [k for k, _, _ in COLUMNS]
+    col = {k: i for i, k in enumerate(keys, 1)}
+    for k, header, width in COLUMNS:
+        c = ws.cell(1, col[k], header)
+        c.font = Font(bold=True)
+        c.fill = PatternFill("solid", fgColor=REVIEWER_HEAD if k in REVIEWER else HEAD)
+        c.alignment = Alignment(wrap_text=True, vertical="top")
+        ws.column_dimensions[get_column_letter(col[k])].width = width
+    for n, r in enumerate(sheet_rows, 2):
+        for k in keys:
+            c = ws.cell(n, col[k], None if k in REVIEWER else r.get(k))
+            c.alignment = Alignment(wrap_text=True, vertical="top")
+            if k in REVIEWER:
+                c.protection = Protection(locked=False)
+                c.fill = PatternFill("solid", fgColor=REVIEWER_CELL)
+            if k == "date":
+                c.number_format = "yyyy-mm-dd"
+        if r["scope_flag"]:
+            ws.cell(n, col["unmapped"]).fill = PatternFill("solid", fgColor=SCOPE_FILL)
+    last = len(sheet_rows) + 1
+    letter = {k: get_column_letter(i) for k, i in col.items()}
+    for k, options in (("decision", "approve,reject,needs change"), ("uttarakhand", "yes,no,not sure")):
+        v = DataValidation(type="list", formula1='"%s"' % options, allow_blank=True, showErrorMessage=True,
+                           errorTitle="Not allowed", error="Choose one of: %s" % options.replace(",", ", "))
+        ws.add_data_validation(v)
+        v.add("%s2:%s%d" % (letter[k], letter[k], last))
+    dv = DataValidation(type="date", operator="greaterThanOrEqual", formula1="DATE(2026,1,1)", allow_blank=True,
+                        showErrorMessage=True, errorTitle="Not a date", error="Enter a date as yyyy-mm-dd")
+    ws.add_data_validation(dv)
+    dv.add("%s2:%s%d" % (letter["date"], letter["date"], last))
+    ws.column_dimensions[letter["row_hash"]].hidden = True
+    ws.freeze_panes = "C2"
+    ws.auto_filter.ref = "A1:%s%d" % (letter["unmapped"], last)
+    ws.protection.sheet = True
+    ws.protection.autoFilter = False             # filtering stays allowed on the protected sheet
+    ws.protection.formatColumns = False
+    ws.protection.formatRows = False
+
+    meta = wb.create_sheet(META)
+    for i, (k, v) in enumerate((("source_id", entry.id), ("sheet_version", SHEET_VERSION),
+                                ("created_at", dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")),
+                                ("database", database or "(home)"), ("rows", len(sheet_rows))), 1):
+        meta.cell(i, 1, k)
+        meta.cell(i, 2, v)
+    meta.sheet_state = "hidden"
+    wb.active = 0
+    path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(path)
+
+
+def read_workbook(path) -> tuple[dict, list[dict]]:
+    """(meta, rows) of a filled workbook; rows carry the Excel row number and every column by key."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(path, data_only=True)
+    if FACTS not in wb.sheetnames or META not in wb.sheetnames:
+        raise SheetError(["%s: not a review workbook (sheets %s)" % (path, wb.sheetnames)])
+    meta = {r[0]: r[1] for r in wb[META].iter_rows(values_only=True) if r[0]}
+    ws = wb[FACTS]
+    header = [c.value for c in ws[1]]
+    by_header = {h: k for k, h, _ in COLUMNS}
+    missing = [h for _, h, _ in COLUMNS if h not in header]
+    if missing:
+        raise SheetError(["%s: columns missing or renamed: %s" % (path, missing)])
+    out = []
+    for n, values_ in enumerate(ws.iter_rows(min_row=2, values_only=True), 2):
+        row = {by_header[h]: v for h, v in zip(header, values_) if h in by_header}
+        if row.get("fact_id"):
+            out.append({**row, "_row": n})
+    return meta, out

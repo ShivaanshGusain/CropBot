@@ -23,7 +23,8 @@ data/raw/*.pdf
 data/docling/
 data/units/
 data/tables/
-data/review/
+data/review/*
+!data/review/expert_decisions.csv
 data/extracted/
 data/normalized/
 data/validated/

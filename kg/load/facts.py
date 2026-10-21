@@ -22,6 +22,12 @@ is needs_review with (new)-[:REVISION_OF]->(old), and the old node is left untou
 source not in this load is flagged missing_in_latest_run, never deleted. superseded_by stays reserved for
 a newer edition.
 
+Expert decisions (step 16): every row of data/review/expert_decisions.csv (--decisions) whose fact is in the
+load and whose row_hash (id, quotes, values, scope) still matches is re-applied after the MERGE: status
+approved / rejected / needs_review, reviewed_by, reviewed_at, the note ("expert: <note>" in review_reasons for
+"needs change") and the Uttarakhand answer. Any other row is stale: not applied, listed in the report and, for
+the home database, in data/review/stale_decisions.csv.
+
 Conflicts: facts with the same conflict_key (subtype, applicability, identity, step slots and the storage
 window) and a different value_key get one CONFLICTS_WITH {origin: "detected"} per pair, from the smaller id
 to the larger, and become needs_review. Approved registry [[conflict]] entries add {origin: "review"}.
@@ -37,6 +43,7 @@ from collections import Counter, defaultdict
 from kg.extract.quotes import normalise
 from kg.normalize import NORMALIZED_DIR
 from kg.registry import ROOT, RegistryError, read_registry
+from kg.review.decisions import DECISIONS_CSV, apply_row, read_decisions
 from kg.schema import FACT
 from kg.validate import VALIDATED_DIR
 from kg.verify import VERIFIED_DIR
@@ -49,6 +56,7 @@ from .sources import load_sources
 TABLES_DIR = ROOT / "data" / "tables"
 LOADED_DIR = ROOT / "data" / "loaded"
 MISSING_APPROVED_CSV = ROOT / "data" / "review" / "missing_approved.csv"
+STALE_DECISIONS_CSV = ROOT / "data" / "review" / "stale_decisions.csv"
 HUMAN_STATUSES = ["approved", "rejected"]
 APPLICABILITY = (("crop_ids", "FOR_CROP"), ("variety_ids", "FOR_VARIETY"), ("season_ids", "IN_SEASON"),
                  ("system_ids", "UNDER_SYSTEM"), ("soil_ids", "ON_SOIL"), ("purpose_ids", "FOR_PURPOSE"),
@@ -91,13 +99,14 @@ def _jsonl(path):
     return [json.loads(line) for line in open(path, encoding="utf-8")]
 
 
-def read_inputs(entry) -> dict:
+def read_inputs(entry, decisions_path=DECISIONS_CSV) -> dict:
     name = entry.id.split(":", 1)[1]
     verified = {r["fact_id"]: r for r in _jsonl(VERIFIED_DIR / name / "facts.jsonl")}
     validated = _jsonl(VALIDATED_DIR / name / "facts.jsonl")
     normalized = {r["fact"]["id"]: r for r in _jsonl(NORMALIZED_DIR / name / "facts.jsonl")}
     varieties = _jsonl(TABLES_DIR / name / "varieties.jsonl")
-    return {"verified": verified, "validated": validated, "normalized": normalized, "varieties": varieties}
+    return {"verified": verified, "validated": validated, "normalized": normalized, "varieties": varieties,
+            "decisions": read_decisions(decisions_path, entry.id)}
 
 
 # --- keys for conflicts -------------------------------------------------------------------------
@@ -144,6 +153,17 @@ def value_key(fact: dict) -> str:
                      for c in fact.get("clauses") or [])
     return "vk:" + sha({"fields": fields, "coefficients": fact.get("coefficients"), "steps": steps,
                         "clauses": clauses})[:24]
+
+
+def row_hash(fact: dict) -> str:
+    """What an expert decision was made on (step 16): the fact's id, its quotes, its values and its scope.
+    A decision is applied only while this is unchanged; the status alone never changes it."""
+    return "rh:" + sha({"id": fact["id"], "quotes": [e["quote"] for e in fact["evidence"]],
+                        "value_key": value_key(fact),
+                        "applicability": {k: sorted(fact.get(k) or []) for k, _ in APPLICABILITY}
+                        | {"regions": sorted(r["id"] for r in fact["regions"]),
+                           "excluded_regions": sorted(r["id"] for r in fact.get("excluded_regions") or []),
+                           "duration_group": fact.get("duration_group")}})[:32]
 
 
 # --- rows -------------------------------------------------------------------------------------------
@@ -297,6 +317,18 @@ def build(entry, inputs: dict, concept_ids: set[str]) -> dict:
             row = {"src": pair[0], "dst": pair[1], "note": c.note, "status": c.status,
                    "facts": [sides[0][0]["short"], sides[1][0]["short"]]}
             (reviewer if c.status == "approved" else proposed).append(row)
+    # step 16: an expert decision applies only to the fact it was made on, with the same quote, values and scope
+    by_id = {r["id"]: r for r in recs}
+    decisions, stale = [], []
+    for d in inputs.get("decisions") or []:
+        r = by_id.get(d["fact_id"])
+        why = ("fact not in this load" if r is None else
+               "quote, values or scope changed since the review" if row_hash(r["fact"]) != d["row_hash"] else None)
+        if why:
+            stale.append({k: d.get(k) for k in ("fact_id", "decision", "reviewed_by", "reviewed_at", "subtype",
+                                                 "quote")} | {"reason": why})
+        else:
+            decisions.append(apply_row(d))
     if problems:
         raise LoadError(problems)
     groups = defaultdict(list)
@@ -306,7 +338,7 @@ def build(entry, inputs: dict, concept_ids: set[str]) -> dict:
                 for g in groups.values() for i, a in enumerate(g) for b in g[i + 1:]
                 if a["props"]["value_key"] != b["props"]["value_key"]]
     return {"recs": recs, "varieties": varieties, "nodes": nodes, "edges": edges, "reviewer": reviewer,
-            "proposed": proposed, "detected_in_load": detected}
+            "proposed": proposed, "detected_in_load": detected, "decisions": decisions, "stale_decisions": stale}
 
 
 def _gather(rows, nodes, edges, problems):
@@ -327,9 +359,12 @@ def counts(built: dict) -> dict:
     for (_, rel, _), rows in built["edges"].items():
         edges[rel] += len(rows)
     edges["IN_SOURCE"] = len(built["nodes"]["SourceSpan"])
+    decided = {d["fact_id"]: d["status"] for d in built.get("decisions") or []}
     return {"nodes": dict(nodes), "edges": dict(sorted(edges.items())),
             "by_subtype": dict(Counter(r["subtype"] for r in built["recs"])),
-            "status": dict(Counter(r["status"] for r in built["recs"]))}
+            "status": dict(Counter(decided.get(r["id"], r["status"]) for r in built["recs"])),
+            "expert_decisions": dict(Counter(d["decision"] for d in built.get("decisions") or [])),
+            "stale_decisions": len(built.get("stale_decisions") or [])}
 
 
 # --- writing --------------------------------------------------------------------------------------
@@ -343,8 +378,26 @@ def _run(tx, created, query, **params):
     return rows
 
 
+APPLY_DECISIONS = (
+    "UNWIND $rows AS row MATCH (n:Recommendation {id: row.fact_id}) "
+    "SET n.status = row.status, n.reviewed_by = row.reviewed_by, n.reviewed_at = row.reviewed_at, "
+    "n.expert_decision = row.decision, n.expert_note = row.note, n.applies_uttarakhand = row.applies_uttarakhand, "
+    "n.review_reasons = CASE WHEN row.reason_text IS NULL OR row.reason_text IN coalesce(n.review_reasons, []) "
+    "THEN n.review_reasons ELSE coalesce(n.review_reasons, []) + row.reason_text END "
+    "RETURN count(*) AS n")
+
+
+def apply_decisions(tx, created, rows: list[dict]) -> None:
+    """Expert decisions (kg.review.decisions.apply_row) onto their facts; every fact must be in the graph."""
+    if not rows:
+        return
+    n = _run(tx, created, APPLY_DECISIONS, rows=rows)[0]["n"]
+    if n != len(rows):
+        raise LoadError(["%d of %d decided facts are not in the graph" % (len(rows) - n, len(rows))])
+
+
 def write(tx, entry, built: dict) -> dict:
-    """One transaction: revisions are read first, then every MERGE, then missing, conflicts."""
+    """One transaction: revisions are read first, then every MERGE, the expert decisions, missing, conflicts."""
     created, report = Counter(), {}
     keys = [r["fact_key"] for r in built["recs"]]
     ids = [r["id"] for r in built["recs"]]
@@ -362,6 +415,8 @@ def write(tx, entry, built: dict) -> dict:
         _run(tx, created, "UNWIND $rows AS row MERGE (n:Recommendation {id: row.id}) "
              "ON CREATE SET n.created_at = datetime() SET n:%s, n += row.props, n.status = "
              "CASE WHEN n.status IN $human THEN n.status ELSE row.status END" % subtype, rows=rows, human=HUMAN_STATUSES)
+    # the MERGE above rewrites review_reasons, so a "needs change" note is added back here on every load
+    apply_decisions(tx, created, built.get("decisions") or [])
     _run(tx, created, "UNWIND $rows AS row MERGE (n:Concept:Variety {id: row.id}) SET n += row.props, "
          "n.review_status = CASE WHEN n.review_status = 'approved' THEN n.review_status ELSE row.review_status END",
          rows=built["varieties"])
@@ -401,7 +456,9 @@ def write(tx, entry, built: dict) -> dict:
                     "b.status = CASE WHEN b.status IN $human THEN b.status ELSE 'needs_review' END "
                     "RETURN a.id AS a, b.id AS b", rows=built["reviewer"], human=HUMAN_STATUSES)
     report |= {"created": dict(created), "revisions": revisions, "missing_in_latest_run": [m["id"] for m in missing],
-               "conflicts_detected": detected, "conflicts_review": reviewed}
+               "conflicts_detected": detected, "conflicts_review": reviewed,
+               "decisions_applied": len(built.get("decisions") or []),
+               "stale_decisions": built.get("stale_decisions") or []}
     return report
 
 
@@ -453,10 +510,14 @@ def missing_approved(driver, database=None) -> list[dict]:
 
 
 def write_missing_approved(rows: list[dict], path=MISSING_APPROVED_CSV) -> None:
+    write_csv(path, rows, ["fact_id", "subtype", "source_id", "pdf_page", "quote", "reviewed_by"])
+
+
+def write_csv(path, rows: list[dict], fields: list[str]) -> None:
     import csv
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["fact_id", "subtype", "source_id", "pdf_page", "quote", "reviewed_by"])
+        w = csv.DictWriter(f, fieldnames=fields, extrasaction="ignore")
         w.writeheader()
         w.writerows(rows)
 
@@ -483,6 +544,8 @@ def main(argv=None) -> int:
     ap.add_argument("--database", help="the Neo4j database to use (default: the server's home database)")
     ap.add_argument("--reset-source", metavar="SOURCE_ID",
                     help="one-time: delete that source's facts (refused if any is approved, rejected or reviewed)")
+    ap.add_argument("--decisions", default=str(DECISIONS_CSV),
+                    help="the expert decisions file to re-apply (default: data/review/expert_decisions.csv)")
     a = ap.parse_args(argv)
     if a.snapshot:
         with get_driver() as driver:
@@ -508,11 +571,12 @@ def main(argv=None) -> int:
         raise SystemExit("unknown source %s" % a.source_id)
     concept_ids = {n.id for n in read_seed().nodes}
     try:
-        built = build(entry, read_inputs(entry), concept_ids)
+        built = build(entry, read_inputs(entry, a.decisions), concept_ids)
     except LoadError as e:
         raise SystemExit("refused, nothing loaded:\n  " + "\n  ".join(e.problems))
     rep = {"counts": counts(built), "detected_in_load": built["detected_in_load"],
-           "reviewer_conflicts_approved": built["reviewer"], "reviewer_conflicts_proposed": built["proposed"]}
+           "reviewer_conflicts_approved": built["reviewer"], "reviewer_conflicts_proposed": built["proposed"],
+           "stale_decisions": built["stale_decisions"]}
     print(json.dumps(rep, indent=1, ensure_ascii=False))
     if a.check:
         print("check only: nothing written")
@@ -524,9 +588,12 @@ def main(argv=None) -> int:
             raise SystemExit("refused, transaction rolled back:\n  " + "\n  ".join(e.problems))
         queue = missing_approved(driver, a.database)
     rep["missing_approved"] = queue
-    if a.database is None:                       # the review queue follows the main database only
+    if a.database is None:                       # the review queues follow the main database only
         write_missing_approved(queue)
         print("review queue %s: %d approved facts missing from the latest run" % (MISSING_APPROVED_CSV, len(queue)))
+        write_csv(STALE_DECISIONS_CSV, built["stale_decisions"],
+                  ["fact_id", "decision", "reviewed_by", "reviewed_at", "subtype", "quote", "reason"])
+        print("review queue %s: %d expert decisions not applied" % (STALE_DECISIONS_CSV, len(built["stale_decisions"])))
     out = LOADED_DIR / entry.id.split(":", 1)[1]
     out.mkdir(parents=True, exist_ok=True)
     (out / "report.json").write_text(json.dumps(rep, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
