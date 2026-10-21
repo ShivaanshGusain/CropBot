@@ -416,7 +416,9 @@ uv run python -m kg.extract compare source:tnau_agriculture_2020 --unit <unit_id
     - An existing history file is never overwritten: `ingest` refuses and writes nothing.
     - Files kept before 2026-10-21 have the old name without the time.
   - `prepare` does the same for an earlier prompt with a different key (`history/<hash>.<key[:12]>.md`; the key sits in `prompts/<hash>.key`). A kept prompt is rewritten only with identical bytes; anything else is refused.
-  - **Prompt v4 candidates:** the "Seed rate" target ("seed", from the sub-heading) should carry `target_from_heading`.
+  - **Prompt v4 candidates:**
+    - the "Seed rate" target ("seed", from the sub-heading) should carry `target_from_heading`;
+    - `method`, `observation` and maturity signs are copied verbatim from the quote (see step 11 check 9).
   - `compare --from/--to` takes a version (its latest run) or a run file. It matches facts by subtype and quote (then by one quote containing the other) and ignores `instruction_en`. Runs are labelled `<version>@<cache key[:8]>`.
 - **Hand-runs:** the JSON answer is written directly from the rendered prompt; no template generates any field.
 - **Checks here only:**
@@ -520,10 +522,27 @@ No model. Input: the facts step 10 validated (`data/normalized/<id>/facts.jsonl`
      - A pair is `X_min`/`X_max` or, since 2026-10-21, `min_X`/`max_X` (StorageRule `min_`/`max_moisture_pct`). Before that fix the check failed C2#22/#23 under v3 although both bounds were stored.
      - TNAU: nothing fails. Rice seed storage "12 - 13 %" and "8 - 9 %" (C2#22, #23) keep both bounds.
   8. **lost_glyph:** any stored text on the fact or its step 9 fact containing U+FFFD fails. TNAU: none. Run by hand over the kept history run, it catches the v3 C2#4 typo; step 11 itself reads only the latest runs.
-  9. **printed_text:** on the step 9 fact, each quantity's target name, unit and strength unit, as printed, appear in its quote (normalised, case kept, not inside a longer word or number; prompt v2's placeholder unit "count" is exempt). TNAU: 9 facts fail and go to review as they are; no value changes.
-     - b879#0–3 (SeedRate): target "seed", taken from the "Seed rate" heading.
-     - f5b0#9–11: N, P and K split from "NPK".
-     - Two held facts: e63c#43 ("Notchi leaf extract" and "Ipomoea leaf extract" built from "Notchi or Ipomoea or Prosopis leaf extract") and e63c#53 (Pseudomonas from the heading, flagged `target_from_heading`).
+  9. **printed_text:** on the step 9 fact, every text the extraction copies from the book appears in its quote (normalised, not inside a longer word or number).
+     - **Fields checked** (extended 2026-10-21; first only quantities):
+       - applicability lists and excluded regions;
+       - recommends, pests, targets, concerns, about and `unmapped` phrases;
+       - structure, storage term, coefficients, criterion;
+       - step stage and method;
+       - each quantity's target, unit (not prompt v2's placeholder "count"), strength unit, formulation, water and printed basis (not a rule's or an inferred one);
+       - clause observation, unit, sampling unit and stage;
+       - maturity signs.
+     - **Also accepted:** the fact's own table row (a table fact quotes a passage of one cell; its pest is the row's first cell), and the sub-heading for a fact flagged `scope_from_heading` or `target_from_heading`.
+     - **Case:** a difference only in case ("Soak"/"soak") passes and is counted in `case_only`.
+     - **Prompt v3 asks** for `method`, `maturity_signs` and `criterion` only as "a short phrase"; a failure there says so.
+     - **TNAU, all 124 step 9 facts (held included):** 37 fail and 63 texts pass on case only. No validated fact changes status; all were already needs_review.
+       - 23 reworded methods ("treat and soak", "release Trichogramma japonicum", "pre-storage seed treatment");
+       - 1 paraphrased maturity sign (8e1d#1 "dehusked rice is clear and firm (hard dough stage)"; p. 39 prints "If the rice is clear and firm, it is in hard dough stage.");
+       - 11 generic "Pest" targets the book doesn't print (all held);
+       - 5 observations ("leafhoppers" in e63c#17's four clauses; e63c#15 "seedlings with rolling of the first and second leaves");
+       - the earlier 9: b879#0–3 "seed" (from the "Seed rate" heading), f5b0#9–11 N/P/K (from "NPK"), e63c#43 Notchi/Ipomoea, e63c#53 Pseudomonas.
+     - **Prompt v4 candidates:**
+       - copy `method`, `observation` and maturity sign text verbatim from the quote (decided 2026-10-21);
+       - never write a generic "Pest" target.
 - **Review notes:** `[[review_note]]` in the registry is printed text on a PDF page plus a note, with a status.
   - Step 11 attaches an approved note to every fact whose quote contains that text on that page, as a review reason; the value never changes.
   - An approved note that matches no fact is reported as stale.
@@ -698,7 +717,15 @@ No model. Input: the latest step 9 run of each unit (held facts included), the s
   - C: 8e1d, plus f5b0's Harvesting, Threshing, Drying, Pre-storage seed treatment and Storage sub-headings.
 - **Disagreements** are value, unit, basis, condition, alternative (row label and group structure), purpose, subtype, timing, page and granularity.
   - Equality uses only step 10's unit and basis tables (gold `per` is read with "per" in front; "not stated" = no printed basis) and exact normalised text.
-  - Nothing is decided in code. Verdicts come back only from `data/gold/adjudications.csv`: columns gold_id, field, verdict (extraction | gold | both | unclear) and note, written by a person.
+  - Nothing is decided in code. Verdicts come back only from `data/gold/adjudications.csv`, decided by a person (committed).
+    - **Columns:** gold_id, field, verdict (extraction | gold | both | unclear), note, atom, name, quote.
+    - **A disagreement** is keyed by gold_id + field.
+    - **An extracted atom with no gold row** is a row with field `extra`, no gold_id, and its name and quote. It is keyed by name and quote, not the atom id, which shifts on re-extraction. Judged extraction or both, it counts as correct: the gold set lacks it.
+    - **Decided 2026-10-21:**
+      - C16 page → extraction: extraction correct, gold page wrong (quote on p. 75);
+      - the 16 concerns of the BPH resurgence list (e63c#68, p. 69) → extraction; gold incomplete.
+
+      With these, precision found is 108/109 (B 43/43).
   - "Agree" stays a range until every disagreement has a verdict.
 - **Calibration:** facts matched to gold rows, by `verifier_score` cut-off (0.5–0.99), for three populations:
   - (a) all with a score;
@@ -791,3 +818,13 @@ These were found in the committed TNAU conversion while building the schema test
   - The page prints "Medium duration : NPK @ 150:50:60 kg / ha" and "Long duration : NPK @ 150:50:80 kg / ha", one bullet per line. Docling read both labels before both values.
   - An approved `[[reading_order_fix]]` moves ": NPK @ 150:50:60 kg / ha" after "Medium duration", so the unit now has the printed order.
 - **Fixed: `table_ref`.** The new conversion gives every table a `#/tables/N` ref. The ETL table is two parts (p. 63 and p. 64), to be stitched in step 8.
+- **Open (found 2026-10-21, fix pending approval): Docling puts text in the wrong cell, and step 8 doesn't see it.**
+  - **Why step 8 misses it:** its text check compares a cell with the words inside Docling's own box, and the box includes the misplaced text.
+  - **Found** by scanning every ruled part of the rice/wheat tables, checked on the rendered pages; all real:
+    - **#/tables/57, p. 66:** "Pymetrozine 50% WG 300g" is printed as the BPH cell's last line. It sits in the WBPH cell r4 c1, whose box crosses the ruling at y 215.1. The WBPH fact e63c#36 is held (no operation), so the graph never had it, but the BPH fact e63c#35 lacks it (gold B23).
+    - **#/tables/7, p. 16:** the full-width row "a. The Nilgiris" sits in r1 c0 with "Samba".
+    - **#/tables/8, p. 17:** the continuation line "Ponni, ADT (R) 46, TRY 1, TNAU Rice Hybrid CO 4" is split. "…TNAU Rice" is r0 c1, a span-2 cell whose box covers only column 2; the page-break merge then added it to the previous row's period column. "Hybrid CO 4" sits in the Semi dry row's r1 c2.
+    - **#/tables/60, p. 69:** the full-width notes row ("❖ Biocontrol agents are compatible …") is merged into the "Seedling dip" row r2.
+    - **#/tables/61, p. 70:** the Blast row's last bullet ("Foliar spray with P. fluorescens TNAU liquid formulation @ 5 ml/l") sits in the Brown spot cell r2 c1.
+    - **#/tables/32, p. 34:** the second words of "Old delta", "New delta", "General" and "Annamalai block" are in the P2O5 column (r3, r4, r6, r7 c2: "delta 35").
+  - **Affected facts:** only #/tables/57 is in a unit extracted so far (e63c).
