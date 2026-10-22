@@ -57,7 +57,7 @@ uv run python -m kg.load.facts source:tnau_agriculture_2020           # step 13:
 uv run python -m kg.load.facts --snapshot                             # hash of the whole graph (idempotency proof)
 uv run python -m kg.eval.gold [--check]                               # frozen gold workbook -> data/gold/*.jsonl, unchanged
 uv run python -m kg.eval source:tnau_agriculture_2020                 # step 15: data/eval/<id>/report.json, data/review/gold_*.csv
-uv run python -m kg.review sheet source:tnau_agriculture_2020 --out data/review/expert_review_tnau.xlsx   # step 16 workbook
+uv run python -m kg.review sheet source:tnau_agriculture_2020 --out data/review/expert_review_tnau.xlsx --precheck data/review/ai_precheck_notes.csv   # step 16 workbook
 uv run python -m kg.review import data/review/expert_review_tnau.xlsx --check     # check a filled workbook, write nothing
 uv run python -m kg.review import data/review/expert_review_tnau.xlsx [--database cropbot-test]
 uv run python -m pytest tests/review/test_live_review.py --neo4j-test-db cropbot-test   # sample review, loads, rebuild
@@ -854,6 +854,11 @@ Approved 2026-10-21. Only a person approves or rejects a fact, through the workb
   - **Reviewer columns:** the only unlocked cells (the sheet is protected, no password). They are decision (approve / reject / needs change), reason or correction, applies in Uttarakhand? (yes / no / not sure), reviewer name and date, with dropdowns and a date check.
   - **Guide:** "How to review" holds the approved guide text, including the two lines on unmapped conditions and on pesticide rows.
   - **Meta:** a hidden `meta` sheet names the source.
+  - **AI pre-check (`--precheck <csv>`, 2026-10-22):** two locked columns, "AI pre-check" (OK / CHECK / FIX) and "AI note", just before the reviewer columns. FIX is red (`F8696B`), CHECK yellow (`FFEB84`), OK unfilled.
+    - Notes are matched by fact_id. The sheet is refused if a note names no row, a row has no note, a fact_id repeats or a result isn't allowed; a differing review_no is only reported.
+    - The guide has a line saying the column is a hint, not a decision.
+    - The import never reads these columns, and a workbook without them still imports.
+    - **TNAU:** `data/review/ai_precheck_notes.csv` (external AI pre-check, not committed): 64 OK, 29 CHECK, 7 FIX. No fact or status was changed from it.
 - **`row_hash`** (`kg.load.facts.row_hash`): fact id + quotes + `value_key` + applicability (regions, exclusions, duration group). The status is not part of it.
 - **Import** (`kg.review.importer`; `--check` writes nothing).
   - **A row is refused, with its reason, when:**
@@ -958,6 +963,24 @@ Built, not yet in the doc (2026-10-21):
 
 7. **`Recommendation.scope_in_unmapped`** (a list of the unmapped phrases that look like scope, set by step 11 check 10). Step 14 hides such a fact, unless it is a Caution, until a person approves it.
    - Candidate for prompt v4 or the schema: scope that belongs to one threshold clause ("2/hill in tungro endemic area", e63c#17) should sit on that clause, as a condition or a clause-level scope, not in the fact's `unmapped`. Today the rule hides the whole GLH threshold.
+
+Proposed, not built (recorded 2026-10-22, from the AI pre-check of the review workbook):
+
+8. **Formulation → operation for every product list,** not only mixed "Dust/ spray" lists: G/GR/CG → application, D/DP → dusting, with a flag (as `operation_from_formulation`).
+   - Today a list introduced by "Spray any one of" stores every option as spraying, granules and dusts included.
+   - TNAU examples (AI pre-check "CHECK" or "FIX"): e63c#21, #27, #28, #30, #36, #37.
+9. **Real fields for durations, soaking ratios and bait strengths.** Today these stay in `unmapped`:
+   - "for 12 - 16 h", "for 16 h", "in equal volume" (f5b0#0, #3, #4);
+   - "at the ratio of 1 : 1" (f5b0#3);
+   - "at 0.005%", the bromadiolone bait (e63c#45).
+10. **"twice, 15 and 30 days after transplanting" must become two steps**, one per stated time; prompt v3's rule "Stated times are separate steps" already says so.
+    - e63c#37 (GLH, PDF p. 67) does not do it today. Every option is one step with `timing_raw` "15 and 30 days after transplanting", offsets 15–15 from transplanting and no repeat count.
+    - So the 30-day application exists only in the text.
+11. **Farmer-facing instruction text keeps the printed purpose:**
+    - seed grading in salt water (f5b0#1: dissolve, discard floaters, sow the sinkers);
+    - straw treatment (e63c#43: the 25 kg/ha of chlorpyriphos treats chopped straw; it is not applied directly).
+
+    Today the code-built text reads as a plain application.
 
 ## Known issues for segmentation and tables (steps 6–7)
 
