@@ -3,6 +3,7 @@ from pathlib import Path
 
 from kg.convert import output_dir
 from kg.registry import RegistryError, read_registry
+from kg.transcribe import TranscriptionError
 
 from .fixes import FixError
 from .report import print_report, segment, write
@@ -29,6 +30,8 @@ def main():
     except FixError as e:
         raise SystemExit("approved fixes do not match the conversion; nothing written:\n  "
                          + "\n  ".join(e.problems))
+    except TranscriptionError as e:
+        raise SystemExit("transcriptions cannot be used; nothing written:\n  " + "\n  ".join(e.problems))
     out = write(entry, units, report)
     print_report(report)
     print("written:", out)

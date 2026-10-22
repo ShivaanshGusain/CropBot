@@ -59,7 +59,8 @@ def result(status, reason=None, **detail):
 
 def _rows(refs: list[str]) -> set[tuple[str, int]]:
     """"#/tables/56 row 4 + #/tables/57 row 0" -> {("#/tables/56", 4), ("#/tables/57", 0)}."""
-    return {(m.group(1), int(m.group(2))) for ref in refs for m in re.finditer(r"(#/tables/\d+) row (\d+)", ref)}
+    return {(m.group(1), int(m.group(2))) for ref in refs
+            for m in re.finditer(r"((?:tr:p\d{3,4})?#/tables/\d+) row (\d+)", ref)}
 
 
 def check_quote_location(fact: dict, quote_check: dict) -> dict:

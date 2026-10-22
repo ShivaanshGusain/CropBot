@@ -113,7 +113,8 @@ def stitch_unit(unit: dict, items_by_ref: dict, prepare=None) -> list[Table]:
     for idx, item in enumerate(order):
         if item["kind"] != "table":
             continue
-        part = part_from(items_by_ref[item["ref"]])
+        found = items_by_ref[item["ref"]]
+        part = found if isinstance(found, Part) else part_from(found)       # a transcription gives a Part
         if prepare is not None:
             part = prepare(part)
         prev = tables[-1] if tables else None

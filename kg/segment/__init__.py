@@ -54,8 +54,31 @@ def _items(doc, entry, running: set[str], log: dict):
                 yield {**base, "kind": "text", "text": text, "chars": len(text)}
 
 
-def build_tree(doc, entry) -> tuple[list[tuple], dict]:
-    """[(chapter model, chapter Node)], log."""
+def replace_pages(items: list[dict], transcriptions: dict, entry, log: dict) -> list[dict]:
+    """An approved transcription's items replace every converter item of its page, at the place the page's
+    first item had (or before the first later page when the converter found nothing there)."""
+    from kg.transcribe import items as transcribed_items
+    out, done = [], set()
+    for page in sorted(transcriptions):
+        dropped = [i for i in items if i["pdf_page"] == page]
+        log["transcribed_pages"].append({"pdf_page": page, "file": transcriptions[page].rel(),
+                                         "checked_by": transcriptions[page].header.checked_by,
+                                         "converter_items_dropped": len(dropped)})
+    for it in items:
+        page = it["pdf_page"] or 0
+        for p in sorted(transcriptions):
+            if p not in done and p <= page:
+                out += transcribed_items(transcriptions[p], entry)
+                done.add(p)
+        if page not in transcriptions:
+            out.append(it)
+    for p in sorted(set(transcriptions) - done):
+        out += transcribed_items(transcriptions[p], entry)
+    return out
+
+
+def build_tree(doc, entry, transcriptions: dict | None = None) -> tuple[list[tuple], dict]:
+    """[(chapter model, chapter Node)], log. `transcriptions`: approved ones by PDF page (kg.transcribe)."""
     log = defaultdict(list)
     running = running_headings(doc_items(doc))
     chapters = sorted(entry.chapters, key=lambda c: c.pdf_page)
@@ -63,6 +86,8 @@ def build_tree(doc, entry) -> tuple[list[tuple], dict]:
     built, builder, idx = [], None, -1
     seen_heading = False
     items = apply_fixes(list(_items(doc, entry, running, log)), entry, log)
+    if transcriptions:
+        items = replace_pages(items, transcriptions, entry, log)
     for it in items:
         page = it["pdf_page"] or 0
         while idx + 1 < len(chapters) and page >= chapters[idx + 1].pdf_page:
@@ -87,7 +112,11 @@ def build_tree(doc, entry) -> tuple[list[tuple], dict]:
                     "refs": [i["ref"] for i in node.items if i["kind"] != "subheading"]})
             builder.last_was_heading = True
             continue
-        if it["kind"] == "heading":
+        if it["kind"] == "heading" and it.get("inline"):      # a transcription's '### ' sub-heading
+            builder.inline(it["text"], it["ref"], page, label="transcription")
+            builder.current.items[-1]["transcription"] = it["transcription"]
+            builder.last_was_heading = True
+        elif it["kind"] == "heading":
             builder.heading(it["text"], it["ref"], page)
         else:
             builder.body(it)
@@ -120,7 +149,7 @@ def _unit(entry, ch, node: Node, kind: str, seen: dict) -> dict:
         "chapter": {"number": ch.number, "title": ch.path_label(), "status": ch.status},
         "section_path": path, "heading_ref": node.heading_ref,
         "items": [{k: i[k] for k in ("ref", "label", "kind", "text", "pdf_page", "printed_page",
-                                     "subheading") if k in i} for i in items],
+                                     "subheading", "transcription") if k in i} for i in items],
         "table_refs": [i["ref"] for i in items if i["kind"] == "table"],
         "picture_refs": [i["ref"] for i in items if i["kind"] == "picture"],
         "pdf_pages": [min(pages), max(pages)] if pages else None,

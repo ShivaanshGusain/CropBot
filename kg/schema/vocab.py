@@ -187,6 +187,7 @@ class ExtractionMethod(StrEnum):
     NATIVE_TEXT = "native_text"
     OCR = "ocr"
     TABLE_PARSE = "table_parse"
+    MANUAL_TRANSCRIPTION = "manual_transcription"   # v1.5 candidate: an approved page transcription (kg.transcribe)
 
 
 class AuthorityTier(IntEnum):

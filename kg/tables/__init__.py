@@ -29,10 +29,17 @@ COW_BOX_REASON = ("Docling reading order: content of 'I. SEASON AND VARIETY' pla
                   "the chapter heading")
 
 
-def run(entry, docling_dir, units_path, chapters: tuple[str, ...]) -> dict:
+TRANSCRIBED = "transcription: verified by a person against the rendered page; no ruling rebuild or page check"
+
+
+def run(entry, docling_dir, units_path, chapters: tuple[str, ...], transcription_dir=None) -> dict:
     from docling_core.types.doc import DoclingDocument
+
+    from kg.transcribe import for_source, parts
     doc = DoclingDocument.load_from_json(docling_dir / "document.json")
     items_by_ref = {t.self_ref: t for t in doc.tables}
+    for t in for_source(entry, transcription_dir)["approved"].values():   # ready-made parts, refs tr:p<NNN>#/…
+        items_by_ref.update(parts(t))
     units = [json.loads(line) for line in open(units_path, encoding="utf-8")]
     units = [u for u in units if u["chapter"]["title"] in chapters]
     chapter_by_title = {c.path_label(): c for c in entry.chapters}
@@ -42,6 +49,8 @@ def run(entry, docling_dir, units_path, chapters: tuple[str, ...]) -> dict:
     originals: dict[str, Part] = {}
 
     def prepare(part: Part) -> Part:
+        if part.ref.startswith("tr:"):
+            return part
         if part.ref not in rebuilt:
             originals[part.ref] = part
             rebuilt[part.ref] = rebuild(part, checker.page(part.pdf_page))
@@ -61,6 +70,10 @@ def run(entry, docling_dir, units_path, chapters: tuple[str, ...]) -> dict:
             if part.ref in checked:          # a split table shares its part with the table before it
                 continue
             checked.add(part.ref)
+            if part.ref.startswith("tr:"):
+                review.append({"chapter": t.chapter, "check": "transcription", "table_ref": part.ref,
+                               "pdf_page": part.pdf_page, "detail": TRANSCRIBED})
+                continue
             original, res = originals[part.ref], rebuilt[part.ref]
             summary, problems = checker.check(original)          # the page check reads Docling's own cells
             checks.append(summary)

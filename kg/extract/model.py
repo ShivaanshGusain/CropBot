@@ -18,7 +18,7 @@ from kg.schema.vocab import (CONDITION_VARIABLES, Anchor, CautionKind, Condition
 
 Pct = Annotated[float, Field(ge=0, le=100)]
 NonNeg = Annotated[float, Field(ge=0)]
-TableRef = Annotated[str, StringConstraints(pattern=r"^#/tables/\d+$")]
+TableRef = Annotated[str, StringConstraints(pattern=r"^(tr:p\d{3,4})?#/tables/\d+$")]   # tr: a transcription
 # Prompt v2 flags plus v1.3's scope_from_heading and operation_from_formulation (kg.schema.vocab).
 # Step 11 sends every flagged fact to needs_review; kg.extract.versions says which flags a version may use.
 

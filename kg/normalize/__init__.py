@@ -21,6 +21,7 @@ import copy
 import csv
 import hashlib
 import json
+import re
 from collections import Counter, defaultdict
 
 from pydantic import ValidationError
@@ -460,14 +461,33 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
     return d
 
 
+def transcription_of(unit: dict, refs: list[str]) -> tuple[str, str] | None:
+    """(file, body hash) of the approved transcription a quote was found in, from its segment refs."""
+    from kg.transcribe import read
+    tags = {m.group(1) for ref in refs for m in re.finditer(r"tr:(p\d{3,4})#/", ref)}
+    files = {i["transcription"] for i in unit["items"] if i.get("transcription")
+             and any(i["ref"].startswith("tr:%s#" % t) for t in tags)}
+    if not files:
+        return None
+    if len(files) > 1:
+        raise ValueError("one quote in two transcriptions: %s" % sorted(files))
+    path = files.pop()
+    return path, read(ROOT / path).header.body_sha256
+
+
 def evidence(f: Fact, entry, ocr_pages) -> dict:
     qc, r, unit = f.quote_check, f.raw, f.unit
     page = min(qc["pdf_pages"]) if qc["pdf_pages"] else unit["pdf_pages"][0]
     method = "table_parse" if r["table_ref"] else ("ocr" if page in ocr_pages else "native_text")
-    return {"id": "span:" + sha([unit["id"], r["quote"]], 16), "source_id": entry.id, "pdf_page": page,
+    span = {"id": "span:" + sha([unit["id"], r["quote"]], 16), "source_id": entry.id, "pdf_page": page,
             "printed_page": entry.printed_page(page), "section_path": unit["section_path"], "quote": r["quote"],
             "table_ref": r["table_ref"], "table_row": r["table_row"], "table_col": r["table_col"],
             "extraction_method": method}
+    found = transcription_of(unit, qc.get("refs") or [])
+    if found:                    # v1.5 candidate: the text comes from an approved page transcription
+        span.update(extraction_method="manual_transcription", transcription=found[0],
+                    transcription_sha256=found[1])
+    return span
 
 
 def _conditions(d: dict) -> list:

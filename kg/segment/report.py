@@ -8,13 +8,19 @@ from . import (TOKEN_LIMIT, UNITS_DIR, build_tree, check_scopes, heading_like_li
 
 AUDIT = ("caps_decisions", "placeholders", "late_parents", "duplicate_numbers", "promotions",
          "unparsed_headings", "before_chapter_heading", "chapter_heading_not_found",
-         "heading_fixes_applied", "reading_order_fixes_applied", "running_headers_dropped")
+         "heading_fixes_applied", "reading_order_fixes_applied", "running_headers_dropped",
+         "transcribed_pages")
 
 
-def segment(entry, docling_dir: Path) -> tuple[list[dict], dict]:
+def segment(entry, docling_dir: Path, transcription_dir: Path | None = None) -> tuple[list[dict], dict]:
+    """Raises kg.transcribe.TranscriptionError, writing nothing, when a transcription file is broken or an
+    approved one fails its checks."""
     from docling_core.types.doc import DoclingDocument
+
+    from kg.transcribe import for_source
     doc = DoclingDocument.load_from_json(docling_dir / "document.json")
-    built, log = build_tree(doc, entry)
+    found = for_source(entry, transcription_dir)
+    built, log = build_tree(doc, entry, found["approved"])
     units = make_units(entry, built)
     checks = check_scopes(entry, built, units)
     resolve_scopes(entry, units, checks)
@@ -35,6 +41,7 @@ def segment(entry, docling_dir: Path) -> tuple[list[dict], dict]:
         "heading_like_list_items": heading_like_list_items(units),
         "scope_checks": [{k: v for k, v in c.items() if not k.startswith("_")} for c in checks],
         **{k: log[k] for k in AUDIT},
+        "transcriptions_not_used": [{"file": t.rel(), "status": s, "problems": p} for t, s, p in found["other"]],
     }
     report["failed"] = [c for c in report["scope_checks"] if not c["ok"]]
     return units, report
@@ -106,6 +113,12 @@ def print_report(r: dict, focus: tuple[str, ...] = ("RICE", "WHEAT")) -> None:
     for f in r["reading_order_fixes_applied"]:
         print("   p.%s moved %d items (%r .. %r) after %r" % (f["pdf_page"], f["moved"], f["first"][:30],
                                                             f["last"][:30], f["after"]))
+    print("pages replaced by an approved transcription: %d" % len(r["transcribed_pages"]))
+    for t in r["transcribed_pages"]:
+        print("   p.%s %s (checked by %s; %d converter items dropped)" % (
+            t["pdf_page"], t["file"], t["checked_by"], t["converter_items_dropped"]))
+    for t in r["transcriptions_not_used"]:
+        print("   not used: %s (%s)%s" % (t["file"], t["status"], "".join("; " + p for p in t["problems"])))
     print("scope checks:")
     for c in r["scope_checks"]:
         print("  %-4s %-8s %-13s %r PDF %s -> %d match(es), section spans PDF %s" % (

@@ -23,6 +23,7 @@ from .vocab import (CONDITION_VARIABLES, Anchor, AuthorityTier, Basis, ConcUnit,
 
 # at least one non-space character; source text is never stripped or rewritten
 Text = Annotated[str, StringConstraints(pattern=r"\S")]
+TABLE_REF = r"^(tr:p\d{3,4})?#/tables/\d+$"      # converter table, or a page transcription's (kg.transcribe)
 
 
 class Model(BaseModel):
@@ -338,15 +339,24 @@ class SourceSpan(Model):
     bbox: BBox | None = None
     section_path: Text                    # "Rice > 1.8 Main field > 1.8.6 Irrigation management"
     quote: Text                           # exact source text
-    table_ref: Annotated[str, StringConstraints(pattern=r"^#/tables/\d+$")] | None = None
+    # "#/tables/N" in the converter's document, or "tr:p006#/tables/N" in a page transcription (v1.5 candidate)
+    table_ref: Annotated[str, StringConstraints(pattern=TABLE_REF)] | None = None
     table_row: int | None = Field(default=None, ge=0)   # schema v1.2: cell inside table_ref
     table_col: int | None = Field(default=None, ge=0)   # schema v1.2
     extraction_method: ExtractionMethod
+    # v1.5 candidate: the approved transcription the quote comes from, and its body hash
+    transcription: str | None = None
+    transcription_sha256: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")] | None = None
 
     @model_validator(mode="after")
     def _table_cell(self):
         if (self.table_row is not None or self.table_col is not None) and self.table_ref is None:
             raise ValueError("table_row/table_col need a table_ref")
+        manual = self.extraction_method == ExtractionMethod.MANUAL_TRANSCRIPTION
+        if manual != bool(self.transcription and self.transcription_sha256):
+            raise ValueError("a manual_transcription span names its transcription and body hash; no other span does")
+        if self.table_ref and self.table_ref.startswith("tr:") and not manual:
+            raise ValueError("a tr: table_ref needs extraction_method manual_transcription")
         return self
 
 
