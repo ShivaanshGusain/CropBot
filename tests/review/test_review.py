@@ -86,8 +86,10 @@ def test_only_the_reviewer_columns_are_editable_and_the_hash_is_hidden(tnau_shee
     lists = sorted(v.formula1 for v in ws.data_validations.dataValidation if v.type == "list")
     assert lists == ['"approve,reject,needs change"', '"yes,no,not sure"']
     guide = [c.value for c in wb[sheet.GUIDE]["A"] if c.value]
-    assert guide[-1].endswith("until the product's official registration status has been checked.")
+    assert any(g.endswith("until the product's official registration status has been checked.") for g in guide)
     assert any("'for hybrids', 'in BPH prone areas'" in g for g in guide)
+    assert guide[-1] == ("• The AI pre-check column is a hint, not a decision: it was made by an AI reading the quote. "
+                         "Please check FIX and CHECK rows carefully, and don't rely on OK rows without reading them.")
 
 
 def test_the_workbook_reads_back_with_its_meta(tnau_sheet):
@@ -95,6 +97,79 @@ def test_the_workbook_reads_back_with_its_meta(tnau_sheet):
     meta, back = sheet.read_workbook(path)
     assert meta["source_id"] == "source:tnau_agriculture_2020" and len(back) == len(rows)
     assert back[0]["row_hash"] == rows[0]["row_hash"] and back[0]["decision"] is None
+
+
+# --- the AI pre-check hint -------------------------------------------------------------------------------
+
+def notes_for(rows, results=("FIX", "CHECK")):
+    """Synthetic notes: the first rows get `results`, the rest OK."""
+    out = []
+    for i, r in enumerate(rows):
+        res = results[i] if i < len(results) else "OK"
+        out.append({"review_no": str(r["review_no"]), "fact_id": r["fact_id"], "ai_precheck": res,
+                    "ai_note": "note %d, as written" % i})
+    return out
+
+
+def test_ai_precheck_columns_sit_before_the_reviewer_columns_locked_and_coloured(tnau_sheet, tmp_path):
+    from openpyxl import load_workbook
+    _, rows, _ = tnau_sheet
+    rows = copy.deepcopy(rows)
+    hashes = [r["row_hash"] for r in rows]
+    assert sheet.add_precheck(rows, notes_for(rows)) == []
+    from kg.registry import read_registry
+    path = tmp_path / "ai.xlsx"
+    sheet.write_workbook(path, read_registry()[0], rows, "offline")
+    ws = load_workbook(path)[sheet.FACTS]
+    keys = [k for k, _, _ in sheet.COLUMNS]
+    assert keys.index("ai_precheck") + 2 == keys.index("decision") and keys.index("ai_note") + 1 == keys.index("decision")
+    ai, note, h = (keys.index(k) + 1 for k in ("ai_precheck", "ai_note", "row_hash"))
+    assert [ws.cell(n, ai).value for n in (2, 3, 4)] == ["FIX", "CHECK", "OK"] and ws.cell(2, note).value == "note 0, as written"
+    for n, colour in ((2, "F8696B"), (3, "FFEB84")):
+        assert all(ws.cell(n, c).fill.fgColor.rgb.endswith(colour) for c in (ai, note))
+    assert ws.cell(4, ai).fill.fill_type is None                                   # OK: no fill
+    assert ws.cell(2, ai).protection.locked and ws.cell(2, note).protection.locked
+    assert [ws.cell(n, h).value for n in range(2, len(rows) + 2)] == hashes        # the row hash is unchanged
+
+
+@pytest.mark.parametrize("change, problem", [
+    (lambda ns: ns[0].update(fact_id="rec:unknown"), "no such fact in the sheet"),
+    (lambda ns: ns.pop(), "no note"),
+    (lambda ns: ns[1].update(fact_id=ns[0]["fact_id"]), "2 notes"),
+    (lambda ns: ns[0].update(ai_precheck="MAYBE"), "is not one of OK, CHECK, FIX"),
+])
+def test_ai_notes_that_do_not_match_are_refused(tnau_sheet, change, problem):
+    _, rows, _ = tnau_sheet
+    rows = copy.deepcopy(rows)
+    ns = notes_for(rows)
+    change(ns)
+    with pytest.raises(sheet.SheetError) as e:
+        sheet.add_precheck(rows, ns)
+    assert any(problem in p for p in e.value.problems)
+    assert not any("ai_precheck" in r for r in rows)                                # nothing applied
+
+
+def test_the_import_ignores_the_ai_columns_and_reads_a_workbook_without_them(tnau_sheet, tmp_path):
+    from openpyxl import load_workbook
+    from kg.registry import read_registry
+    _, rows, built = tnau_sheet
+    rows = copy.deepcopy(rows)
+    sheet.add_precheck(rows, notes_for(rows))
+    path = tmp_path / "ai.xlsx"
+    sheet.write_workbook(path, read_registry()[0], rows, "offline")
+    _, with_ai = sheet.read_workbook(path)
+    assert with_ai[0]["ai_precheck"] == "FIX"
+    cur = importer.current_facts(built)
+    filled_rows = [{**r, "decision": "approve", "uttarakhand": "yes", "reviewer": "TEST SAMPLE", "date": "2026-10-21"}
+                   for r in with_ai[:3]]
+    plain = [{k: v for k, v in r.items() if k not in sheet.OPTIONAL} for r in filled_rows]
+    assert importer.check_rows(filled_rows, cur, {}, ENTRY.id, TODAY) == importer.check_rows(plain, cur, {}, ENTRY.id, TODAY)
+    wb = load_workbook(path)                                         # the first workbook had no AI columns
+    ws = wb[sheet.FACTS]
+    ws.delete_cols([k for k, _, _ in sheet.COLUMNS].index("ai_precheck") + 1, 2)
+    wb.save(tmp_path / "old.xlsx")
+    _, old = sheet.read_workbook(tmp_path / "old.xlsx")
+    assert len(old) == len(rows) and "ai_precheck" not in old[0] and old[0]["row_hash"] == rows[0]["row_hash"]
 
 
 # --- the import checks ----------------------------------------------------------------------------------

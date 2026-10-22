@@ -4,11 +4,13 @@ Rows are built from step 13's inputs (kg.load.facts.build, the facts the loader 
 (kg.load.facts.row_hash) is the one the loader and the import check. The current status, review reasons and
 Jev score come from the database; a fact that is not in it yet, or is flagged missing_in_latest_run, stops
 the sheet. Only the reviewer columns are unlocked; row_hash is a hidden column, and a hidden "meta" sheet
-names the source.
+names the source. The optional AI pre-check columns (--precheck) are a locked hint, matched by fact_id, never
+read by the import.
 """
 
 import datetime as dt
 import re
+from collections import Counter
 
 from kg.load.facts import row_hash
 from kg.schema.vocab import SCOPE_IN_UNMAPPED_REASON
@@ -24,12 +26,14 @@ COLUMNS = (("review_no", "Review no.", 8), ("fact_id", "Fact id", 22), ("subtype
            ("pages", "PDF page / printed page", 12), ("source", "Source", 24), ("status", "Current status", 14),
            ("review_reasons", "Review reasons", 50), ("jev_score", "Jev score", 9),
            ("unmapped", "Unmapped phrases", 30),
+           ("ai_precheck", "AI pre-check", 11), ("ai_note", "AI note", 45),
            ("decision", "DECISION: approve / reject / needs change", 18),
            ("note", "REASON OR CORRECTION", 40),
            ("uttarakhand", "APPLIES IN UTTARAKHAND? yes / no / not sure", 18),
            ("reviewer", "REVIEWER NAME", 18), ("date", "DATE (yyyy-mm-dd)", 14),
            ("row_hash", "row_hash", 10))
 REVIEWER = ("decision", "note", "uttarakhand", "reviewer", "date")
+OPTIONAL = ("ai_precheck", "ai_note")    # a hint only: never imported, and a workbook without them still reads
 GUIDE_LINES = (
     "You are checking whether each row says exactly what the book says, and whether it is safe to give to a farmer.",
     "Read the quote and page. If the instruction matches the book and is good advice: approve.",
@@ -43,8 +47,13 @@ GUIDE_LINES = (
     "'needs change' and write the condition.",
     "Approving a pesticide row records that it matches the book; it is still not shown to farmers until the "
     "product's official registration status has been checked.",
+    "The AI pre-check column is a hint, not a decision: it was made by an AI reading the quote. Please check FIX "
+    "and CHECK rows carefully, and don't rely on OK rows without reading them.",
 )
 SCOPE_FILL = "F4B183"            # orange: the Unmapped cell of a fact flagged "scope in unmapped"
+PRECHECK = ("OK", "CHECK", "FIX")
+PRECHECK_FILL = {"FIX": "F8696B", "CHECK": "FFEB84"}       # red, yellow; OK has no fill
+PRECHECK_FIELDS = ["review_no", "fact_id", "ai_precheck", "ai_note"]
 REVIEWER_HEAD, REVIEWER_CELL, HEAD = "FFD966", "FFF2CC", "D9E1F2"
 SHEET_VERSION = "1"
 
@@ -148,6 +157,41 @@ def rows(entry, built: dict, current: dict, names: dict) -> list[dict]:
     return out
 
 
+def read_precheck(path) -> list[dict]:
+    """The external AI pre-check notes (review_no, fact_id, ai_precheck, ai_note), as stored."""
+    import csv
+    with open(path, encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames != PRECHECK_FIELDS:
+            raise SheetError(["%s: columns %s, expected %s" % (path, reader.fieldnames, PRECHECK_FIELDS)])
+        return list(reader)
+
+
+def add_precheck(sheet_rows: list[dict], notes: list[dict]) -> list[str]:
+    """Put each note on its row, matched by fact_id. Refused (SheetError, rows untouched) when a note's fact_id
+    is not a row, a row has no note, a fact_id repeats, or a result is not OK / CHECK / FIX. Returns the rows
+    whose review_no differs from the note's (matching is by fact_id, so these are only reported)."""
+    by_id = {r["fact_id"]: r for r in sheet_rows}
+    problems, seen = [], Counter()
+    for n in notes:
+        seen[n["fact_id"]] += 1
+        if n["fact_id"] not in by_id:
+            problems.append("note for %s (review_no %s): no such fact in the sheet" % (n["fact_id"], n["review_no"]))
+        if n["ai_precheck"] not in PRECHECK:
+            problems.append("%s: result %r is not one of %s" % (n["fact_id"], n["ai_precheck"], ", ".join(PRECHECK)))
+    problems += ["%s: %d notes" % (i, k) for i, k in seen.items() if k > 1]
+    problems += ["%s (review_no %s): no note" % (i, r["review_no"]) for i, r in by_id.items() if i not in seen]
+    if problems:
+        raise SheetError(problems)
+    moved = []
+    for n in notes:
+        r = by_id[n["fact_id"]]
+        r["ai_precheck"], r["ai_note"] = n["ai_precheck"], n["ai_note"]
+        if str(r["review_no"]) != n["review_no"]:
+            moved.append("%s: review_no %s in the sheet, %s in the notes" % (n["fact_id"], r["review_no"], n["review_no"]))
+    return moved
+
+
 def current_from_db(driver, database=None) -> dict:
     found, _, _ = driver.execute_query(
         "MATCH (r:Recommendation) RETURN r.id AS id, r.status AS status, r.review_reasons AS review_reasons, "
@@ -191,6 +235,9 @@ def write_workbook(path, entry, sheet_rows: list[dict], database: str | None) ->
                 c.number_format = "yyyy-mm-dd"
         if r["scope_flag"]:
             ws.cell(n, col["unmapped"]).fill = PatternFill("solid", fgColor=SCOPE_FILL)
+        if r.get("ai_precheck") in PRECHECK_FILL:
+            for k in OPTIONAL:
+                ws.cell(n, col[k]).fill = PatternFill("solid", fgColor=PRECHECK_FILL[r["ai_precheck"]])
     last = len(sheet_rows) + 1
     letter = {k: get_column_letter(i) for k, i in col.items()}
     for k, options in (("decision", "approve,reject,needs change"), ("uttarakhand", "yes,no,not sure")):
@@ -233,7 +280,7 @@ def read_workbook(path) -> tuple[dict, list[dict]]:
     ws = wb[FACTS]
     header = [c.value for c in ws[1]]
     by_header = {h: k for k, h, _ in COLUMNS}
-    missing = [h for _, h, _ in COLUMNS if h not in header]
+    missing = [h for k, h, _ in COLUMNS if h not in header and k not in OPTIONAL]
     if missing:
         raise SheetError(["%s: columns missing or renamed: %s" % (path, missing)])
     out = []
