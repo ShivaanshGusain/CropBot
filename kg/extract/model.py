@@ -68,6 +68,11 @@ class RawQuantity(Model):
     ratio_raw: Text | None = None
     share_pct: Annotated[float, Field(gt=0, le=100)] | None = None   # "basal (50%)": 50
     share_raw: Text | None = None
+    # prompt v4 (schema v1.4): strength in a prepared mix and what the input is applied with or on
+    mix_conc_value: Annotated[float, Field(gt=0)] | None = None   # "at 0.005%": 0.005
+    mix_conc_unit: str | None = None            # as printed: "%"
+    mix_conc_raw: Text | None = None
+    carrier_raw: Text | None = None             # "chopped paddy straw", "popped corn/rice/dry fish"
 
     @model_validator(mode="after")
     def _amount(self):
@@ -82,16 +87,23 @@ class RawQuantity(Model):
             raise ValueError("give either conc_value or conc_min/conc_max, not both")
         check_range(self, "conc_min", "conc_max")
         has_ratio = any(v is not None for v in (self.ratio_part, self.ratio_rest, self.ratio_raw))
-        if has_ratio and None in (self.ratio_part, self.ratio_rest, self.ratio_raw):
+        numbers = (self.ratio_part, self.ratio_rest)
+        # prompt v4: a ratio printed only in words ("in equal volume") is ratio_raw alone; the program reads it
+        if (any(v is not None for v in numbers) and None in (*numbers, self.ratio_raw)) or \
+                (self.ratio_part is None) != (self.ratio_rest is None):
             raise ValueError("a ratio needs ratio_part, ratio_rest and ratio_raw")
         if (self.share_pct is None) != (self.share_raw is None):
             raise ValueError("share_pct and share_raw go together")
+        mix = (self.mix_conc_value, self.mix_conc_unit, self.mix_conc_raw)
+        if any(v is not None for v in mix) and None in mix:
+            raise ValueError("mix_conc_value, mix_conc_unit and mix_conc_raw go together")
         if has_amount:
             if self.raw is None or self.unit is None:
                 raise ValueError("an amount needs its raw phrase and its unit as printed")
             if self.quantity_ref is not None:
                 raise ValueError("quantity_ref is only for an amount stated earlier, not given here")
-        elif self.quantity_ref is None and not (has_conc or has_ratio or self.share_pct is not None):
+        elif self.quantity_ref is None and not (has_conc or has_ratio or self.share_pct is not None
+                                                or self.mix_conc_value is not None):
             raise ValueError("no amount: set quantity_ref='previous' if it was stated earlier, "
                              "or give a strength, ratio or share")
         if self.basis_inferred and self.basis_rule:
@@ -123,6 +135,14 @@ class RawStep(Model):
     timing_raw: Text | None = None
     repeat_raw: Text | None = None              # prompt v3: the repeat words as printed ("thrice (at weekly
                                                 # interval"); code reads count and interval from a word table
+    repeat_offsets: list[float] = []            # prompt v4: an option list at stated times, "15 and 30 DAT"
+    duration_min: Annotated[float, Field(gt=0)] | None = None   # prompt v4: "soak for 12 - 16 h"
+    duration_max: Annotated[float, Field(gt=0)] | None = None
+    duration_min_inclusive: bool = True
+    duration_max_inclusive: bool = True
+    duration_unit: str | None = None            # as printed: "h", "hrs", "minutes"
+    duration_raw: Text | None = None            # the phrase; "overnight" alone, with no number
+    purpose_raw: Text | None = None             # prompt v4: why, copied verbatim
     instruction_en: Text | None = None          # prompt v1 only; from v2 code writes it (kg.extract.versions)
     applies: list[RawQuantity] = []
     conditions: list[RawCondition] = []
@@ -145,6 +165,17 @@ class RawStep(Model):
         if (self.alt_option is not None or self.alt_priority is not None) and self.alt_group is None:
             raise ValueError("alt_option and alt_priority need an alt_group")
         check_groups(self.conditions)
+        if self.repeat_offsets:
+            if self.repeat_raw is None or self.timing_raw is None or self.anchor is None:
+                raise ValueError("repeat_offsets need repeat_raw, timing_raw and an anchor")
+            if self.offset_min != self.repeat_offsets[0] or self.offset_max != self.repeat_offsets[0]:
+                raise ValueError("with repeat_offsets, offset_min and offset_max hold the first time")
+        numbers = self.duration_min is not None or self.duration_max is not None
+        if numbers and (self.duration_unit is None or self.duration_raw is None):
+            raise ValueError("a duration needs its unit and its phrase as printed")
+        if self.duration_unit is not None and not numbers:
+            raise ValueError("duration_unit without a duration")
+        check_range(self, "duration_min", "duration_max")
         return self
 
 
@@ -289,7 +320,9 @@ class PestThreshold(RawFact):
 class ControlMeasure(RawFact):
     subtype: Literal["ControlMeasure"]
     control_class: ControlClass
-    targets: list[Text] = Field(min_length=1)       # pest, disease, weed or disorder names as printed
+    # pest, disease, weed or disorder names as printed; prompt v4 never writes a generic target, so a
+    # practice with no specific pest may have none (step 10 holds it: the schema needs a target)
+    targets: list[Text] = []
 
     @model_validator(mode="after")
     def _has_steps(self):

@@ -6,7 +6,7 @@ import re
 import pytest
 
 import kg.extract as ex
-from kg.extract.versions import field_names
+from kg.extract.versions import LATEST, field_names
 from kg.registry import read_registry
 
 ENTRY = read_registry()[0]
@@ -44,7 +44,7 @@ def store(tmp_path, monkeypatch):
     return tmp_path
 
 
-@pytest.mark.parametrize("version", ["v1", "v2", "v3"])
+@pytest.mark.parametrize("version", ["v1", "v2", "v3", "v4"])
 def test_prompt_field_reference_matches_the_raw_model(version):
     text, _ = ex.prompt_template(version)
     section = text.split("## Field reference", 1)[1].split("\n## ", 1)[0]
@@ -59,7 +59,7 @@ def test_v2_drops_instruction_en_and_adds_flags():
     assert {"facts", "not_extracted", "reason"} <= field_names("v2")
 
 
-@pytest.mark.parametrize("version", ["v1", "v2", "v3"])
+@pytest.mark.parametrize("version", ["v1", "v2", "v3", "v4"])
 def test_prompt_has_each_slot_once_and_vocabularies_come_from_code(version):
     text, _ = ex.prompt_template(version)
     assert all(text.count(s) == 1 for s in ex.SLOTS)
@@ -90,7 +90,7 @@ def test_default_scope_rule_is_shown_with_its_quote():
 
 
 def test_cache_key_depends_on_unit_text_model_and_prompt_version():
-    assert ex.build(ENTRY, UNIT, "model-a", TABLES)["version"] == "v3"           # the latest since 2026-10-21
+    assert ex.build(ENTRY, UNIT, "model-a", TABLES)["version"] == LATEST
     a = ex.build(ENTRY, UNIT, "model-a", TABLES, version="v2")
     assert a["cache_key"] == ex.build(ENTRY, UNIT, "model-a", TABLES, version="v2")["cache_key"]
     assert a["cache_key"] != ex.build(ENTRY, UNIT, "model-b", TABLES, version="v2")["cache_key"]
