@@ -105,9 +105,17 @@ class Anchor(StrEnum):
 
 
 class OffsetUnit(StrEnum):
-    """Schema v1.2: unit of Step.offset_min/offset_max."""
+    """Schema v1.2: unit of Step.offset_min/offset_max (v1.4 adds weeks: "a week before harvest")."""
     DAYS = "days"
     HOURS = "hours"
+    WEEKS = "weeks"
+
+
+class DurationUnit(StrEnum):
+    """Schema v1.4: unit of Step.duration_min/duration_max ("soak for 12 - 16 h", "for 30 minutes")."""
+    MINUTES = "minutes"
+    HOURS = "hours"
+    DAYS = "days"
 
 
 class OperationType(StrEnum):
@@ -334,6 +342,16 @@ class ExtractionFlag(StrEnum):
 # Schema v1.3: count and interval words code reads (never the model): "thrice at weekly interval"
 COUNT_WORDS = {"once": 1, "twice": 2, "thrice": 3}
 INTERVAL_WORDS = {"daily": (1, "days"), "weekly": (1, "weeks"), "fortnightly": (2, "weeks")}
+# Schema v1.4 (approved 2026-10-22): word readings code makes, never the model. "a week" is 1 week, never 7 days
+PERIOD_WORDS = {"a week": (1, "weeks")}
+RATIO_WORDS = {"in equal volume": (1, 1)}          # part : rest, as for "at the ratio of 1 : 1"
+
+# Schema v1.4: the operation a formulation code implies. Only D/DP and G/GR/CG override a printed "spray";
+# the spray codes confirm it. Any other printed verb, a carrier, a bait or a seed treatment is never overridden.
+FORMULATION_OPERATION = {"D": "dusting", "DP": "dusting", "G": "application", "GR": "application",
+                         "CG": "application", "EC": "spraying", "WP": "spraying", "SC": "spraying",
+                         "WG": "spraying", "SG": "spraying", "SP": "spraying", "SL": "spraying"}
+FORMULATION_OVERRIDES = {"D", "DP", "G", "GR", "CG"}
 
 # Scope-like `unmapped` phrases (approved 2026-10-21): the fact carries no edge or condition for them, so
 # its served scope would be wider than printed. Step 11 flags them; step 14 hides such a fact (not a
@@ -391,6 +409,7 @@ class ValueType(StrEnum):
     DATE = "date"         # ISO date
     VARIETY = "variety"   # a variety: id
     PURPOSE = "purpose"   # a Purpose value
+    CONCEPT = "concept"   # schema v1.4: a pest: or disease: id ("endemic_area == disease:tungro")
 
 
 class Rating(StrEnum):
@@ -431,4 +450,7 @@ CONDITION_VARIABLES: dict[str, ConditionVariable] = {
     "grain_moisture_pct": ConditionVariable(_N, Unit.PCT, _ATB),
     "pest_count": ConditionVariable(_N, Unit.COUNT, _ASK),
     "spider_count_per_hill": ConditionVariable(_N, Unit.COUNT, _ASK),
+    # schema v1.4: the farm lies in an area known for a pest or disease ("in tungro endemic area",
+    # "in BPH prone areas/seasons"); the value is that concept
+    "endemic_area": ConditionVariable(ValueType.CONCEPT, None, _ATB),
 }

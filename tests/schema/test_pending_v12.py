@@ -63,8 +63,9 @@ def test_offsets_default_to_days():
 
 
 def test_unknown_offset_unit_is_rejected():
-    with pytest.raises(ValidationError, match="Input should be 'days' or 'hours'"):
-        Step.model_validate({**DRAIN, "offset_unit": "weeks"})
+    # schema v1.4 adds weeks ("a week before harvest"); months are still not an offset unit
+    with pytest.raises(ValidationError, match="Input should be 'days', 'hours' or 'weeks'"):
+        Step.model_validate({**DRAIN, "offset_unit": "months"})
 
 
 def test_hours_without_offsets_are_rejected():

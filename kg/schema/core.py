@@ -6,6 +6,7 @@ loader turns them into nodes and relationships. Whether an id points at an
 existing concept is checked later, against concepts/, not here.
 """
 
+import re
 from datetime import date, datetime
 from typing import Annotated, ClassVar, Literal
 
@@ -16,7 +17,7 @@ from .ids import (AppliesTargetId, CropId, PurposeId, RecId, RegionId, SeasonRef
                   SoilId, SourceId, SpanId, StageId, StateId, SystemId, VarietyId,
                   _matcher)
 from .vocab import (CONDITION_VARIABLES, Anchor, AuthorityTier, Basis, ConcUnit, ConditionOnlyUnit,
-                    ConditionOp, DurationGroup, ExtractionFlag, ExtractionMethod, OffsetUnit,
+                    ConditionOp, DurationGroup, DurationUnit, ExtractionFlag, ExtractionMethod, OffsetUnit,
                     OperationType, Purpose, Rating, RegionOrigin, RepeatUnit, SamplingObject, Status,
                     Subtype, Unit, ValueType)
 
@@ -59,6 +60,7 @@ def check_groups(conditions: list["Condition"]) -> None:
 
 _is_variety = _matcher("variety")
 _EQUALITY_OPS = {ConditionOp.EQ, ConditionOp.NE, ConditionOp.IN}
+_CONCEPT_VALUE = re.compile(r"^(pest|disease):[a-z0-9_]+$")
 
 
 def _check_condition_value(value_type: ValueType, value) -> None:
@@ -73,6 +75,8 @@ def _check_condition_value(value_type: ValueType, value) -> None:
             ok = isinstance(value, str) and bool(date.fromisoformat(value))
         except ValueError:
             ok = False
+    elif value_type is ValueType.CONCEPT:    # schema v1.4: endemic_area names a pest or disease
+        ok = isinstance(value, str) and bool(_CONCEPT_VALUE.match(value))
     else:  # VARIETY
         try:
             ok = isinstance(value, str) and bool(_is_variety(value))
@@ -178,6 +182,12 @@ class Applies(Model):
     ratio_raw: Text | None = None
     share_pct: float | None = Field(default=None, gt=0, le=100)
     share_raw: Text | None = None
+    # schema v1.4: strength in a prepared mix ("bromadiolone … at 0.005%") and what the input is applied
+    # with or on ("chopped paddy straw", "popped corn/rice/dry fish")
+    mix_conc_value: float | None = Field(default=None, gt=0)
+    mix_conc_unit: ConcUnit | None = None
+    mix_conc_raw: Text | None = None
+    carrier_raw: Text | None = None
 
     @model_validator(mode="after")
     def _quantity(self):
@@ -205,10 +215,14 @@ class Applies(Model):
             raise ValueError("ratio_part must be less than ratio_whole (1 part in 50: part 1, whole 50)")
         if (self.share_pct is None) != (self.share_raw is None):
             raise ValueError("share_pct and share_raw go together")
+        mix = (self.mix_conc_value, self.mix_conc_unit, self.mix_conc_raw)
+        if any(v is not None for v in mix) and None in mix:
+            raise ValueError("mix_conc_value, mix_conc_unit and mix_conc_raw go together")
         if has_amount:
             if self.unit is None or self.basis is None:
                 raise ValueError("a quantity needs a unit and a basis")
-        elif self.quantity_ref is None and not (has_conc or has_ratio or self.share_pct is not None):
+        elif self.quantity_ref is None and not (has_conc or has_ratio or self.share_pct is not None
+                                                or self.mix_conc_value is not None):
             raise ValueError("no amount: set quantity_ref='previous' if it was stated earlier, "
                              "or give a concentration, ratio or share")
         if (self.basis is Basis.PER_CENT_NURSERY) != (self.area_cents is not None):
@@ -235,11 +249,21 @@ class Step(Model):
     stage_id: StageId | None = None
     month_start: int | None = Field(default=None, ge=1, le=12)
     month_end: int | None = Field(default=None, ge=1, le=12)
-    # schema v1.3: a count with an interval ("thrice at weekly interval"); stated times are separate Steps
+    # schema v1.3: a count with an interval ("thrice at weekly interval"); stated times are separate Steps,
+    # except (v1.4) an option list applied at several stated times: repeat_offsets lists them all
     repeat_count: PositiveInt | None = None
     repeat_interval: float | None = Field(default=None, gt=0)
     repeat_interval_unit: RepeatUnit | None = None
+    repeat_offsets: list[float] = []            # schema v1.4: "twice, 15 and 30 DAT" = [15, 30]
     repeat_raw: Text | None = None
+    # schema v1.4: how long ("soak for 12 - 16 h"); "overnight" stays in duration_raw with no number
+    duration_min: float | None = Field(default=None, gt=0)
+    duration_max: float | None = Field(default=None, gt=0)
+    duration_min_inclusive: bool = True
+    duration_max_inclusive: bool = True
+    duration_unit: DurationUnit | None = None
+    duration_raw: Text | None = None
+    purpose_raw: Text | None = None             # schema v1.4: why, copied verbatim ("to escape monsoon rains")
     timing_raw: Text | None = None
     instruction_en: Text
     applies: list[Applies] = []
@@ -252,6 +276,24 @@ class Step(Model):
         repeats = self.repeat_count is not None or self.repeat_interval is not None
         if repeats != (self.repeat_raw is not None):
             raise ValueError("a repeat needs repeat_raw, and repeat_raw needs a repeat count or interval")
+        if self.repeat_offsets:
+            offs = self.repeat_offsets
+            if len(offs) < 2 or offs != sorted(set(offs)):
+                raise ValueError("repeat_offsets needs at least two stated times, increasing")
+            if self.repeat_count != len(offs) or self.repeat_interval is not None:
+                raise ValueError("with repeat_offsets, repeat_count equals their number and there is no interval")
+            if self.offset_min != offs[0] or self.offset_max != offs[0]:
+                raise ValueError("with repeat_offsets, offset_min and offset_max hold the first time")
+        return self
+
+    @model_validator(mode="after")
+    def _duration(self):
+        numbers = self.duration_min is not None or self.duration_max is not None
+        if numbers and (self.duration_unit is None or self.duration_raw is None):
+            raise ValueError("a duration needs duration_unit and duration_raw")
+        if self.duration_unit is not None and not numbers:
+            raise ValueError("duration_unit set without a duration")
+        check_range(self, "duration_min", "duration_max")
         return self
 
     @model_validator(mode="after")
