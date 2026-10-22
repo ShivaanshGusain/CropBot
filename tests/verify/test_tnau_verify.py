@@ -9,7 +9,10 @@ from kg.validate import VALIDATED_DIR
 ENTRY = read_registry()[0]
 pytestmark = pytest.mark.skipif(not (VALIDATED_DIR / "tnau_agriculture_2020" / "facts.jsonl").exists(),
                                 reason="needs data/validated for the TNAU guide")
-NO_CLAIM_FACTS = {("b879265e483b", 10, "Caution"), ("e63c6fbba0e4", 10, "Caution")}   # cautions naming no chemical
+NO_CLAIM_FACTS = {("b879265e483b", 10, "Caution"), ("e63c6fbba0e4", 10, "Caution"),    # cautions naming no chemical
+                  # prompt v4 rule 12a: "avoid ..." advice is a prohibition Caution (2026-10-22)
+                  ("b879265e483b", 12, "Caution"), ("e63c6fbba0e4", 4, "Caution"), ("e63c6fbba0e4", 5, "Caution"),
+                  ("e63c6fbba0e4", 33, "Caution")}
 # (the saline-soil Spacing, f5b06c9fd3f8#5, has a claim since prompt v3 gives its 3 - 4 seedlings per hill)
 
 

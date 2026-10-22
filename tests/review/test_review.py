@@ -52,7 +52,7 @@ def tnau_sheet(tmp_path_factory):
     return path, rows, built
 
 
-def test_scope_in_unmapped_is_highlighted_on_exactly_the_six_flagged_facts(tnau_sheet):
+def test_scope_in_unmapped_is_highlighted_on_exactly_the_flagged_facts(tnau_sheet):
     from openpyxl import load_workbook
     path, rows, built = tnau_sheet
     ws = load_workbook(path)[sheet.FACTS]
@@ -61,12 +61,12 @@ def test_scope_in_unmapped_is_highlighted_on_exactly_the_six_flagged_facts(tnau_
               if ws.cell(n, col).fill.fill_type == "solid" and ws.cell(n, col).fill.fgColor.rgb.endswith(sheet.SCOPE_FILL)}
     flagged = {r["id"] for r in built["recs"] if r["fact"].get("scope_in_unmapped")}
     shorts = {r["short"][:4] + r["short"][12:] for r in built["recs"] if r["id"] in orange}   # "b879265e483b#3" -> "b879#3"
-    assert orange == flagged and shorts == {"b879#3", "b879#14", "b879#19", "e63c#9", "e63c#17", "e63c#56"}
+    assert orange == flagged and shorts == {"b879#3", "b879#14", "b879#19", "e63c#56"}     # 6 under prompt v3
 
 
 def test_one_row_per_current_fact_post_harvest_first(tnau_sheet):
     path, rows, built = tnau_sheet
-    assert len(rows) == len(built["recs"]) == 100
+    assert len(rows) == len(built["recs"]) == 103
     order = [sheet.ORDER.index(r["subtype"]) for r in rows]
     assert order == sorted(order) and rows[0]["subtype"] == "DryingSpec" and rows[-1]["subtype"] == "Caution"
     assert all(r["instruction"] and r["quote"] and r["row_hash"].startswith("rh:") for r in rows)

@@ -2,7 +2,8 @@
 
 import pytest
 
-from kg.eval import ADJUDICATIONS, NORMALIZED_DIR, VERIFIED_DIR, calibration, metrics, run
+from kg.eval import (ADJUDICATIONS, NORMALIZED_DIR, VERIFIED_DIR, calibration, disagreements, metrics, run,
+                     stale_adjudications)
 from kg.registry import read_registry
 
 pytestmark = pytest.mark.skipif(not (VERIFIED_DIR / "tnau_agriculture_2020" / "facts.jsonl").exists()
@@ -33,13 +34,17 @@ def test_bph_scope_keeps_out_the_wbph_row(res):
 def test_adjudications_count_and_nothing_else_is_decided(res):
     m = metrics(res)["sections"]
     assert m["all"]["found"] == 90
-    # 2026-10-21: all 127 disagreements adjudicated; 10 biofertilizer rows unclear, 6 judged for the gold set
-    assert (m["all"]["recall_agree"]["lower"]["k"], m["all"]["recall_agree"]["upper"]["k"]) == (74, 84)
-    assert m["all"]["precision_found"]["k"] == 109 and m["all"]["precision_found"]["n"] == 110
-    assert (m["all"]["precision_agree_lower"]["k"], m["all"]["precision_agree_upper"]["k"]) == (92, 102)
+    # 2026-10-21: all 127 disagreements adjudicated (prompt v3: agree 74-84, precision 109/110, 92-102).
+    # 2026-10-22, prompt v4: 125 disagreements, B3 (subtype) and C3 (granularity) not adjudicated yet
+    assert (m["all"]["recall_agree"]["lower"]["k"], m["all"]["recall_agree"]["upper"]["k"]) == (73, 85)
+    assert m["all"]["precision_found"]["k"] == 110 and m["all"]["precision_found"]["n"] == 110
+    assert (m["all"]["precision_agree_lower"]["k"], m["all"]["precision_agree_upper"]["k"]) == (92, 105)
     if ADJUDICATIONS.exists():                   # 2026-10-21: the BPH resurgence list is in the book (p. 69)
         assert m["B"]["extras_confirmed"] == 16
         verdicts = sorted(e["verdict"] for e in res["judged_extras"].values())
-        assert verdicts == ["extraction"] * 16 + ["gold"]       # + 8e1d#1/m2, a paraphrased maturity sign (E8)
+        assert verdicts == ["extraction"] * 16      # 8e1d#1/m2 (E8) is verbatim under v4, so its verdict is stale
+        stale = {(s["gold_id"], s["field"]) for s in stale_adjudications(res, disagreements(res))}
+        assert stale == {("A30", "subtype"), ("B35", "condition"), ("B36", "subtype"), ("B37", "subtype"),
+                         ("", "extra")}
     calib = calibration(res)
     assert calib["proposal"]["threshold"] is None and calib["proposal"]["message"] == "no threshold yet"

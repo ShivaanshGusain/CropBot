@@ -25,8 +25,9 @@ def fact(result, unit, index):
 
 
 def test_every_fact_is_validated_or_held_with_reasons_and_none_is_approved(result):
-    assert len(result["facts"]) + len(result["held"]) == 123      # 124 before the step 8 rebuild removed e63c's
-                                                                  # WBPH Pymetrozine fact (the line is BPH's)
+    # prompt v4 (2026-10-22): 124 = 103 validated + 21 held. Under v3 it was 123, after the step 8 rebuild removed
+    # e63c's WBPH Pymetrozine fact; v4 adds e63c#71, split off e63c#33 when the "avoid" advice became a Caution
+    assert (len(result["facts"]), len(result["held"])) == (103, 21)
     assert all(h["reasons"] for h in result["held"])
     for x in result["facts"]:
         assert x["status"] in ("extracted", "needs_review")
@@ -47,6 +48,7 @@ def test_seed_npk_by_convention_and_section_purpose(result):
     assert fact(result, "f5b06c9fd3f8", 24)["purpose_origins"] == {"purpose:seed": ["text", "section"]}
 
 
-def test_generic_targets_and_operations_are_held(result):
+def test_missing_targets_and_operations_are_held(result):
     reasons = [r for h in result["held"] for r in h["reasons"]]
-    assert any("generic target" in r for r in reasons) and any("has no operation" in r for r in reasons)
+    assert sum(any(r.startswith("no specific target printed") for r in h["reasons"]) for h in result["held"]) == 13
+    assert any("has no operation" in r for r in reasons)

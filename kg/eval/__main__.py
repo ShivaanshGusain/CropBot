@@ -46,6 +46,10 @@ def print_report(rep: dict) -> None:
         d["count"], d["rows"], d["adjudicated"], d["by_field"]))
     for p in d["patterns"]:
         print("  x%-3d %-11s gold %r | extracted %r" % (p["rows"], p["field"], p["gold"][:60], p["extracted"][:60]))
+    stale = rep["stale_adjudications"]
+    print("\nstale adjudications (kept in the file, meeting nothing now): %d" % len(stale))
+    for s in stale:
+        print("  %-6s %-12s %-10s %s" % (s["gold_id"] or "-", s["field"], s["verdict"], s.get("name") or s["reason"]))
     c = rep["calibration"]
     for name, pop in c["populations"].items():
         print("\ncalibration %s (n=%d):" % (name, pop["n"]))

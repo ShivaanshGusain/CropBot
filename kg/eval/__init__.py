@@ -637,7 +637,7 @@ def run(entry) -> dict:
             covered_by.setdefault(d["ai"], d["gi"])
     return {"rows": rows, "atoms": atoms, "outcome": outcome, "verified": verified, "adjudications": adjud,
             "covered_atoms": covered_atoms, "covered_by": covered_by, "unscored_atoms": unscored_atoms | context,
-            "context_atoms": context, "judged_extras": judged}
+            "context_atoms": context, "judged_extras": judged, "extra_verdicts": extra_verdicts}
 
 
 def _counts(outcome, atoms, covered_by, unscored_atoms, judged, key_row, key_atom) -> dict:
@@ -839,6 +839,20 @@ def unmatched(res: dict) -> list[dict]:
     return out
 
 
+def stale_adjudications(res: dict, dis: list[dict]) -> list[dict]:
+    """Recorded verdicts that no longer meet anything (re-extraction changed or cleared the disagreement, or the
+    extra atom is gone). They are kept in the file and listed here; nothing is deleted or re-applied."""
+    current = {(d["gold_id"], d["field"]) for d in dis}
+    out = [{"gold_id": g, "field": f, "verdict": row["verdict"], "note": row.get("note", ""),
+            "reason": "no current disagreement for this gold row and field"}
+           for (g, f), row in sorted(res["adjudications"].items()) if (g, f) not in current]
+    met = {(norm(e["name"]), norm(e["quote"])) for e in res["judged_extras"].values()}
+    out += [{"gold_id": "", "field": "extra", "verdict": e["verdict"], "note": e.get("note", ""), "name": e["name"],
+             "reason": "no extracted atom with this name and quote"}
+            for e in res.get("extra_verdicts") or [] if (norm(e["name"]), norm(e["quote"])) not in met]
+    return out
+
+
 def report(res: dict) -> dict:
     calib = calibration(res)
     dis = disagreements(res)
@@ -862,6 +876,7 @@ def report(res: dict) -> dict:
                           "adjudicated": sum(bool(d["verdict"]) for d in dis),
                           "patterns": [{"field": f, "gold": g, "extracted": e, "rows": n} for (f, g, e), n in
                                        Counter((d["field"], d["gold_value"], d["extracted_value"]) for d in dis).most_common(15)]},
+        "stale_adjudications": stale_adjudications(res, dis),
         "calibration": calib,
         "controls": controls(res, calib),
     }

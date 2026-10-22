@@ -49,12 +49,12 @@ def setup(neo4j_test_db, tmp_path_factory):
 
 
 def fill(path: Path, built: dict) -> dict:
-    """The sample decisions, by short fact name: grain drying approved, a storage rule rejected, the GLH
-    threshold (scope in unmapped) needs change, and the BPH insecticide list approved."""
+    """The sample decisions, by short fact name: grain drying approved, a storage rule rejected, the nursery
+    DAP top dressing (scope in unmapped) needs change, and the BPH insecticide list approved."""
     from openpyxl import load_workbook
     by_short = {short(r): r["id"] for r in built["recs"]}
     sample = {"8e1d#2": ("approve", "", "yes"), "f5b0#20": ("reject", "TEST SAMPLE: not a real decision", "no"),
-              "e63c#17": ("needs change", "TEST SAMPLE: 2/hill applies only in tungro endemic areas", "not sure"),
+              "b879#19": ("needs change", "TEST SAMPLE: applies only in less fertile nursery soils", "not sure"),
               "e63c#35": ("approve", "", "not sure")}
     wb = load_workbook(path)
     ws = wb[sheet.FACTS]
@@ -95,14 +95,14 @@ def test_import_load_twice_and_rebuild(setup):
     driver, name, entry = s["driver"], s["name"], s["entry"]
     wanted = fill(s["path"], s["built"])
     first = import_sheet(s)
-    assert len(first["accepted"]) == 4 and not first["refused"] and len(first["not_reviewed"]) == 96
+    assert len(first["accepted"]) == 4 and not first["refused"] and len(first["not_reviewed"]) == 99
     expect = {fid: {"approve": "approved", "reject": "rejected", "needs change": "needs_review"}[d]
               for fid, (d, _, _) in wanted.items()}
     got = statuses(driver, name, wanted)
     assert {i: g["status"] for i, g in got.items()} == expect
     assert all(g["by"] == "TEST SAMPLE" for g in got.values())
-    glh = next(i for i, (d, _, _) in wanted.items() if d == "needs change")
-    assert "expert: TEST SAMPLE: 2/hill applies only in tungro endemic areas" in got[glh]["reasons"]
+    change = next(i for i, (d, _, _) in wanted.items() if d == "needs change")
+    assert "expert: TEST SAMPLE: applies only in less fertile nursery soils" in got[change]["reasons"]
 
     before = lf.snapshot(driver, name)
     again = import_sheet(s)                                                   # a re-run is a no-op
@@ -127,7 +127,7 @@ def test_import_load_twice_and_rebuild(setup):
     lf.load(driver, entry, built, name)
     rebuilt = statuses(driver, name, wanted)
     assert {i: g["status"] for i, g in rebuilt.items()} == expect
-    assert "expert: TEST SAMPLE: 2/hill applies only in tungro endemic areas" in rebuilt[glh]["reasons"]
+    assert "expert: TEST SAMPLE: applies only in less fertile nursery soils" in rebuilt[change]["reasons"]
     again2 = lf.load(driver, entry, built, name)
     assert not any(again2["write"]["created"].values()) and not again2["changed"]
     print("emptied database, load: statuses %s; second load created %s, snapshot %s unchanged" % (
