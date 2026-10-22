@@ -7,10 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from kg.registry import REGISTRY_DIR, RegistryError, heading_matches, read_registry
+from kg.registry import REGISTRY_DIR, RegistryError, heading_matches, read_entry, read_registry
 
 ROOT = Path(__file__).resolve().parents[2]
 TNAU = "tnau_agriculture_2020.toml"
+TNAU_ID = "source:tnau_agriculture_2020"
 INDEX = ROOT / "converted" / "tnau_agriculture.index.json"
 
 
@@ -35,10 +36,29 @@ def problems(directory):
 
 
 def test_committed_registry_validates():
-    [entry] = read_registry()
-    assert entry.id == "source:tnau_agriculture_2020"
+    assert sorted(e.id for e in read_registry()) == ["source:dfpd_uniform_spec_kms_2026_27", TNAU_ID]
+    entry = read_entry(TNAU_ID)
     assert (entry.state_id, entry.region_scope, entry.authority_tier) == ("state:33", ["state:33"], 1)
     assert (entry.edition_year, entry.edition_label) == (2020, "2020")
+
+
+DFPD = "dfpd_uniform_spec_kms_2026_27.toml"
+DFPD_ID = "source:dfpd_uniform_spec_kms_2026_27"
+
+
+def test_the_dfpd_specification_is_national_and_its_schedules_print_no_page_numbers():
+    entry = read_entry(DFPD_ID)
+    assert (entry.state_id, entry.region_scope, entry.authority_tier) == (None, ["country:in"], 3)
+    assert (entry.edition_year, entry.edition_label, entry.extraction.ocr) == (2026, "2026-27", "force")
+    assert any("No. 14453 dated 21/08/2026" in n and "17.08.2026" in n for n in entry.notes)   # a state forward
+    paddy = next(c for c in entry.chapters if c.number == "1")
+    assert (paddy.pdf_page, paddy.printed_page, paddy.status, paddy.crop_id) == (6, None, "proposed", "crop:rice")
+    assert entry.printed_page(5) == "2" and entry.printed_page(6) is None
+
+
+def test_a_printed_page_on_an_unnumbered_page_fails(reg):
+    edit(reg, r'pdf_page = 6, status', 'printed_page = 3, pdf_page = 6, status', name=DFPD)
+    assert "PDF p. 6 is printed p. None, not 3" in problems(reg)
 
 
 def test_sha256_mismatch_fails(reg):
@@ -94,13 +114,13 @@ def test_page_range_must_be_ordered(reg):
 def test_only_approved_default_scope_rules_reach_the_source(reg):
     edit(reg, r'^status = "approved"\nsection = \{ heading = "Nursery"',
          'status = "proposed"\nsection = { heading = "Nursery"')
-    [entry] = read_registry(reg)
+    entry = read_entry(TNAU_ID, reg)
     assert entry.to_source().default_scope == [
         "dose basis = per_ha unless stated [ii) Main field, PDF pp. 63-69]"]
 
 
 def test_section_scopes_and_their_review_status():
-    [entry] = read_registry()
+    entry = read_entry(TNAU_ID)
     [seed] = entry.approved_section_scopes()
     assert len(entry.section_scope) == 12 and all(s.status == "proposed" for s in entry.section_scope if s is not seed)
     assert (seed.heading, seed.pdf_pages, seed.purposes, seed.regions) == (
@@ -119,7 +139,7 @@ def test_section_scope_purpose_must_be_a_purpose_id(reg):
 
 @pytest.mark.skipif(not INDEX.exists(), reason="committed TNAU conversion not present")
 def test_every_section_matches_exactly_one_heading():
-    [entry] = read_registry()
+    entry = read_entry(TNAU_ID)
     items = json.loads(INDEX.read_text(encoding="utf-8"))["items"]
     sections = [r.section for r in entry.default_scope if r.section] + entry.section_scope
     # a section named by a heading_fix exists only after the fix; check the fix's source heading
@@ -135,7 +155,7 @@ def test_every_section_matches_exactly_one_heading():
     (12, None), (13, "1"), (64, "52"), (146, "134"), (147, "136"), (380, "369"),
     (381, "385"), (459, "463"), (460, None)])
 def test_printed_page_mapping(pdf_page, printed):
-    [entry] = read_registry()
+    entry = read_entry(TNAU_ID)
     assert entry.printed_page(pdf_page) == printed
 
 
@@ -145,14 +165,14 @@ def test_overlapping_printed_page_runs_fail(reg):
 
 
 def test_gaps_are_recorded_as_notes():
-    [entry] = read_registry()
+    entry = read_entry(TNAU_ID)
     assert any("135" in n for n in entry.notes) and any("370-384" in n for n in entry.notes)
 
 
 # --- chapters and heading fixes ------------------------------------------------------------
 
 def test_chapters_follow_the_printed_page_mapping():
-    [entry] = read_registry()
+    entry = read_entry(TNAU_ID)
     rice, wheat = (next(c for c in entry.chapters if c.title == t) for t in ("RICE", "WHEAT"))
     assert (rice.pdf_page, rice.printed_page, wheat.pdf_page, wheat.printed_page) == (13, 1, 134, 122)
     assert (rice.status, rice.crop_id, wheat.status, wheat.crop_id) == (
@@ -173,7 +193,7 @@ def test_heading_fix_must_split_its_match_exactly(reg):
 
 
 def test_heading_fixes_and_their_review_status():
-    [entry] = read_registry()
+    entry = read_entry(TNAU_ID)
     assert [(f.pdf_page, f.kind, f.heading, f.status) for f in entry.heading_fix] == [
         (29, "split", "1.1.1. Wet nursery", "approved"),
         (62, "split", "A) Pest management", "approved"),
