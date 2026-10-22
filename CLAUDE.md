@@ -393,7 +393,7 @@ uv run python -m kg.extract report  source:tnau_agriculture_2020 [--prompt v2]
 uv run python -m kg.extract compare source:tnau_agriculture_2020 --unit <unit_id> --from v1 --to v2
 ```
 
-`--prompt` defaults to the latest version, v3 (schema v1.3), since 2026-10-21.
+`--prompt` defaults to the latest version, v4 (schema v1.4), since 2026-10-22 (v3 from 2026-10-21; see "Schema v1.4 build").
 - The four units (8e1d, b879, e63c, f5b0) were hand-run under v3 by revising the v2 answers fact by fact; every changed value was written from the unit text and the v3 rules.
 - C2#10/#11 now quote the printed order that the approved p. 74 reading-order fix restored, without `line_order_pairing`.
 - **C2#4 (PDF p. 73) prints "80 µM" with U+00B5.** The PDF text layer, the conversion and the v2 answer all have µ. The first v3 answer had U+FFFD there: a typo made in the hand-run, because the PowerShell console showed µ as "�". It was re-run on 2026-10-21. Check text by code point (`python -X utf8`, `hex(ord(c))`), never by what the console shows.
@@ -465,7 +465,7 @@ uv run python -m kg.extract compare source:tnau_agriculture_2020 --unit <unit_id
 
 ## Normalisation and linking (`kg/normalize`)
 
-No model. Input: the latest run of every unit under the latest prompt version, `kg.extract.versions.LATEST` (v3); a run that failed step 9 stops it. Each raw fact either validates against `kg.schema.FACT` and goes to `data/normalized/<id>/facts.jsonl`, or is held in `held.jsonl` with every blocking reason. Nothing is forced or dropped.
+No model. Input: the latest run of every unit under the latest prompt version, `kg.extract.versions.LATEST` (v4); a run that failed step 9 stops it. Each raw fact either validates against `kg.schema.FACT` and goes to `data/normalized/<id>/facts.jsonl`, or is held in `held.jsonl` with every blocking reason. Nothing is forced or dropped.
 
 - **Scope:**
   - **Crop:** the chapter's crop_id, only if the chapter is approved.
@@ -883,8 +883,8 @@ Approved 2026-10-21. Only a person approves or rejects a fact, through the workb
   - A re-extracted fact with a new id is a needs_review REVISION_OF the approved one, as before.
 - **Serving:** approval never bypasses fail-closed. A step applying an ingredient that isn't `registered` is dropped from an approved fact too (tested).
 - **Live test** (`tests/review/test_live_review.py`, cropbot-test only). The sample sheet is filled by the test (reviewer "TEST SAMPLE") into a temporary decisions file; the test checks that the committed file is untouched.
-  - Decisions: 8e1d#2 approve, f5b0#20 reject, e63c#17 needs change, e63c#35 approve.
-  - Import, then a re-import (no-op), then two loads: nothing created, snapshot `681aa408…` unchanged (708 nodes, 1041 relationships).
+  - Decisions: 8e1d#2 approve, f5b0#20 reject, b879#19 needs change (e63c#17 until v4 held it), e63c#35 approve.
+  - Import, then a re-import (no-op), then two loads: nothing created, snapshot `16a61bad…` unchanged (704 nodes, 1038 relationships; v4 data, 2026-10-22).
   - Emptied and reloaded, the database gets the 4 decisions back; a second load changes nothing.
   - The approved grain-drying fact is served without the unverified label.
 - **TNAU workbook:** `data/review/expert_review_tnau.xlsx`, from the main database (2026-10-21). The committed decisions file holds only its header row; no decision has been imported.
@@ -949,7 +949,26 @@ Candidate for prompt v3: a flag `scope_from_heading` for applicability taken fro
 Open notes on the doc (2026-10-22, not blocking):
 - the Units row doesn't list minutes, hours or weeks (they appear only in the Step comments);
 - `endemic_area` is missing from the on_unknown table, and its example `pest:bph` is not a real id;
-- a three-part ratio ("5:4:1") stays in `unmapped`, since the model needs part and whole with `ratio_raw`.
+- a three-part ratio ("5:4:1") stays in `unmapped`, since the model needs part and whole with `ratio_raw`;
+- the doc says renumbering options changes `value_key`. The code follows the original proposal (item 6): options are sorted without their numbers, so renumbering alone changes neither key; it changes the id only when a value changes.
+
+### Built (2026-10-22)
+
+Commits c9bbb42 (models, vocab), 9579f15 (prompt v4), f94f93b (list-level fact_key), ff6d916 (steps 10–14), 880846f (v4 hand-runs, `LATEST = "v4"`).
+- **Step 9, prompt v4:** the four units were hand-run by revising the v3 answers fact by fact; 124 facts (8e1d 4, b879 23, e63c 72, f5b0 25), no parse, quote or coverage failure.
+  - e63c#33 ("avoid excessive use of nitrogen") is now a prohibition Caution; the split-off part is appended as **e63c#71**, so no other fact is renumbered. The first e63c v4 run is in `v4/history/`.
+- **Step 10:** 124 in, **103 validated, 21 held** (v3: 123 / 100 / 23).
+  - Now validating: e63c#4, #5, #33 (avoid advice as Cautions; no generic "Pest" target).
+  - Newly held: e63c#17, `endemic_area` "tungro" unlinked, because `disease:tungro` is only proposed.
+  - Still held: 13 ControlMeasures with **no specific target** (prompt v4 writes no generic target, and the schema keeps `target_ids` min 1; a decision for the user), 8 with a step without operation (4 of them have both), KKM, the GLH caution pest, "direct sowing", ADT 46.
+- **Step 11:** 13 extracted, 90 needs_review. printed_text fails only f5b0#9–11 (N, P, K from "NPK"). scope_in_unmapped: b879#3, #14, #19 and e63c#56; e63c#9 ("In BPH prone areas/seasons") is now an `endemic_area` condition on `pest:brown_planthopper`.
+- **Step 12:** 35 new claims in 4 requests, all answered. The four prohibition Cautions (b879#12, e63c#4, #5, #33) name no chemical, so they have no code-built claim and can never be auto_verified (6 such facts now).
+- **Step 13, main database:** `--reset-source` (rehearsed on cropbot-test first) deleted 101 Recommendations, 237 Steps/Clauses/Conditions and 99 spans. Load 1 created 412 nodes and 880 relationships; load 2 created none, snapshot identical (`aa106220…`, 704 nodes, 1038 relationships). 103 facts: 12 extracted, 91 needs_review; no U+FFFD. The 10 query fixtures match.
+- **Step 15** (v3 → v4): recall found 90/90 both; recall agreeing 74–84 → **73–85**/90; pipeline recall 77 → **81**/90 (90 % [82–95]); precision found 109 → **110/110**; precision agreeing 92–102 → **92–105**/110 (84 % [76–89] .. 95 % [90–98]).
+  - 125 disagreements on 78 rows, 123 adjudicated. Not adjudicated: B3 subtype (e63c#33 is now a Caution) and C3 granularity (the maturity sign is now verbatim).
+  - **Stale adjudications** (in `adjudications.csv`, meeting nothing now): A30, B35, B36, B37 and the extra 8e1d#1/m2.
+  - Threshold: none; population (b) 9/9 correct (Wilson lower 70 %). Controls: 3/60 unit swaps at ≥ 0.5.
+  - The stale list and the data tests' v4 numbers are in c791765.
 
 ### Items (recorded 2026-10-20 to 2026-10-22, now in v1.4)
 
