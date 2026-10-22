@@ -37,3 +37,4 @@ input:yellow_pan_trap,yellow pan traps,en,Latn,alias,needs_review,"TNAU 2020 PDF
 input:owl_perch,owl perches,en,Latn,alias,needs_review,"TNAU 2020 PDF p. 68, as printed"
 input:owl_perch,bird (owl) perches,en,Latn,alias,needs_review,"TNAU 2020 PDF p. 68, as printed"
 input:platygaster_oryzae_galls,Platygaster oryzae parasitised galls,en,Latn,alias,needs_review,"TNAU 2020 PDF p. 65, as printed"
+disease:tungro,tungro,en,Latn,canonical,needs_review,"TNAU Crop Production Guide 2020, PDF p. 64: 'in tungro endemic area'"
