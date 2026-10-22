@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project rules
 
-- docs/schema_v1.3.md is the source of truth
-  - Schema changes go in a new versioned file in this repo (`docs/schema_v1.4.md`, ...) and are committed.
-  - The Claude Doc is a superseded draft and is never exported again. `docs/schema_v1.1.md` and `docs/schema_v1.2.md` are kept for history.
+- docs/schema_v1.4.md is the source of truth (committed 2026-10-22; the build is in progress, see "Schema v1.4 build")
+  - Schema changes go in a new versioned file in this repo (`docs/schema_v1.5.md`, ...) and are committed.
+  - The Claude Doc is a superseded draft and is never exported again. `docs/schema_v1.1.md`, `docs/schema_v1.2.md` and `docs/schema_v1.3.md` are kept for history.
 - use uv add for dependencies
 - always MERGE on id; nothing is auto-corrected
 - every number keeps its raw text; the LLM never converts units
@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-CropBot is a farm-advice bot. This branch builds its Neo4j knowledge graph: every agronomic fact becomes a `Recommendation` node with applicability edges, ordered Steps, runtime Conditions and a `SourceSpan` quote (see `docs/schema_v1.3.md`). The stages are defined in the schema's "Build pipeline" section: register → convert → segment → tables → extract → normalise → validate → verify (Jev) → load. Product context (post-harvest focus, pilot plans) is in `CropBot_Research_Brief.md`.
+CropBot is a farm-advice bot. This branch builds its Neo4j knowledge graph: every agronomic fact becomes a `Recommendation` node with applicability edges, ordered Steps, runtime Conditions and a `SourceSpan` quote (see `docs/schema_v1.4.md`). The stages are defined in the schema's "Build pipeline" section: register → convert → segment → tables → extract → normalise → validate → verify (Jev) → load. Product context (post-harvest focus, pilot plans) is in `CropBot_Research_Brief.md`.
 
 ## Environments and commands
 
@@ -936,7 +936,22 @@ Found in step 10; until v1.3, normalisation holds the affected facts with the re
 
 Candidate for prompt v3: a flag `scope_from_heading` for applicability taken from a sub-heading rather than the quote. For example, the soil "saline soil condition" comes from the p. 74 sub-heading "Recommendation for planting under saline soil condition", and "Zinc deficient soils" comes the same way. v2 has no flag for this.
 
-## Pending for schema v1.4
+## Schema v1.4 build
+
+`docs/schema_v1.4.md` (committed 2026-10-22) covers all 11 items below. Decisions taken with it:
+- duration ranges for check 3: minutes 1–240, hours 1–72, days 1–60;
+- word table: "in equal volume" → ratio 1:1, and "a week" → 1 with unit weeks (no conversion to days);
+- `endemic_area` is a concept-valued condition, ask then branch. `disease:tungro` is drafted in `concepts/proposed/` for approval;
+- "avoid …" advice becomes a prohibition Caution (prompt v4);
+- the expert review waits for the v1.4 reload; afterwards the AI pre-check notes are re-mapped by quote, and the mapping is shown before the sheet is regenerated;
+- step 15 reports stale adjudications.
+
+Open notes on the doc (2026-10-22, not blocking):
+- the Units row doesn't list minutes, hours or weeks (they appear only in the Step comments);
+- `endemic_area` is missing from the on_unknown table, and its example `pest:bph` is not a real id;
+- a three-part ratio ("5:4:1") stays in `unmapped`, since the model needs part and whole with `ratio_raw`.
+
+### Items (recorded 2026-10-20 to 2026-10-22, now in v1.4)
 
 The code does these; the v1.3 doc doesn't say them, or says them differently (recorded 2026-10-20):
 1. **KNO3 is a Fertilizer** (potassium nitrate), not an `Input`: v1.3's Input example list is wrong. Identity follows the substance.
