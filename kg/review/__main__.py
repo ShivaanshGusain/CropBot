@@ -51,7 +51,10 @@ def cmd_sheet(a) -> int:
     print(json.dumps({"written": str(out), "rows": len(rows),
                       "by_subtype": {s: sum(r["subtype"] == s for r in rows) for s in sheet.ORDER},
                       "scope_in_unmapped_highlighted": flagged,
-                      "ai_precheck": {k: sum(r.get("ai_precheck") == k for r in rows) for k in sheet.PRECHECK}
+                      "ai_precheck": {**{k: sum(r.get("ai_precheck") == k for r in rows) for k in sheet.PRECHECK},
+                                      "blank result, note only": sum("ai_note" in r and not r["ai_precheck"]
+                                                                     for r in rows),
+                                      "no note": sum("ai_note" not in r for r in rows)}
                       if a.precheck else None,
                       "review_no_differs_from_notes": moved}, indent=1))
     return 0

@@ -132,11 +132,41 @@ def test_ai_precheck_columns_sit_before_the_reviewer_columns_locked_and_coloured
     assert [ws.cell(n, h).value for n in range(2, len(rows) + 2)] == hashes        # the row hash is unchanged
 
 
+def test_a_fact_without_a_note_keeps_blank_cells_and_a_note_may_have_no_result(tnau_sheet, tmp_path):
+    """2026-10-22: the v1.4 facts the earlier pre-check never saw get no note; an earlier note that no longer
+    applies keeps its text with a blank result (no fill)."""
+    from openpyxl import load_workbook
+    from kg.registry import read_registry
+    _, rows, _ = tnau_sheet
+    rows = copy.deepcopy(rows)
+    ns = notes_for(rows)[:-2]                                   # the last two rows have no note
+    ns[2].update(ai_precheck="", ai_note="Earlier AI note no longer applies (fixed in v1.4); not re-checked.")
+    assert sheet.add_precheck(rows, ns) == []
+    path = tmp_path / "partial.xlsx"
+    sheet.write_workbook(path, read_registry()[0], rows, "offline")
+    ws = load_workbook(path)[sheet.FACTS]
+    keys = [k for k, _, _ in sheet.COLUMNS]
+    ai, note = keys.index("ai_precheck") + 1, keys.index("ai_note") + 1
+    assert ws.cell(4, ai).value is None and ws.cell(4, note).value.startswith("Earlier AI note no longer applies")
+    assert ws.cell(4, ai).fill.fill_type is None
+    last = len(rows) + 1
+    assert [(ws.cell(n, ai).value, ws.cell(n, note).value) for n in (last - 1, last)] == [(None, None)] * 2
+
+
+def test_scope_names_the_pests_and_targets(tnau_sheet):
+    _, rows, built = tnau_sheet
+    by_short = {r["short"][:4] + r["short"][12:]: r["id"] for r in built["recs"]}
+    scope = {r["fact_id"]: r["scope"] for r in rows}
+    assert "target: Stem borer" in scope[by_short["e63c#57"]] and "target: Leaffolder" in scope[by_short["e63c#58"]]
+    assert "target: none (general practice)" in scope[by_short["e63c#2"]]
+    assert scope[by_short["e63c#16"]].startswith("pest: Brown planthopper")
+
+
 @pytest.mark.parametrize("change, problem", [
     (lambda ns: ns[0].update(fact_id="rec:unknown"), "no such fact in the sheet"),
-    (lambda ns: ns.pop(), "no note"),
     (lambda ns: ns[1].update(fact_id=ns[0]["fact_id"]), "2 notes"),
     (lambda ns: ns[0].update(ai_precheck="MAYBE"), "is not one of OK, CHECK, FIX"),
+    (lambda ns: ns[0].update(ai_precheck="", ai_note=""), "neither a result nor a text"),
 ])
 def test_ai_notes_that_do_not_match_are_refused(tnau_sheet, change, problem):
     _, rows, _ = tnau_sheet

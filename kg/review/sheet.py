@@ -21,7 +21,7 @@ FACTS, GUIDE, META = "Facts", "How to review", "meta"
 # (key, header, width); the reviewer columns are the only editable cells
 COLUMNS = (("review_no", "Review no.", 8), ("fact_id", "Fact id", 22), ("subtype", "Subtype", 15),
            ("instruction", "Instruction (code-built from the stored fact)", 60), ("crop", "Crop", 10),
-           ("scope", "Scope (variety / duration, purpose, soil, region)", 34),
+           ("scope", "Scope (pest / target, variety / duration, purpose, soil, region)", 34),
            ("values", "Values (with the printed text)", 50), ("quote", "Quote (exact, from the book)", 60),
            ("pages", "PDF page / printed page", 12), ("source", "Source", 24), ("status", "Current status", 14),
            ("review_reasons", "Review reasons", 50), ("jev_score", "Jev score", 9),
@@ -86,6 +86,12 @@ def _name(names: dict, cid: str) -> str:
 
 def scope(fact: dict, names: dict) -> str:
     parts = []
+    # the pests and targets the fact is for (2026-10-22): without them two IPM releases read alike
+    for label, key in (("pest", "pest_ids"), ("target", "target_ids"), ("about", "about_ids")):
+        if fact.get(key):
+            parts.append("%s: %s" % (label, ", ".join(_name(names, x) for x in fact[key])))
+    if fact["subtype"] == "ControlMeasure" and not fact.get("target_ids"):
+        parts.append("target: none (general practice)")
     for label, key in (("variety", "variety_ids"), ("season", "season_ids"), ("system", "system_ids"),
                        ("soil", "soil_ids"), ("purpose", "purpose_ids"), ("stage", "stage_ids")):
         if fact.get(key):
@@ -177,25 +183,28 @@ def read_precheck(path) -> list[dict]:
 
 
 def add_precheck(sheet_rows: list[dict], notes: list[dict]) -> list[str]:
-    """Put each note on its row, matched by fact_id. Refused (SheetError, rows untouched) when a note's fact_id
-    is not a row, a row has no note, a fact_id repeats, or a result is not OK / CHECK / FIX. Returns the rows
-    whose review_no differs from the note's (matching is by fact_id, so these are only reported)."""
+    """Put each note on its row, matched by fact_id. A row without a note keeps blank cells, and a note may have a
+    blank result (an earlier note that no longer applies; 2026-10-22). Refused (SheetError, rows untouched) when
+    a note's fact_id is not a row, a fact_id repeats, or a result is not OK / CHECK / FIX or blank. Returns the
+    rows whose review_no differs from the note's (matching is by fact_id, so these are only reported)."""
     by_id = {r["fact_id"]: r for r in sheet_rows}
     problems, seen = [], Counter()
     for n in notes:
         seen[n["fact_id"]] += 1
         if n["fact_id"] not in by_id:
             problems.append("note for %s (review_no %s): no such fact in the sheet" % (n["fact_id"], n["review_no"]))
-        if n["ai_precheck"] not in PRECHECK:
-            problems.append("%s: result %r is not one of %s" % (n["fact_id"], n["ai_precheck"], ", ".join(PRECHECK)))
+        if n["ai_precheck"] not in PRECHECK + ("",):
+            problems.append("%s: result %r is not one of %s or blank" % (n["fact_id"], n["ai_precheck"],
+                                                                         ", ".join(PRECHECK)))
+        if not n["ai_precheck"] and not n["ai_note"]:
+            problems.append("%s: a note with neither a result nor a text" % n["fact_id"])
     problems += ["%s: %d notes" % (i, k) for i, k in seen.items() if k > 1]
-    problems += ["%s (review_no %s): no note" % (i, r["review_no"]) for i, r in by_id.items() if i not in seen]
     if problems:
         raise SheetError(problems)
     moved = []
     for n in notes:
         r = by_id[n["fact_id"]]
-        r["ai_precheck"], r["ai_note"] = n["ai_precheck"], n["ai_note"]
+        r["ai_precheck"], r["ai_note"] = n["ai_precheck"] or None, n["ai_note"]
         if str(r["review_no"]) != n["review_no"]:
             moved.append("%s: review_no %s in the sheet, %s in the notes" % (n["fact_id"], r["review_no"], n["review_no"]))
     return moved
