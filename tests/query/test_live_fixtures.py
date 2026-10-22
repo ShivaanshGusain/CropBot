@@ -13,7 +13,7 @@ import pytest
 
 from kg.load import facts as lf
 from kg.query import FarmContext, answer
-from kg.registry import read_registry
+from kg.registry import read_entry
 from kg.validate import VALIDATED_DIR
 from tests.conftest import reset_and_seed
 
@@ -86,7 +86,7 @@ def loaded(neo4j_test_db):
         pytest.skip("needs data/validated and data/verified for the TNAU guide")
     driver, name = neo4j_test_db
     concepts = reset_and_seed(driver, name)                  # the test database only
-    entry = read_registry()[0]
+    entry = read_entry("source:tnau_agriculture_2020")
     lf.load(driver, entry, lf.build(entry, lf.read_inputs(entry), concepts), name)
     return driver, name
 

@@ -9,11 +9,11 @@ the source, then shows that reviewed work blocks a reset.
 import pytest
 
 from kg.load import facts as lf
-from kg.registry import read_registry
+from kg.registry import read_entry
 from kg.validate import VALIDATED_DIR
 from tests.conftest import reset_and_seed
 
-ENTRY = read_registry()[0]
+ENTRY = read_entry("source:tnau_agriculture_2020")
 
 
 def count(driver, name, query, **params):

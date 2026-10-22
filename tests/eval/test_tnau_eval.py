@@ -4,7 +4,7 @@ import pytest
 
 from kg.eval import (ADJUDICATIONS, NORMALIZED_DIR, VERIFIED_DIR, calibration, disagreements, metrics, run,
                      stale_adjudications)
-from kg.registry import read_registry
+from kg.registry import read_entry
 
 pytestmark = pytest.mark.skipif(not (VERIFIED_DIR / "tnau_agriculture_2020" / "facts.jsonl").exists()
                                 or not (NORMALIZED_DIR / "tnau_agriculture_2020" / "facts.jsonl").exists(),
@@ -13,7 +13,7 @@ pytestmark = pytest.mark.skipif(not (VERIFIED_DIR / "tnau_agriculture_2020" / "f
 
 @pytest.fixture(scope="module")
 def res():
-    return run(read_registry()[0])
+    return run(read_entry("source:tnau_agriculture_2020"))
 
 
 def test_every_scored_gold_row_is_found(res):

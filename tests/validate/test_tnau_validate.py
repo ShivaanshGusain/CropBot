@@ -3,10 +3,10 @@
 import pytest
 
 from kg.normalize import NORMALIZED_DIR
-from kg.registry import read_registry
+from kg.registry import read_entry
 from kg.validate import run
 
-ENTRY = read_registry()[0]
+ENTRY = read_entry("source:tnau_agriculture_2020")
 pytestmark = pytest.mark.skipif(not (NORMALIZED_DIR / "tnau_agriculture_2020" / "facts.jsonl").exists(),
                                 reason="needs data/normalized for the TNAU guide")
 

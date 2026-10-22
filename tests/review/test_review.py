@@ -38,8 +38,8 @@ def tnau_sheet(tmp_path_factory):
     if not (VALIDATED_DIR / "tnau_agriculture_2020" / "facts.jsonl").exists():
         pytest.skip("needs data/validated and data/verified for the TNAU guide")
     from kg.load.seed import read_seed
-    from kg.registry import read_registry
-    entry = read_registry()[0]
+    from kg.registry import read_entry
+    entry = read_entry("source:tnau_agriculture_2020")
     seed = read_seed()
     built = lf.build(entry, lf.read_inputs(entry, tmp_path_factory.mktemp("d") / "none.csv"),
                      {n.id for n in seed.nodes})
@@ -117,9 +117,9 @@ def test_ai_precheck_columns_sit_before_the_reviewer_columns_locked_and_coloured
     rows = copy.deepcopy(rows)
     hashes = [r["row_hash"] for r in rows]
     assert sheet.add_precheck(rows, notes_for(rows)) == []
-    from kg.registry import read_registry
+    from kg.registry import read_entry
     path = tmp_path / "ai.xlsx"
-    sheet.write_workbook(path, read_registry()[0], rows, "offline")
+    sheet.write_workbook(path, read_entry("source:tnau_agriculture_2020"), rows, "offline")
     ws = load_workbook(path)[sheet.FACTS]
     keys = [k for k, _, _ in sheet.COLUMNS]
     assert keys.index("ai_precheck") + 2 == keys.index("decision") and keys.index("ai_note") + 1 == keys.index("decision")
@@ -136,14 +136,14 @@ def test_a_fact_without_a_note_keeps_blank_cells_and_a_note_may_have_no_result(t
     """2026-10-22: the v1.4 facts the earlier pre-check never saw get no note; an earlier note that no longer
     applies keeps its text with a blank result (no fill)."""
     from openpyxl import load_workbook
-    from kg.registry import read_registry
+    from kg.registry import read_entry
     _, rows, _ = tnau_sheet
     rows = copy.deepcopy(rows)
     ns = notes_for(rows)[:-2]                                   # the last two rows have no note
     ns[2].update(ai_precheck="", ai_note="Earlier AI note no longer applies (fixed in v1.4); not re-checked.")
     assert sheet.add_precheck(rows, ns) == []
     path = tmp_path / "partial.xlsx"
-    sheet.write_workbook(path, read_registry()[0], rows, "offline")
+    sheet.write_workbook(path, read_entry("source:tnau_agriculture_2020"), rows, "offline")
     ws = load_workbook(path)[sheet.FACTS]
     keys = [k for k, _, _ in sheet.COLUMNS]
     ai, note = keys.index("ai_precheck") + 1, keys.index("ai_note") + 1
@@ -181,12 +181,12 @@ def test_ai_notes_that_do_not_match_are_refused(tnau_sheet, change, problem):
 
 def test_the_import_ignores_the_ai_columns_and_reads_a_workbook_without_them(tnau_sheet, tmp_path):
     from openpyxl import load_workbook
-    from kg.registry import read_registry
+    from kg.registry import read_entry
     _, rows, built = tnau_sheet
     rows = copy.deepcopy(rows)
     sheet.add_precheck(rows, notes_for(rows))
     path = tmp_path / "ai.xlsx"
-    sheet.write_workbook(path, read_registry()[0], rows, "offline")
+    sheet.write_workbook(path, read_entry("source:tnau_agriculture_2020"), rows, "offline")
     _, with_ai = sheet.read_workbook(path)
     assert with_ai[0]["ai_precheck"] == "FIX"
     cur = importer.current_facts(built)

@@ -7,9 +7,9 @@ import pytest
 
 import kg.extract as ex
 from kg.extract.versions import LATEST, field_names
-from kg.registry import read_registry
+from kg.registry import read_entry
 
-ENTRY = read_registry()[0]
+ENTRY = read_entry("source:tnau_agriculture_2020")
 UNIT = {
     "id": "unit:tnau_agriculture_2020:abc123", "source_id": ENTRY.id, "kind": "leaf",
     "chapter": {"number": "1", "title": "RICE", "status": "approved"},

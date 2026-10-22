@@ -76,7 +76,7 @@ class Chapter(Model):
     number: Text
     title: Text
     group: str | None = None            # "MILLETS" for Sorghum, Cumbu, ...
-    printed_page: PositiveInt
+    printed_page: PositiveInt | None = None   # None: the page prints no number (e.g. an enclosed schedule)
     pdf_page: PositiveInt
     status: RuleStatus
     crop_id: CropId | None = None       # used only once the chapter is approved
@@ -240,9 +240,10 @@ class RegistryEntry(Model):
             if start <= end:
                 raise ValueError("printed_pages runs overlap at PDF page %d" % start)
         for ch in self.chapters:
-            if self.printed_page(ch.pdf_page) != str(ch.printed_page):
-                raise ValueError("chapter %s %r: PDF p. %d is printed p. %s, not %d" % (
-                    ch.number, ch.title, ch.pdf_page, self.printed_page(ch.pdf_page), ch.printed_page))
+            want = None if ch.printed_page is None else str(ch.printed_page)
+            if self.printed_page(ch.pdf_page) != want:
+                raise ValueError("chapter %s %r: PDF p. %d is printed p. %s, not %s" % (
+                    ch.number, ch.title, ch.pdf_page, self.printed_page(ch.pdf_page), want))
         numbers = [ch.number for ch in self.chapters]
         if len(numbers) != len(set(numbers)):
             raise ValueError("duplicate chapter numbers")

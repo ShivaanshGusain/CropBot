@@ -6,10 +6,10 @@ import json
 import pytest
 
 from kg.convert import output_dir
-from kg.registry import read_registry
+from kg.registry import read_entry
 from kg.segment.report import segment
 
-ENTRY = read_registry()[0]
+ENTRY = read_entry("source:tnau_agriculture_2020")
 FULL, TRIAL = output_dir(ENTRY), output_dir(ENTRY, (13, 76))
 DOCLING = next((d for d in (FULL, TRIAL) if (d / "document.json").exists()), None)
 pytestmark = pytest.mark.skipif(DOCLING is None, reason="no TNAU conversion in data/docling/")

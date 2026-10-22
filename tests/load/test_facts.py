@@ -6,11 +6,11 @@ import copy
 import pytest
 
 from kg.load import facts as lf
-from kg.registry import read_registry
+from kg.registry import read_entry
 from kg.registry.model import Conflict
 from kg.validate import VALIDATED_DIR
 
-REGISTERED = read_registry()[0]
+REGISTERED = read_entry("source:tnau_agriculture_2020")
 ENTRY = REGISTERED.model_copy(update={"conflict": []})          # unit tests: no reviewer conflicts
 SPAN ={"id": "span:x1", "source_id": "source:tnau_agriculture_2020", "pdf_page": 75, "printed_page": "63",
         "bbox": None, "section_path": "RICE > SEED", "quote": "Store the seeds for more than 15 months",

@@ -13,7 +13,7 @@ import pytest
 
 from kg.load import facts as lf
 from kg.query import FarmContext, answer
-from kg.registry import read_registry
+from kg.registry import read_entry
 from kg.review import importer, sheet
 from kg.review.decisions import DECISIONS_CSV, append_decisions, read_decisions
 from kg.validate import VALIDATED_DIR
@@ -35,7 +35,7 @@ def setup(neo4j_test_db, tmp_path_factory):
     decisions = tmp / "decisions.csv"                       # never the committed data/review/expert_decisions.csv
     committed = DECISIONS_CSV.read_bytes() if DECISIONS_CSV.exists() else None
     concepts = reset_and_seed(driver, name)
-    entry = read_registry()[0]
+    entry = read_entry("source:tnau_agriculture_2020")
     built = lf.build(entry, lf.read_inputs(entry, decisions), concepts)
     lf.load(driver, entry, built, name)
     from kg.load.seed import read_seed

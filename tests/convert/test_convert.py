@@ -7,13 +7,12 @@ import pytest
 from kg.convert import cache_key, convert, ocr_pages, output_dir, page_marker
 from kg.convert.converter import settings, versions
 from kg.convert.headers import running_headings
-from kg.registry import read_registry
+from kg.registry import read_entry
 
 
 @pytest.fixture(scope="module")
 def tnau():
-    [entry] = read_registry()
-    return entry
+    return read_entry("source:tnau_agriculture_2020")
 
 
 def test_settings_come_from_the_registry(tnau):

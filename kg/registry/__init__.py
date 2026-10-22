@@ -75,6 +75,15 @@ def read_registry(directory: Path = REGISTRY_DIR, root: Path = ROOT,
     return [e for _, e in entries]
 
 
+def read_entry(source_id: str, directory: Path = REGISTRY_DIR, root: Path = ROOT) -> RegistryEntry:
+    """The entry with this id. Every entry is validated, as in read_registry; entries are sorted by file
+    name, so never pick one by position."""
+    for e in read_registry(directory, root):
+        if e.id == source_id:
+            return e
+    raise RegistryError(["%s is not registered" % source_id])
+
+
 def _within_state(rid: str, node, state_id: str) -> bool:
     if rid == state_id:
         return True

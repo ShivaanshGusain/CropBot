@@ -4,13 +4,13 @@
 import pytest
 
 from kg.convert import output_dir
-from kg.registry import ROOT, read_registry
+from kg.registry import ROOT, read_entry
 from kg.segment import UNITS_DIR
 from kg.tables import run
 from kg.tables.check import PageChecker, _bottom_left
 from kg.tables.stitch import ws
 
-ENTRY = read_registry()[0]
+ENTRY = read_entry("source:tnau_agriculture_2020")
 DOCLING = output_dir(ENTRY)
 UNITS = UNITS_DIR / "tnau_agriculture_2020" / "units.jsonl"
 pytestmark = pytest.mark.skipif(not ((DOCLING / "document.json").exists() and UNITS.exists()),

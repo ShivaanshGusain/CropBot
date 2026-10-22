@@ -15,11 +15,11 @@ import hashlib
 import pytest
 
 from kg.load import facts as lf
-from kg.registry import read_registry
+from kg.registry import read_entry
 from kg.validate import VALIDATED_DIR
 from tests.conftest import reset_and_seed
 
-ENTRY = read_registry()[0]
+ENTRY = read_entry("source:tnau_agriculture_2020")
 APPROVED = ("f5b06c9fd3f8", 23)          # StorageRule: 12-15 months at <= 9 %
 REMOVED = ("e63c6fbba0e4", 29)           # ControlMeasure: phenthoate against case worm
 

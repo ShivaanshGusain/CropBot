@@ -3,10 +3,10 @@
 import pytest
 
 import kg.verify as verify
-from kg.registry import read_registry
+from kg.registry import read_entry
 from kg.validate import VALIDATED_DIR
 
-ENTRY = read_registry()[0]
+ENTRY = read_entry("source:tnau_agriculture_2020")
 pytestmark = pytest.mark.skipif(not (VALIDATED_DIR / "tnau_agriculture_2020" / "facts.jsonl").exists(),
                                 reason="needs data/validated for the TNAU guide")
 NO_CLAIM_FACTS = {("b879265e483b", 10, "Caution"), ("e63c6fbba0e4", 10, "Caution"),    # cautions naming no chemical

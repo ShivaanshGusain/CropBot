@@ -5,10 +5,10 @@ import pytest
 
 from kg.extract import EXTRACTED_DIR
 from kg.normalize import run
-from kg.registry import read_registry
+from kg.registry import read_entry
 from kg.schema import FACT
 
-ENTRY = read_registry()[0]
+ENTRY = read_entry("source:tnau_agriculture_2020")
 RUNS = EXTRACTED_DIR / "tnau_agriculture_2020" / "v2"
 UNITS = {"8e1d1b38b483", "b879265e483b", "e63c6fbba0e4", "f5b06c9fd3f8"}
 pytestmark = pytest.mark.skipif(not all((RUNS / ("%s.json" % u)).exists() for u in UNITS),

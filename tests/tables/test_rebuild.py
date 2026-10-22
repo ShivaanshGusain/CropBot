@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from kg.registry import ROOT, read_registry
+from kg.registry import ROOT, read_entry
 from kg.tables.rebuild import CROSSES_ROW, SPAN_WIDER, chars, crossings, diff_lines, rebuild
 from kg.tables.stitch import Part
 
@@ -103,7 +103,7 @@ def tnau():
 
     from kg.tables.check import PageChecker
     from kg.tables.stitch import part_from
-    entry = read_registry()[0]
+    entry = read_entry("source:tnau_agriculture_2020")
     doc = DoclingDocument.load_from_json(DOCLING)
     items = {t.self_ref: t for t in doc.tables}
     refs = list(dict.fromkeys(r for line in open(TABLES, encoding="utf-8") for r in json.loads(line)["table_refs"]))
