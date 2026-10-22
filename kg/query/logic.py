@@ -25,6 +25,7 @@ QUESTIONS = {
     "grain_moisture_pct": "What is the grain moisture now?",
     "das": "How many days ago did you sow?",
     "sowing_date": "When did you sow?",
+    "endemic_area": "Is your area known for this pest or disease?",
 }
 
 
@@ -63,7 +64,20 @@ def _cmp(op: str, actual, value, value_max) -> bool:
     raise ValueError("unknown condition op %r" % op)
 
 
+def endemic_state(c: dict, ctx) -> str:
+    """Schema v1.4 endemic_area == / in a pest or disease: TRUE if the farmer said their area is known for
+    one of them, FALSE if they said no to all, else UNKNOWN (ask, then branch)."""
+    values = c["value"] if isinstance(c["value"], list) else [c["value"]]
+    answers = [ctx.endemic.get(v) for v in values]
+    state = TRUE if True in answers else FALSE if all(a is False for a in answers) else UNKNOWN
+    if c["op"] == "!=" and state != UNKNOWN:
+        return FALSE if state == TRUE else TRUE
+    return state
+
+
 def condition_state(c: dict, ctx) -> str:
+    if c["variable"] == "endemic_area":
+        return endemic_state(c, ctx)
     actual = ctx.value(c["variable"])
     if actual is None:
         return UNKNOWN

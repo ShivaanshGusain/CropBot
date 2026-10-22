@@ -112,8 +112,9 @@ def test_blocking_reasons():
     f = raw_fact(steps=[{"order": 1, "method": "release",
                          "applies": [{"target": "DAP", "value": 0.5, "unit": "%", "raw": "0.5 % DAP"}]}])
     build(f, L, "crop:rice", ZONES)
-    assert f.blocks == ["step 1 has no operation; method 'release'",
-                        "no basis printed or given by a rule (a concentration or share); raw '0.5 % DAP'"]
+    # schema v1.4: the no-operation check runs after the formulation table, so it is listed last
+    assert f.blocks == ["no basis printed or given by a rule (a concentration or share); raw '0.5 % DAP'",
+                        "step 1 has no operation; method 'release'"]
     f = Fact(RUN, UNIT, {"index": 0, "quote_check": QC, "fact": RAW.validate_python(
         {"subtype": "ControlMeasure", "summary_en": "s", "quote": "q", "control_class": "cultural", "targets": ["Pest"],
          "steps": [{"order": 1, "operation": "weeding"}]}).model_dump(mode="json")})

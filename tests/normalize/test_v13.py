@@ -64,7 +64,8 @@ def test_strength_units(printed, unit):
     ("twice", (2, None, None)),
     ("at fortnightly interval", (None, 2, "weeks")),
     ("4 times at 10 days interval", (4, 10, "days")),
-    ("second a week later", None),                         # not in the word table: held, never guessed
+    ("second a week later", (None, 1, "weeks")),            # schema v1.4 word table: "a week" is 1 week
+    ("second a fortnight on", None),                       # not in the word table: held, never guessed
 ])
 def test_repeat_word_table(printed, expected):
     got = repeat(printed)
@@ -134,9 +135,9 @@ def test_repeat_words_become_fields_and_claims_in_the_table_words():
     (claim,) = claims_for(finish(f, d), {}, {"applies": [["Trichogramma japonicum"]], "target_ids": ["BPH"]})
     assert claim.endswith("37 days after transplanting thrice at weekly interval?")
     held = raw(subtype="ControlMeasure", control_class="biological", targets=["Brown planthopper"],
-               steps=[{"order": 1, "operation": "release", "repeat_raw": "second a week later"}])
+               steps=[{"order": 1, "operation": "release", "repeat_raw": "second a fortnight on"}])
     build(held, L, "crop:rice", {})
-    assert held.blocks == ["repeat words 'second a week later' are not in the code word table"]
+    assert held.blocks == ["repeat words 'second a fortnight on' are not in the code word table"]
 
 
 def test_sample_sizes_storage_range_spacing_and_caution_about():

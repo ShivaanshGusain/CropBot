@@ -20,6 +20,9 @@ Output: data/validated/<id>/{facts.jsonl, report.json} and data/review/validatio
  10 scope_in_unmapped  no unmapped phrase looks like scope (a variety type, area, condition or moisture); a
                      failure gives the review reason "scope in unmapped: served scope would be wider than printed"
                      and the phrases are stored on the fact (step 14 hides it, unless a Caution, until approved)
+ 11 number_in_text   no number survives only in text (an unmapped phrase or a step's purpose_raw); schema v1.4
+v1.4 also extends 2 (durations, stated times, mix strength, carrier, purpose), 3 (durations, week offsets),
+7 (durations) and 9 (purpose, duration, carrier and mix strength texts).
 """
 
 import json
@@ -38,7 +41,7 @@ NORMALIZED_DIR = ROOT / "data" / "normalized"
 VALIDATED_DIR = ROOT / "data" / "validated"
 REVIEW_CSV = ROOT / "data" / "review" / "validation.csv"
 CHECKS = ("quote_location", "raw_numbers", "value_ranges", "alternatives", "ingredients", "review_kept",
-          "range_narrowed", "lost_glyph", "printed_text", "scope_in_unmapped")
+          "range_narrowed", "lost_glyph", "printed_text", "scope_in_unmapped", "number_in_text")
 NARROWED = "printed range stored as a single bound"
 LOST_GLYPH = "�"                       # the Unicode replacement character
 PLACEHOLDER_UNITS = {"count"}               # prompt v2: organisms or items with no printed unit
@@ -103,14 +106,22 @@ def check_raw_numbers(raw_fact: dict) -> dict:
         in_quote(s["timing_raw"], "timing_raw")
         for k in ("offset_min", "offset_max"):
             printed(s[k], s["timing_raw"], "step %d %s" % (s["order"], k))
+        for t in s.get("repeat_offsets") or []:              # prompt v4: every stated time is printed
+            printed(t, s["timing_raw"], "step %d repeat offset" % s["order"])
         in_quote(s.get("repeat_raw"), "repeat_raw")          # its count and interval come from code's word table
+        in_quote(s.get("duration_raw"), "duration_raw")      # prompt v4
+        for k in ("duration_min", "duration_max"):
+            printed(s.get(k), s.get("duration_raw"), "step %d %s" % (s["order"], k))
+        in_quote(s.get("purpose_raw"), "purpose_raw")
         for a in s["applies"]:
             in_quote(a["raw"], "raw of %s" % a["target"])
             for k in ("value", "min", "max"):
                 printed(a[k], a["raw"], "%s %s" % (a["target"], k))
-            # prompt v3: strength, mixing parts and share, each printed in its own raw text
+            in_quote(a.get("carrier_raw"), "carrier_raw of %s" % a["target"])
+            # prompt v3: strength, mixing parts and share, each printed in its own raw text (v4: mix strength)
             for raw_key, keys in (("conc_raw", ("conc_value", "conc_min", "conc_max")),
-                                  ("ratio_raw", ("ratio_part", "ratio_rest")), ("share_raw", ("share_pct",))):
+                                  ("ratio_raw", ("ratio_part", "ratio_rest")), ("share_raw", ("share_pct",)),
+                                  ("mix_conc_raw", ("mix_conc_value",))):
                 if a.get(raw_key):
                     in_quote(a[raw_key], "%s of %s" % (raw_key, a["target"]))
                     for k in keys:
@@ -137,6 +148,8 @@ FIELD_RANGES = {
     "max_moisture_pct": (5, 20), "min_moisture_pct": (5, 20), "storage_months": (0, 60), "depth_cm": (0, 20),
 }
 TO_KG = {"kg": 1, "g": 0.001, "t": 1000, "l": 1, "ml": 0.001}      # l and ml read as kg (density ~1)
+DURATION_RANGES = {"minutes": (1, 240), "hours": (1, 72), "days": (1, 60)}    # approved 2026-10-22
+OFFSET_LIMITS = {"days": 180, "hours": 72, "weeks": 26}
 
 
 def _amounts(a: dict) -> list[float]:
@@ -156,10 +169,16 @@ def check_value_ranges(fact: dict) -> dict:
             if v is not None and not lo <= v <= hi:
                 problems.append("%s %g outside %g-%g" % (name, v, lo, hi))
     for s in fact["steps"]:
-        limit = 72 if s["offset_unit"] == "hours" else 180
-        for k in ("offset_min", "offset_max"):
-            if s[k] is not None and abs(s[k]) > limit:
-                problems.append("step %d %s %g beyond +-%d %s" % (s["order"], k, s[k], limit, s["offset_unit"]))
+        limit = OFFSET_LIMITS[s["offset_unit"]]
+        for k in ("offset_min", "offset_max", "repeat_offsets"):
+            for v in (s.get(k) or []) if k == "repeat_offsets" else [s[k]]:
+                if v is not None and abs(v) > limit:
+                    problems.append("step %d %s %g beyond +-%d %s" % (s["order"], k, v, limit, s["offset_unit"]))
+        if s.get("duration_unit"):                                   # schema v1.4 durations
+            lo, hi = DURATION_RANGES[s["duration_unit"]]
+            for k in ("duration_min", "duration_max"):
+                if s.get(k) is not None and not lo <= s[k] <= hi:
+                    problems.append("step %d %s %g outside %g-%g %s" % (s["order"], k, s[k], lo, hi, s["duration_unit"]))
         for a in s["applies"]:
             kind, unit, basis, vals = a["target_id"].split(":", 1)[0], a.get("unit"), a.get("basis"), _amounts(a)
             if not vals:
@@ -289,7 +308,9 @@ def check_range_narrowed(fact: dict) -> dict:
         else:
             single(fact.get(name), None, text, name)
     for s in fact["steps"]:
-        single(s.get("offset_min"), s.get("offset_max"), s.get("timing_raw"), "step %d offset" % s["order"])
+        if not s.get("repeat_offsets"):              # with stated times, the offsets are the first time on purpose
+            single(s.get("offset_min"), s.get("offset_max"), s.get("timing_raw"), "step %d offset" % s["order"])
+        single(s.get("duration_min"), s.get("duration_max"), s.get("duration_raw"), "step %d duration" % s["order"])
         for a in s["applies"]:
             lo, hi = (a["value"], None) if a.get("value") is not None else (a.get("min"), a.get("max"))
             single(lo, hi, a.get("raw"), "%s amount" % a["target_id"])
@@ -364,12 +385,12 @@ def copied_texts(raw_fact: dict) -> list[tuple[str, str, str]]:
     out += [(k, k, raw_fact[k]) for k in COPIED_FIELDS if isinstance(raw_fact.get(k), str) and raw_fact[k]]
     for s in raw_fact.get("steps") or []:
         step = "step %d" % s["order"]
-        out += [("%s %s" % (step, k), k, s[k]) for k in ("stage", "method") if s.get(k)]
+        out += [("%s %s" % (step, k), k, s[k]) for k in ("stage", "method", "purpose_raw", "duration_raw") if s.get(k)]
         for a in s["applies"]:
             out.append(("%s target" % step, "target", a["target"]))
             if a.get("unit") and a["unit"] not in PLACEHOLDER_UNITS:
                 out.append(("%s unit" % step, "unit", a["unit"]))
-            for k in ("conc_unit", "formulation", "water_raw"):
+            for k in ("conc_unit", "formulation", "water_raw", "carrier_raw", "mix_conc_raw"):
                 if a.get(k):
                     out.append(("%s %s" % (step, k), k, a[k]))
             if a.get("basis") and not (a.get("basis_rule") or a.get("basis_inferred")):
@@ -427,6 +448,20 @@ def check_scope_in_unmapped(fact: dict) -> dict:
         return result("pass")
     return result("fail", "; ".join("%r (%s)" % (p, ", ".join(k)) for p, k in found),
                   phrases=[p for p, _ in found])
+
+
+# --- 11 number in text ---------------------------------------------------------------------------
+
+NUMBER_IN_TEXT = "number only in text"
+
+
+def check_number_in_text(fact: dict) -> dict:
+    """Schema v1.4: a number that survives only in text (an unmapped phrase or a step's purpose_raw, e.g.
+    "hastened by 3-4 days") is no value the bot can use or check; it adds a review reason."""
+    texts = [("unmapped", t) for t in fact.get("unmapped") or []]
+    texts += [("step %d purpose_raw" % s["order"], s["purpose_raw"]) for s in fact["steps"] if s.get("purpose_raw")]
+    found = ["%s %r" % (where, t) for where, t in texts if re.search(r"\d", t)]
+    return result("fail", "; ".join(found)) if found else result("pass")
 
 
 def table_rows(rendered: list[str], refs: list[str]) -> str:
@@ -494,8 +529,10 @@ def run(entry) -> dict:
             "printed_text": check_printed_text(step9["fact"], step9.get("subheading"),
                                                row_of(rec["unit_id"], step9["quote_check"]["refs"])),
             "scope_in_unmapped": check_scope_in_unmapped(fact),
+            "number_in_text": check_number_in_text(fact),
         }
-        reasons = [SCOPE_IN_UNMAPPED_REASON if k == "scope_in_unmapped" else "%s: %s" % (k, c["reason"])
+        reasons = [SCOPE_IN_UNMAPPED_REASON if k == "scope_in_unmapped" else
+                   "%s: %s" % (NUMBER_IN_TEXT, c["reason"]) if k == "number_in_text" else "%s: %s" % (k, c["reason"])
                    for k, c in checks.items() if c["status"] == "fail"]
         scope = checks["scope_in_unmapped"].get("phrases", [])
         alt = checks["alternatives"]

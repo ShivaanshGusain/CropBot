@@ -48,6 +48,9 @@ class FarmContext(Model):
     storage_months: float | None = None
     observations: dict[str, float] = {}   # pest_count, spider_count_per_hill, grain_moisture_pct
     pest: str | None = None               # the pest a threshold question is about
+    # schema v1.4 endemic_area: the farmer's answer per pest or disease ("disease:tungro": True); a concept
+    # missing here is UNKNOWN, never assumed either way
+    endemic: dict[str, bool] = {}
 
     def region_ids(self) -> list[str]:
         """District + own-state zones + state + country: the regions a fact may be scoped to."""

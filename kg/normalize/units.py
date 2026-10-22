@@ -5,13 +5,14 @@ returns None and the fact is held, never guessed.
   1 acre = 0.404686 ha; 1 cent = 1/100 acre = 40.4686 m2; 1 quintal = 100 kg.
   per_cent_nursery: value per one cent of nursery; area_cents = the area the source stated.
 Schema v1.3: strength units, sample sizes and repeat words are read here too, never by the model.
+Schema v1.4: the word table ("a week", "in equal volume"), duration units and formulation codes.
 """
 
 import re
 from typing import NamedTuple
 
-from kg.schema.vocab import (COUNT_WORDS, INTERVAL_WORDS, Basis, ConcUnit, RepeatUnit, SamplingObject,
-                             Unit)
+from kg.schema.vocab import (COUNT_WORDS, FORMULATION_OPERATION, INTERVAL_WORDS, PERIOD_WORDS, RATIO_WORDS,
+                             Basis, ConcUnit, DurationUnit, RepeatUnit, SamplingObject, Unit)
 
 HA_PER_ACRE = 0.404686
 CENTS_PER_HA = 100 / HA_PER_ACRE            # 247.105...
@@ -140,8 +141,12 @@ def repeat(printed: str | None) -> tuple[int | None, float | None, RepeatUnit | 
         count = int(m.group(1)) if m else None
     interval = unit = None
     word = next((w for w in INTERVAL_WORDS if re.search(r"\b%s\b" % w, t)), None)
+    period = next((w for w in PERIOD_WORDS if re.search(r"\b%s\s+later\b" % w, t)), None)
     if word:
         interval, u = INTERVAL_WORDS[word]
+        unit = RepeatUnit(u)
+    elif period:                                     # schema v1.4: "second a week later" -> every 1 week
+        interval, u = PERIOD_WORDS[period]
         unit = RepeatUnit(u)
     else:
         m = re.search(r"\b(?:every|at)\s*(\d+(?:\.\d+)?)\s*(days?|weeks?)\b|\b(\d+(?:\.\d+)?)\s*(days?|weeks?)\s*interval",
@@ -153,6 +158,48 @@ def repeat(printed: str | None) -> tuple[int | None, float | None, RepeatUnit | 
         return None
     rule = "repeat %r -> count %s, interval %s %s (word table)" % (printed, count, interval, unit.value if unit else "")
     return count, interval, unit, rule
+
+
+def period_offset(timing_raw: str | None) -> tuple[float, str, str] | None:
+    """Schema v1.4: a time printed only in words, "a week before harvest" -> (-1, "weeks", rule). One week is
+    one week; it is never turned into days. None when the words are not in the word table."""
+    t = _clean(timing_raw or "")
+    for words, (n, unit) in PERIOD_WORDS.items():
+        m = re.search(r"\b%s\s+(before|prior to|after)\b" % words, t)
+        if m:
+            sign = -1 if m.group(1) in ("before", "prior to") else 1
+            return sign * n, unit, "offset %r -> %g %s (word table)" % (timing_raw, sign * n, unit)
+    return None
+
+
+def ratio_words(printed: str | None) -> tuple[float, float, str] | None:
+    """Schema v1.4: a ratio printed only in words, "in equal volume" -> part 1, rest 1 (word table)."""
+    t = _clean(printed or "")
+    for words, (part, rest) in RATIO_WORDS.items():
+        if t == words:
+            return part, rest, "ratio %r -> %g : %g (word table)" % (printed, part, rest)
+    return None
+
+
+DURATION_UNITS = {"h": DurationUnit.HOURS, "hr": DurationUnit.HOURS, "hrs": DurationUnit.HOURS,
+                  "hour": DurationUnit.HOURS, "hours": DurationUnit.HOURS, "min": DurationUnit.MINUTES,
+                  "mins": DurationUnit.MINUTES, "minute": DurationUnit.MINUTES, "minutes": DurationUnit.MINUTES,
+                  "day": DurationUnit.DAYS, "days": DurationUnit.DAYS}
+
+
+def canon_duration_unit(printed: str | None) -> DurationUnit | None:
+    """Schema v1.4: "h", "hrs", "minutes" -> hours / minutes / days. Anything else holds the fact."""
+    return DURATION_UNITS.get((printed or "").strip().lower().rstrip("."))
+
+
+FORMULATION_CODE = re.compile(r"(?<![A-Za-z])(%s)(?![A-Za-z])" % "|".join(
+    sorted(FORMULATION_OPERATION, key=len, reverse=True)))
+
+
+def formulation_code(formulation: str | None) -> str | None:
+    """The formulation code in a printed formulation ("1.5% DP" -> "DP", "3% CG" -> "CG"), or None."""
+    found = FORMULATION_CODE.findall(formulation or "")
+    return found[-1] if found else None
 
 
 def water_l_per_ha(printed: str | None) -> float | None:

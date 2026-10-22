@@ -114,8 +114,17 @@ def values(fact: dict, names: dict) -> str:
             head += " (%s)" % s["method"]
         if s.get("timing_raw"):
             head += ", %s" % s["timing_raw"]
+        for k in ("duration_raw", "repeat_raw"):                       # schema v1.4 duration; repeats
+            if s.get(k):
+                head += ", %s" % s[k]
+        if s.get("purpose_raw"):
+            head += " (%s)" % s["purpose_raw"]
         lines.append(head)
-        lines += ["    %s: %s" % (_name(names, a["target_id"]), a.get("raw") or "") for a in s["applies"]]
+        for a in s["applies"]:
+            extra = [x for x in (a.get("conc_raw"), a.get("ratio_raw"), a.get("share_raw"), a.get("mix_conc_raw")) if x]
+            if a.get("carrier_raw"):
+                extra.append("with %s" % a["carrier_raw"])
+            lines.append("    %s: %s" % (_name(names, a["target_id"]), "; ".join([a.get("raw") or ""] + extra).strip("; ")))
         lines += ["    if: %s" % c["raw"] for c in s.get("conditions") or []]
     for i, c in enumerate(fact.get("clauses") or []):
         lines.append("clause %d: %s %s" % (i + 1, c.get("observation") or "", c.get("raw") or ""))

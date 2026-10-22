@@ -97,7 +97,18 @@ def _amount(a: dict) -> tuple[str, str]:
     return span(lo, hi) + ("%s" % unit if unit == "%" else (" " + unit if unit else "")), per
 
 
+def _unit(unit: str, a: float, b: float | None = None) -> str:
+    """"1 week", "2 weeks": a singular unit only for exactly one."""
+    return unit[:-1] if a == 1 and (b is None or b == 1) and unit.endswith("s") else unit
+
+
 def timing(s: dict) -> str:
+    if s.get("repeat_offsets"):                      # schema v1.4: " at 15 and 30 days after transplanting"
+        offs = s["repeat_offsets"]
+        side = "before" if offs[0] < 0 else "after"
+        anchor = ANCHOR.get(s.get("anchor"), s.get("anchor"))
+        return " at %s %s %s %s" % (" and ".join(num(abs(x)) for x in offs), s.get("offset_unit") or "days", side,
+                                     anchor)
     if s.get("offset_min") is not None or s.get("offset_max") is not None:
         lo, hi = s.get("offset_min"), s.get("offset_max")
         lo = lo if lo is not None else hi
@@ -106,13 +117,22 @@ def timing(s: dict) -> str:
         if (hi is None or hi == lo) and lo == 0:
             return " at %s" % anchor
         if hi is None:
-            return " from %s %s after %s onwards" % (num(abs(lo)), unit, anchor)
+            return " from %s %s after %s onwards" % (num(abs(lo)), _unit(unit, abs(lo)), anchor)
         side = "before" if lo < 0 else "after"
         a, b = sorted((abs(lo), abs(hi)))
-        return " %s %s %s" % (span(a, b), unit, side + " " + anchor)
+        return " %s %s %s" % (span(a, b), _unit(unit, a, b), side + " " + anchor)
     if s.get("timing_raw"):
         return " " + s["timing_raw"]
     return ""
+
+
+def duration(s: dict) -> str:
+    """Schema v1.4: " for 12 to 16 hours", or the printed words when there is no number (" overnight")."""
+    if s.get("duration_min") is not None or s.get("duration_max") is not None:
+        lo = s["duration_min"] if s.get("duration_min") is not None else s["duration_max"]
+        hi = s["duration_max"] if s.get("duration_max") is not None else lo
+        return " for %s %s" % (span(lo, hi), _unit(s["duration_unit"], lo, hi))
+    return " " + s["duration_raw"] if s.get("duration_raw") else ""
 
 
 INTERVAL_TEXT = {(v[0], v[1]): w for w, v in INTERVAL_WORDS.items()}
@@ -122,8 +142,11 @@ SAMPLE_TEXT = {"net_sweep": "net sweeps", "earhead": "earheads", "pass": "passes
 
 
 def repeats(s: dict) -> str:
-    """" thrice at weekly interval", in the word table's words (schema v1.3 repeat_* fields)."""
+    """" thrice at weekly interval", in the word table's words (schema v1.3 repeat_* fields). With stated
+    times (v1.4 repeat_offsets) the count is the list of times, already in timing()."""
     out = ""
+    if s.get("repeat_offsets"):
+        return out
     if s.get("repeat_count") is not None:
         out += " " + COUNT_TEXT.get(s["repeat_count"], "%d times" % s["repeat_count"])
     if s.get("repeat_interval") is not None:
@@ -188,9 +211,15 @@ def _name(a: dict, names: dict, printed: str | None = None) -> str:
 
 
 def _at(a: dict) -> str:
-    """" at 40 kg per hectare", or "" when only a strength is given."""
+    """" at 40 kg per hectare", or "" when only a strength is given; v1.4 adds the strength in the prepared
+    mix (" at 0.005% in the prepared mix") and the carrier (" with chopped paddy straw")."""
     dose = amount(a)
-    return " at %s" % dose if dose else ""
+    out = " at %s" % dose if dose else ""
+    if a.get("mix_conc_value") is not None:
+        out += " at %s%s in the prepared mix" % (num(a["mix_conc_value"]), CONC_SIGN.get(a.get("mix_conc_unit"), ""))
+    if a.get("carrier_raw"):
+        out += " with %s" % a["carrier_raw"]
+    return out
 
 
 def _together(applies: list[dict], step_names: list[str]) -> str:
@@ -211,7 +240,7 @@ def step_claims(fact: dict, names: dict, printed: dict | None = None) -> list[st
                       for ai, a in enumerate(s["applies"])]
         cond = " (%s)" % s["condition_raw"] if s.get("condition_raw") else ""
         conds = conditions((fact.get("conditions") or []) + (s.get("conditions") or []))
-        when = timing(s) + repeats(s)
+        when = timing(s) + repeats(s) + duration(s)
         primary = [t for t in fact["steps"] if s.get("alt_group") is not None and t.get("alt_group") == s["alt_group"]
                    and (t.get("alt_option") or 0) < (s.get("alt_option") or 0)]
         if s["applies"] and s.get("condition_raw") and (primary or len(s["applies"]) > 1):
@@ -230,7 +259,7 @@ def step_claims(fact: dict, names: dict, printed: dict | None = None) -> list[st
             continue
         for a, name in zip(s["applies"], step_names):
             out.append(_q("%s%s is applied%s%s%s%s%s" % (ld, name, against, _at(a), when, conds, cond)))
-        if not s["applies"] and timing(s) and fact.get("depth_cm") is None:
+        if not s["applies"] and (timing(s) or duration(s)) and fact.get("depth_cm") is None:
             op = (s.get("operation") or "").replace("_", " ")
             method = " (%s)" % s["method"] if s.get("method") else ""
             out.append(_q("%s%s%s is done%s%s%s" % (lead(fact, names), op, method, when, conds, cond)))

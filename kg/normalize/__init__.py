@@ -9,6 +9,9 @@ origin; purposes from the quote (origin text) merged with the section's (origin 
 exclusions expanded into IN_REGION edges to the state's other zones (origin text_exclusion).
 Units and bases are converted in code (kg.normalize.units) and every conversion is logged.
 Names link to concepts (kg.normalize.link); nothing is created. Nothing becomes approved here.
+Schema v1.4: durations, week offsets and word ratios are read by code from the fixed word table; the
+formulation table sets granules and dusts in a "spray" list (flag operation_from_formulation); an option
+list at stated times keeps repeat_offsets; endemic_area values link to a pest or disease.
 Output: data/normalized/<id>/{facts.jsonl, held.jsonl, report.json},
         data/review/proposed_concepts.csv (all gitignored).
 """
@@ -25,10 +28,12 @@ from kg.extract import EXTRACTED_DIR, get_unit
 from kg.extract.versions import LATEST
 from kg.registry import ROOT
 from kg.schema import FACT
-from kg.schema.vocab import CONDITION_VARIABLES, Basis, Unit
+from kg.schema.vocab import (CONDITION_VARIABLES, FORMULATION_OPERATION, FORMULATION_OVERRIDES, Basis, Unit,
+                             ValueType)
 
 from .link import Linker
-from .units import canon_basis, canon_conc_unit, canon_unit, repeat, sample, water_l_per_ha
+from .units import (canon_basis, canon_conc_unit, canon_duration_unit, canon_unit, formulation_code, period_offset,
+                    ratio_words, repeat, sample, water_l_per_ha)
 
 NORMALIZED_DIR = ROOT / "data" / "normalized"
 PROPOSED_CSV = ROOT / "data" / "review" / "proposed_concepts.csv"
@@ -151,13 +156,30 @@ def strength_ratio_share(f: Fact, q: dict, out: dict, step_order) -> bool:
                    conc_unit=cu.value, conc_raw=q["conc_raw"])
         f.conversions.append({"fact": f.index, "step": step_order, "target": q["target"], "raw": q["conc_raw"],
                               "rule": "strength %s -> %s" % (q.get("conc_unit"), cu.value)})
-    if q.get("ratio_part") is not None:
-        out.update(ratio_part=q["ratio_part"], ratio_whole=q["ratio_part"] + q["ratio_rest"], ratio_raw=q["ratio_raw"])
+    part, rest = q.get("ratio_part"), q.get("ratio_rest")
+    if part is None and q.get("ratio_raw"):          # schema v1.4: a ratio printed only in words
+        words = ratio_words(q["ratio_raw"])
+        if words is None:
+            f.blocks.append("ratio words %r are not in the code word table" % q["ratio_raw"])
+            return False
+        part, rest, rule = words
         f.conversions.append({"fact": f.index, "step": step_order, "target": q["target"], "raw": q["ratio_raw"],
-                              "rule": "ratio %g part with %g parts -> %g in %g" % (
-                                  q["ratio_part"], q["ratio_rest"], q["ratio_part"], out["ratio_whole"])})
+                              "rule": rule})
+    if part is not None:
+        out.update(ratio_part=part, ratio_whole=part + rest, ratio_raw=q["ratio_raw"])
+        f.conversions.append({"fact": f.index, "step": step_order, "target": q["target"], "raw": q["ratio_raw"],
+                              "rule": "ratio %g part with %g parts -> %g in %g" % (part, rest, part, out["ratio_whole"])})
     if q.get("share_pct") is not None:
         out.update(share_pct=q["share_pct"], share_raw=q["share_raw"])
+    if q.get("mix_conc_value") is not None:          # schema v1.4: strength in the prepared mix
+        mu = canon_conc_unit(q.get("mix_conc_unit"))
+        if mu is None:
+            f.blocks.append("no canonical mix strength unit for %r; raw %r" % (q.get("mix_conc_unit"),
+                                                                            q.get("mix_conc_raw")))
+            return False
+        out.update(mix_conc_value=q["mix_conc_value"], mix_conc_unit=mu.value, mix_conc_raw=q["mix_conc_raw"])
+    if q.get("carrier_raw"):
+        out["carrier_raw"] = q["carrier_raw"]
     return True
 
 
@@ -173,6 +195,64 @@ def convert_repeat(f: Fact, s: dict, step: dict) -> None:
     step.update(repeat_count=count, repeat_interval=interval,
                 repeat_interval_unit=unit.value if unit else None, repeat_raw=s["repeat_raw"])
     f.conversions.append({"fact": f.index, "step": s["order"], "raw": s["repeat_raw"], "rule": rule})
+    offsets = s.get("repeat_offsets") or []
+    if offsets:                                      # schema v1.4: an option list at stated times
+        if count != len(offsets) or interval is not None:
+            f.blocks.append("repeat words %r do not match the %d stated times %s" % (s["repeat_raw"], len(offsets),
+                                                                                  offsets))
+            return
+        step["repeat_offsets"] = list(offsets)
+
+
+def convert_timing(f: Fact, s: dict, step: dict) -> None:
+    """Schema v1.4: durations (unit read by code), the step's purpose, and a time printed only in words
+    ("a week before harvest" -> -1 weeks from the word table)."""
+    if s.get("duration_raw"):
+        step["duration_raw"] = s["duration_raw"]
+        if s.get("duration_min") is not None or s.get("duration_max") is not None:
+            du = canon_duration_unit(s.get("duration_unit"))
+            if du is None:
+                f.blocks.append("no duration unit for %r; raw %r" % (s.get("duration_unit"), s["duration_raw"]))
+            else:
+                step.update(duration_min=s["duration_min"], duration_max=s["duration_max"],
+                            duration_min_inclusive=s["duration_min_inclusive"],
+                            duration_max_inclusive=s["duration_max_inclusive"], duration_unit=du.value)
+                f.conversions.append({"fact": f.index, "step": s["order"], "raw": s["duration_raw"],
+                                      "rule": "duration unit %s -> %s" % (s.get("duration_unit"), du.value)})
+    if s.get("purpose_raw"):
+        step["purpose_raw"] = s["purpose_raw"]
+    if s["offset_min"] is None and s["offset_max"] is None and s["anchor"] and s["timing_raw"]:
+        period = period_offset(s["timing_raw"])
+        if period is not None:
+            n, unit, rule = period
+            step.update(offset_min=n, offset_max=n, offset_unit=unit)
+            f.conversions.append({"fact": f.index, "step": s["order"], "raw": s["timing_raw"], "rule": rule})
+
+
+def apply_formulations(f: Fact, d: dict) -> None:
+    """Schema v1.4: in a list introduced by "spray", D/DP options become dusting and G/GR/CG options
+    application; in a mixed "Dust/ spray" list (no operation, both verbs in the method) every option follows
+    its code. Any other printed verb, a carrier, a bait or a seed treatment is never overridden. A changed
+    operation flags the fact operation_from_formulation."""
+    changed = False
+    for s in d["steps"]:
+        codes = {formulation_code(a.get("formulation")) for a in s["applies"]}
+        if len(codes) != 1 or None in codes or any(a.get("carrier_raw") for a in s["applies"]):
+            continue
+        code = codes.pop()
+        method = (s.get("method") or "").lower()
+        mixed = s["operation"] is None and "dust" in method and "spray" in method
+        if mixed or (s["operation"] == "spraying" and code in FORMULATION_OVERRIDES):
+            new = FORMULATION_OPERATION[code]
+            if new != s["operation"]:
+                f.conversions.append({"fact": f.index, "step": s["order"], "raw": s["applies"][0].get("formulation"),
+                                      "rule": "formulation %s -> %s (printed %s)" % (code, new, s["operation"] or
+                                                                                    s.get("method"))})
+                s["operation"] = new
+                changed = True
+    if changed and "operation_from_formulation" not in d["extraction_flags"]:
+        d["extraction_flags"].append("operation_from_formulation")
+        f.review.append("extraction flags: operation_from_formulation (set by code)")
 
 
 def instruction(step: dict, names: dict) -> str:
@@ -181,25 +261,38 @@ def instruction(step: dict, names: dict) -> str:
     if step.get("method"):
         parts.append("(%s)" % step["method"])
     for a in step.get("applies", []):
-        printed = [x for x in (a.get("raw"), a.get("conc_raw"), a.get("ratio_raw"), a.get("share_raw")) if x]
+        printed = [x for x in (a.get("raw"), a.get("conc_raw"), a.get("ratio_raw"), a.get("share_raw"),
+                               a.get("mix_conc_raw")) if x]
         parts.append("%s %s" % (names.get(a["target_id"], a["target_id"]),
                                 ", ".join(dict.fromkeys(printed)) or "(amount stated earlier)"))
+        if a.get("carrier_raw"):                     # schema v1.4: what it is applied with or on
+            parts.append("on %s" % a["carrier_raw"])
+    if step.get("duration_raw"):
+        parts.append(step["duration_raw"])
     if step.get("timing_raw"):
         parts.append(step["timing_raw"])
     if step.get("repeat_raw"):
         parts.append(step["repeat_raw"])
+    if step.get("purpose_raw"):                      # schema v1.4: the printed purpose stays in the instruction
+        parts.append("(%s)" % step["purpose_raw"])
     if step.get("condition_raw"):
         parts.append("if: %s" % step["condition_raw"])
     return " ".join(parts) + "."
 
 
-def convert_condition(f: Fact, c: dict) -> dict | None:
+def convert_condition(f: Fact, c: dict, linker=None) -> dict | None:
     spec = CONDITION_VARIABLES[c["variable"]]
     out = {k: c[k] for k in ("variable", "op", "value", "value_max", "any_of_group", "raw")}
     out["unit"] = spec.unit.value if spec.unit else None
     if c["unit"] and (canon_unit(c["unit"]) is None or canon_unit(c["unit"]).unit != spec.unit):
         f.blocks.append("condition %s unit %r is not %s" % (c["variable"], c["unit"], spec.unit))
         return None
+    if spec.value_type is ValueType.CONCEPT:         # schema v1.4: "in tungro endemic area" -> disease:tungro
+        printed = c["value"] if isinstance(c["value"], list) else [c["value"]]
+        ids = [f.link(linker, str(v), ("pest", "disease"), "%s value" % c["variable"]) for v in printed]
+        if None in ids:
+            return None
+        out["value"] = ids if isinstance(c["value"], list) else ids[0]
     return out
 
 
@@ -268,7 +361,7 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
                 sid = f.link(linker, c["stage"], ("stage",), "clause stage", required=False)
                 if sid is None:
                     f.review.append("clause stage %r not linked; kept in raw" % c["stage"])
-            conds = [convert_condition(f, x) for x in c["conditions"]]
+            conds = [convert_condition(f, x, linker) for x in c["conditions"]]
             d["clauses"].append({"observation": c["observation"], "value": c["value"],
                                  "unit": unit_.value if unit_ else None,
                                  "sampling_unit": sampling.value if sampling else None,
@@ -316,8 +409,6 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
     # steps
     d["steps"] = []
     for s in r["steps"]:
-        if s["operation"] is None:
-            f.blocks.append("step %d has no operation; method %r" % (s["order"], s["method"] or ""))
         step = {k: s[k] for k in ("order", "alt_group", "alt_option", "alt_priority", "condition_raw", "operation",
                                   "method", "anchor", "offset_min", "offset_max", "offset_min_inclusive",
                                   "offset_max_inclusive", "offset_unit", "month_start", "month_end", "timing_raw")}
@@ -326,6 +417,7 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
             step["stage_id"] = sid
             if sid is None:
                 f.review.append("step stage %r not linked; kept in timing_raw" % s["stage"])
+        convert_timing(f, s, step)
         convert_repeat(f, s, step)
         step["applies"] = []
         for q in s["applies"]:
@@ -333,9 +425,15 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
             if a is not None:
                 step["applies"].append(a)
                 names[a["target_id"]] = q["target"]
-        step["conditions"] = [x for x in (convert_condition(f, c) for c in s["conditions"]) if x]
+        step["conditions"] = [x for x in (convert_condition(f, c, linker) for c in s["conditions"]) if x]
         d["steps"].append(step)
-    d["conditions"] = [x for x in (convert_condition(f, c) for c in r["conditions"]) if x]
+    apply_formulations(f, d)
+    for s in d["steps"]:
+        if s["operation"] is None:
+            f.blocks.append("step %d has no operation; method %r" % (s["order"], s["method"] or ""))
+    if st == "ControlMeasure" and not r["targets"]:
+        f.blocks.append("no specific target printed (prompt v4 writes no generic target; a ControlMeasure needs one)")
+    d["conditions"] = [x for x in (convert_condition(f, c, linker) for c in r["conditions"]) if x]
     d["unmapped"] = r["unmapped"] + f.unmapped_extra
     f.names = names
     return d
