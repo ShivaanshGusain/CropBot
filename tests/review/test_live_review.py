@@ -95,7 +95,7 @@ def test_import_load_twice_and_rebuild(setup):
     driver, name, entry = s["driver"], s["name"], s["entry"]
     wanted = fill(s["path"], s["built"])
     first = import_sheet(s)
-    assert len(first["accepted"]) == 4 and not first["refused"] and len(first["not_reviewed"]) == 99
+    assert len(first["accepted"]) == 4 and not first["refused"] and len(first["not_reviewed"]) == 109
     expect = {fid: {"approve": "approved", "reject": "rejected", "needs change": "needs_review"}[d]
               for fid, (d, _, _) in wanted.items()}
     got = statuses(driver, name, wanted)

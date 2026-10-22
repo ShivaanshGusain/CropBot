@@ -66,7 +66,7 @@ def test_scope_in_unmapped_is_highlighted_on_exactly_the_flagged_facts(tnau_shee
 
 def test_one_row_per_current_fact_post_harvest_first(tnau_sheet):
     path, rows, built = tnau_sheet
-    assert len(rows) == len(built["recs"]) == 103
+    assert len(rows) == len(built["recs"]) == 113
     order = [sheet.ORDER.index(r["subtype"]) for r in rows]
     assert order == sorted(order) and rows[0]["subtype"] == "DryingSpec" and rows[-1]["subtype"] == "Caution"
     assert all(r["instruction"] and r["quote"] and r["row_hash"].startswith("rh:") for r in rows)

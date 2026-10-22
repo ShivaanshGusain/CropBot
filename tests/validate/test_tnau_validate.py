@@ -63,7 +63,8 @@ def test_no_lost_glyph_and_targets_as_printed(facts):
     failed = {k for k, f in facts.items() if f["checks"]["printed_text"]["status"] == "fail"}
     # prompt v4 copies methods, observations and maturity signs verbatim and flags "seed" target_from_heading;
     # under v3, 11 reworded methods, 2 observations and the 4 "Seed rate" facts failed too
-    assert failed == {("f5b06c9fd3f8", i) for i in (9, 10, 11)}                   # N, P, K from "NPK"
+    assert failed == {("f5b06c9fd3f8", i) for i in (9, 10, 11)} | {               # N, P, K from "NPK"
+        ("e63c6fbba0e4", 52)}         # IPM Pseudomonas dip, split from a shared line: the name is before the quote
     for k in failed:
         assert facts[k]["status"] == "needs_review"
 

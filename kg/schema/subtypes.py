@@ -55,12 +55,15 @@ class PestThreshold(Recommendation):
 class ControlMeasure(Recommendation):
     subtype: Literal["ControlMeasure"]
     control_class: ControlClass
-    target_ids: list[ControlTargetId] = Field(min_length=1)  # TARGETS
+    target_ids: list[ControlTargetId] = []  # TARGETS
 
     @model_validator(mode="after")
     def _has_steps(self):
         if not self.steps:
             raise ValueError("a ControlMeasure needs at least one Step")
+        # v1.5 candidate (2026-10-22): targets are optional only for a general practice that names no pest
+        if not self.target_ids and "general_practice" not in self.extraction_flags:
+            raise ValueError("a ControlMeasure needs a target unless it is flagged general_practice")
         return self
 
 

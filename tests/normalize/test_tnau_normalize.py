@@ -25,9 +25,10 @@ def fact(result, unit, index):
 
 
 def test_every_fact_is_validated_or_held_with_reasons_and_none_is_approved(result):
-    # prompt v4 (2026-10-22): 124 = 103 validated + 21 held. Under v3 it was 123, after the step 8 rebuild removed
-    # e63c's WBPH Pymetrozine fact; v4 adds e63c#71, split off e63c#33 when the "avoid" advice became a Caution
-    assert (len(result["facts"]), len(result["held"])) == (103, 21)
+    # prompt v4 (2026-10-22): 124 facts. Under v3 it was 123, after the step 8 rebuild removed e63c's WBPH
+    # Pymetrozine fact; v4 adds e63c#71, split off e63c#33 when the "avoid" advice became a Caution.
+    # 103 validated / 21 held, then 113 / 11 with disease:tungro approved and general practices allowed
+    assert (len(result["facts"]), len(result["held"])) == (113, 11)
     assert all(h["reasons"] for h in result["held"])
     for x in result["facts"]:
         assert x["status"] in ("extracted", "needs_review")
@@ -48,7 +49,12 @@ def test_seed_npk_by_convention_and_section_purpose(result):
     assert fact(result, "f5b06c9fd3f8", 24)["purpose_origins"] == {"purpose:seed": ["text", "section"]}
 
 
-def test_missing_targets_and_operations_are_held(result):
+def test_general_practices_validate_and_operations_are_still_held(result):
+    general = {"%s#%d" % (x["unit_id"][-12:-8], x["raw_index"]) for x in result["facts"]
+               if "general_practice" in x["fact"]["extraction_flags"]}
+    assert general == {"b879#16", "b879#17", "e63c#0", "e63c#1", "e63c#2", "e63c#3", "e63c#7", "e63c#52", "e63c#60"}
+    assert all(x["status"] == "needs_review" for x in result["facts"]
+               if "general_practice" in x["fact"]["extraction_flags"])
     reasons = [r for h in result["held"] for r in h["reasons"]]
-    assert sum(any(r.startswith("no specific target printed") for r in h["reasons"]) for h in result["held"]) == 13
+    assert not any("target" in r and "printed" in r for r in reasons)
     assert any("has no operation" in r for r in reasons)

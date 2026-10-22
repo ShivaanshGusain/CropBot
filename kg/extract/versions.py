@@ -28,8 +28,10 @@ V2_FLAGS = frozenset({"line_order_pairing", "spans_table_rows", "split_from_shar
 V4_FIELDS = frozenset({"repeat_offsets", "duration_min", "duration_max", "duration_min_inclusive",
                        "duration_max_inclusive", "duration_unit", "duration_raw", "purpose_raw", "mix_conc_value",
                        "mix_conc_unit", "mix_conc_raw", "carrier_raw"})
+# general_practice is set by step 10 code only (2026-10-22); no prompt version may use it
+V3_FLAGS = frozenset(f.value for f in ExtractionFlag) - {"general_practice"}
 # v4: the program, not the model, applies the formulation table and sets operation_from_formulation
-V4_FLAGS = frozenset(f.value for f in ExtractionFlag) - {"operation_from_formulation"}
+V4_FLAGS = V3_FLAGS - {"operation_from_formulation"}
 
 VERSIONS = {
     "v1": Version("v1", "list", frozenset({"extraction_flags"}) | V3_FIELDS | V4_FIELDS,
@@ -37,7 +39,7 @@ VERSIONS = {
     "v2": Version("v2", "object", frozenset({"instruction_en"}) | V3_FIELDS | V4_FIELDS, frozenset(), True,
                   V2_FLAGS),
     "v3": Version("v3", "object", frozenset({"instruction_en", "seedlings_per_hill"}) | V4_FIELDS, frozenset(),
-                  True, frozenset(f.value for f in ExtractionFlag)),
+                  True, V3_FLAGS),
     "v4": Version("v4", "object", frozenset({"instruction_en", "seedlings_per_hill"}), frozenset(), True, V4_FLAGS),
 }
 # the default for prepare/report and the runs step 10 reads (v4 since its four hand-runs, 2026-10-22)

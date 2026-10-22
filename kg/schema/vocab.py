@@ -337,6 +337,7 @@ class ExtractionFlag(StrEnum):
     ANCHOR_FROM_CONTEXT = "anchor_from_context"    # the timing anchor is not printed in the quote
     SCOPE_FROM_HEADING = "scope_from_heading"      # v1.3: applicability taken from a sub-heading
     OPERATION_FROM_FORMULATION = "operation_from_formulation"   # v1.3: mixed "Dust/ spray" lists
+    GENERAL_PRACTICE = "general_practice"          # v1.5 candidate: a ControlMeasure naming no pest (set by code)
 
 
 # Schema v1.3: count and interval words code reads (never the model): "thrice at weekly interval"

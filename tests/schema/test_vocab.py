@@ -44,7 +44,8 @@ def test_v13_lists():
     assert values(RepeatUnit) == doc_list(r"`repeat_interval_unit` `([^`]+)`", r"\s*\|\s*")
     m = re.search(r"extraction_flags,\s*// list: ([^\n]+)\n\s*//\s+([^\n]+)\n\s*//\s+([^\n]+)", DOC)
     assert m
-    assert values(ExtractionFlag) == {v.strip() for v in ",".join(m.groups()).split(",") if v.strip()}
+    pending_v15 = {"general_practice"}          # decided 2026-10-22, in CLAUDE.md "Pending for schema v1.5"
+    assert values(ExtractionFlag) == {v.strip() for v in ",".join(m.groups()).split(",") if v.strip()} | pending_v15
 
 
 def test_statuses():

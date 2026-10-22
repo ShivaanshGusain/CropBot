@@ -11,7 +11,8 @@ Units and bases are converted in code (kg.normalize.units) and every conversion 
 Names link to concepts (kg.normalize.link); nothing is created. Nothing becomes approved here.
 Schema v1.4: durations, week offsets and word ratios are read by code from the fixed word table; the
 formulation table sets granules and dusts in a "spray" list (flag operation_from_formulation); an option
-list at stated times keeps repeat_offsets; endemic_area values link to a pest or disease.
+list at stated times keeps repeat_offsets; endemic_area values link to a pest or disease. A ControlMeasure
+with no target naming no pest anywhere around it is a general practice (flag general_practice, 2026-10-22).
 Output: data/normalized/<id>/{facts.jsonl, held.jsonl, report.json},
         data/review/proposed_concepts.csv (all gitignored).
 """
@@ -59,6 +60,7 @@ class Fact:
     def __init__(self, run, unit, raw):
         self.run, self.unit, self.raw, self.index = run, unit, raw["fact"], raw["index"]
         self.quote_check = raw["quote_check"]
+        self.subheading = raw.get("subheading") or ""
         self.blocks, self.review, self.links, self.conversions = [], [], [], []
         self.inherits_from = set()        # (unit id, raw index) of the facts its amounts came from
 
@@ -255,6 +257,25 @@ def apply_formulations(f: Fact, d: dict) -> None:
         f.review.append("extraction flags: operation_from_formulation (set by code)")
 
 
+def general_practice(f: Fact, linker, d: dict) -> None:
+    """A ControlMeasure with no printed target (decided 2026-10-22, pending schema v1.5). It is a general
+    practice, flagged general_practice by code and reviewed, when nothing around it names a pest: an IPM module
+    or a general pest-management list. In a table row, or where the section, the sub-heading or the quote names
+    a pest, disease, weed or disorder concept, it still needs its target and holds."""
+    if f.raw["table_ref"]:
+        f.blocks.append("no target printed in a table row (a pest-specific row needs its target)")
+        return
+    where = (("section", f.unit["section_path"]), ("sub-heading", f.subheading), ("quote", f.raw["quote"]))
+    named = ["%s names %s" % (k, ", ".join(sorted(ids))) for k, t in where
+             for ids in [linker.names_in(t, PEST_TARGETS)] if ids]
+    if named:
+        f.blocks.append("no target printed in a pest-specific place (%s)" % "; ".join(named))
+        return
+    d["extraction_flags"].append("general_practice")
+    f.review.append("general practice: no pest named in its section, sub-heading or quote "
+                    "(flag general_practice, set by code)")
+
+
 def instruction(step: dict, names: dict) -> str:
     """instruction_en, written by code from the step's fields (prompt v2 no longer asks for it)."""
     parts = [(step.get("operation") or "").replace("_", " ").capitalize() or "Do"]
@@ -432,7 +453,7 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
         if s["operation"] is None:
             f.blocks.append("step %d has no operation; method %r" % (s["order"], s["method"] or ""))
     if st == "ControlMeasure" and not r["targets"]:
-        f.blocks.append("no specific target printed (prompt v4 writes no generic target; a ControlMeasure needs one)")
+        general_practice(f, linker, d)
     d["conditions"] = [x for x in (convert_condition(f, c, linker) for c in r["conditions"]) if x]
     d["unmapped"] = r["unmapped"] + f.unmapped_extra
     f.names = names

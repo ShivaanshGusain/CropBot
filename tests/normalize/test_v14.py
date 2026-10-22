@@ -1,14 +1,15 @@
 """Schema v1.4 in step 10: durations, purpose, week offsets and word ratios read by code, the bait strength and
 carrier, the formulation table (and what it never overrides), repeat_offsets, the endemic_area condition and a
-ControlMeasure with no specific target."""
+ControlMeasure with no specific target (a general practice, or held)."""
 
 import pytest
+from pydantic import ValidationError
 
-from kg.normalize import build, instruction
+from kg.normalize import Fact, build, instruction
 from kg.normalize.link import Linker
 from kg.normalize.units import canon_duration_unit, formulation_code, period_offset, ratio_words
 from kg.schema.concepts import ActiveIngredient, Disease, Fertilizer, Label, Pest
-from tests.normalize.test_v13 import NODES, finish, raw
+from tests.normalize.test_v13 import NODES, QC, RAW, RUN, UNIT, finish, raw
 
 NODES14 = NODES + [
     ActiveIngredient(id="ai:carbofuran", name_en="Carbofuran", review_status="needs_review"),
@@ -122,8 +123,43 @@ def test_endemic_area_links_to_a_concept_or_holds():
     assert any("endemic_area value 'tungro'" in b for b in unseeded.blocks)
 
 
-def test_a_control_measure_without_a_specific_target_is_held():
-    f = raw(subtype="ControlMeasure", control_class="cultural", targets=[],
-            steps=[{"order": 1, "operation": "bund_management", "method": "Trim field bunds"}])
-    build(f, L14, "crop:rice", {})
-    assert f.blocks == ["no specific target printed (prompt v4 writes no generic target; a ControlMeasure needs one)"]
+def no_target(quote="Trim field bunds", section="RICE > CROP PROTECTION > A) Pest management > ii) Main field",
+              subheading=None, **kw):
+    """A ControlMeasure with no printed target, in a unit with this section path and sub-heading."""
+    fact = RAW.validate_python({"summary_en": "s", "quote": quote, "subtype": "ControlMeasure",
+                                "control_class": "cultural", "targets": [],
+                                "steps": [{"order": 1, "operation": "bund_management", "method": "Trim field bunds"}],
+                                **kw}).model_dump(mode="json")
+    return Fact(RUN, {**UNIT, "section_path": section}, {"index": 0, "fact": fact, "quote_check": QC,
+                                                         "subheading": subheading})
+
+
+def test_a_general_practice_needs_no_target_and_is_flagged_for_review():
+    """2026-10-22 (pending schema v1.5): no pest named in the section, sub-heading or quote (the general
+    pest-management list, an IPM module)."""
+    for f in (no_target(), no_target(quote="Rogueing space", subheading="IPM module")):
+        d = build(f, L14, "crop:rice", {})
+        assert not f.blocks and d["target_ids"] == [] and d["extraction_flags"] == ["general_practice"]
+        assert any(r.startswith("general practice: no pest named") for r in f.review)
+        assert finish(f, d)["status"] == "needs_review"
+
+
+@pytest.mark.parametrize("kw, reason", [
+    ({"table_ref": "#/tables/57", "table_row": 3}, "no target printed in a table row"),
+    ({"subheading": "BPH management"}, "sub-heading names pest:brown_planthopper"),
+    ({"section": "RICE > CROP PROTECTION > Brown planthoppers"}, "section names pest:brown_planthopper"),
+    ({"quote": "Trim field bunds against tungro"}, "quote names disease:tungro"),
+])
+def test_a_target_less_control_measure_in_a_pest_specific_place_still_holds(kw, reason):
+    f = no_target(**kw)
+    d = build(f, L14, "crop:rice", {})
+    assert len(f.blocks) == 1 and reason in f.blocks[0] and "general_practice" not in d["extraction_flags"]
+
+
+def test_the_schema_allows_no_target_only_for_a_general_practice():
+    f = no_target()
+    d = build(f, L14, "crop:rice", {})
+    finish(f, d)
+    d["extraction_flags"] = []
+    with pytest.raises(ValidationError, match="needs a target unless it is flagged general_practice"):
+        finish(f, d)

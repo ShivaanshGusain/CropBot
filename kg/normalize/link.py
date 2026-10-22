@@ -81,6 +81,14 @@ class Linker:
         statuses = {self.status.get(concept_id), label_status} - {None}
         return "needs_review" if "needs_review" in statuses else "approved"
 
+    def names_in(self, text: str, prefixes: tuple[str, ...]) -> set[str]:
+        """Concepts of `prefixes` whose name, id or label is printed in `text` as whole words (a plural
+        counts): "Stem borer management" -> {"pest:stem_borer"}. Used to tell a general practice from a
+        pest-specific one; it never links a fact."""
+        padded = " %s " % " ".join(normalise(w) for w in re.sub(r"[^0-9a-z]+", " ", text.casefold()).split())
+        return {c for key, hits in self.norm.items() if key and " %s " % key in padded
+                for c, _ in hits if c.split(":", 1)[0] in prefixes}
+
     def link_many(self, name: str, prefixes: tuple[str, ...]) -> list[Link]:
         """For applicability lists (soils, systems, seasons), where several edges are alternatives:
         a phrase that is an exact label of several concepts ("saline / sodic soils" -> saline and

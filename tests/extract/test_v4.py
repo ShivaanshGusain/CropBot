@@ -65,3 +65,6 @@ def test_versions_keep_their_fields_and_flags():
     v3 = version_problems(fact, "v3")
     assert any("duration_raw" in p for p in v3) and any("carrier_raw" in p for p in v3)
     assert any("not a flag of prompt v4" in p for p in version_problems(fact, "v4"))
+    general = {"subtype": "ControlMeasure", "extraction_flags": ["general_practice"]}     # step 10 code sets it
+    assert all(any("'general_practice' is not a flag" in p for p in version_problems(general, v))
+               for v in ("v2", "v3", "v4"))
