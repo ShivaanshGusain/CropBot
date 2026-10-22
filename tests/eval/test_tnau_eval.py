@@ -35,10 +35,12 @@ def test_adjudications_count_and_nothing_else_is_decided(res):
     m = metrics(res)["sections"]
     assert m["all"]["found"] == 90
     # 2026-10-21: all 127 disagreements adjudicated (prompt v3: agree 74-84, precision 109/110, 92-102).
-    # 2026-10-22, prompt v4: 125 disagreements, B3 (subtype) and C3 (granularity) not adjudicated yet
-    assert (m["all"]["recall_agree"]["lower"]["k"], m["all"]["recall_agree"]["upper"]["k"]) == (73, 85)
+    # 2026-10-22, prompt v4: 125 disagreements (agree 73-85, precision 92-105 before B3 and C3 were adjudicated
+    # "both"); pipeline recall 84/90 once the general practices validate
+    assert (m["all"]["recall_agree"]["lower"]["k"], m["all"]["recall_agree"]["upper"]["k"]) == (75, 85)
+    assert m["all"]["recall_pipeline_strict"]["k"] == 84
     assert m["all"]["precision_found"]["k"] == 110 and m["all"]["precision_found"]["n"] == 110
-    assert (m["all"]["precision_agree_lower"]["k"], m["all"]["precision_agree_upper"]["k"]) == (92, 105)
+    assert (m["all"]["precision_agree_lower"]["k"], m["all"]["precision_agree_upper"]["k"]) == (95, 105)
     if ADJUDICATIONS.exists():                   # 2026-10-21: the BPH resurgence list is in the book (p. 69)
         assert m["B"]["extras_confirmed"] == 16
         verdicts = sorted(e["verdict"] for e in res["judged_extras"].values())
