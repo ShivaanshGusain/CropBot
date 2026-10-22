@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project rules
 
-- docs/schema_v1.4.md is the source of truth (committed 2026-10-22; the build is in progress, see "Schema v1.4 build")
+- docs/schema_v1.4.md is the source of truth (committed and built 2026-10-22, see "Schema v1.4 build"; decisions beyond it are in "Pending for schema v1.5")
   - Schema changes go in a new versioned file in this repo (`docs/schema_v1.5.md`, ...) and are committed.
   - The Claude Doc is a superseded draft and is never exported again. `docs/schema_v1.1.md`, `docs/schema_v1.2.md` and `docs/schema_v1.3.md` are kept for history.
 - use uv add for dependencies
@@ -969,6 +969,26 @@ Commits c9bbb42 (models, vocab), 9579f15 (prompt v4), f94f93b (list-level fact_k
   - **Stale adjudications** (in `adjudications.csv`, meeting nothing now): A30, B35, B36, B37 and the extra 8e1d#1/m2.
   - Threshold: none; population (b) 9/9 correct (Wilson lower 70 %). Controls: 3/60 unit swaps at ≥ 0.5.
   - The stale list and the data tests' v4 numbers are in c791765.
+
+### Decisions after the build (2026-10-22)
+
+- **`disease:tungro` approved** (needs_review, as drafted): moved from `concepts/proposed/` into `concepts/diseases.csv` and `labels.csv`; `concepts/proposed/` is empty again. e63c#17's `endemic_area` condition now links, so it validates; its tungro scope is a clause condition, so check 10 no longer flags it.
+- **ControlMeasures without a target** (v1.5 item 1 below): `kg.normalize.general_practice`. A ControlMeasure with no printed target validates only when no pest, disease, weed or disorder concept is named in its section path, sub-heading or quote (`Linker.names_in`, whole words, plurals count) and it is not in a table row. It gets the code-set flag `general_practice` (no prompt version may use it) and is needs_review. Otherwise it holds: "no target printed in a table row …" or "no target printed in a pest-specific place (… names …)".
+  - TNAU: 9 validate as general practices: b879#16, #17 (nursery pre-emergence herbicides under the sub-heading "Weed Management", "to control weeds": no weed concept is named; approved as general practices 2026-10-22), e63c#0, #1, #2, #3, #7 (general pest-management list, p. 63), e63c#52, #60 (IPM module, p. 68). e63c#6, #53, #55 and #59 are general too but still held for a step with no operation.
+- **B3 and C3 adjudicated "both"**: all 125 disagreements are adjudicated.
+- **Results:**
+  - step 10: 124 in, **113 validated, 11 held** (was 103 / 21). Still held: 8 for a step with no operation (8e1d#1, e63c#6, #20, #42, #48, #53, #55, #59), KKM (e63c#42), the GLH caution pest (e63c#68), "direct sowing" (f5b0#2), ADT 46 (f5b0#21);
+  - step 11: 13 extracted, 100 needs_review. printed_text also fails e63c#52 (IPM Pseudomonas dip, split from a shared line whose product name is before the quote);
+  - step 12: 19 new claims in 2 requests, all answered;
+  - seed load: `disease:tungro` and its label (2 nodes, 1 relationship);
+  - step 13, main database (no reset): load 1 created 39 nodes and 67 relationships; load 2 created none, snapshot identical (`c28bd3b9…`, 745 nodes, 1106 relationships). 113 facts: 12 extracted, 101 needs_review (C2#24 through the review conflict); none missing; no U+FFFD. The 10 query fixtures and the live review test pass (its snapshot `e840f7c1…`, 745 nodes, 1106 relationships);
+  - step 15: recall agreeing **75–85**/90 (83 % [74–90] .. 94 % [88–98]), pipeline recall **84**/90 (93 % [86–97]), precision found 110/110, precision agreeing **95–105**/110 (86 % [79–92] .. 95 % [90–98]). Threshold: none. Stale adjudications unchanged (A30, B35, B36, B37, extra 8e1d#1/m2).
+- **AI pre-check notes re-mapped by quote** (`data/review/precheck_mapping.csv`, not committed): all 100 notes map one-to-one to current facts (quote + PDF page, then subtype, scope and values; the two IPM Trichogramma releases, whose v1.4 methods are both the verbatim "Release of biocontrol agents", by target). 61 unchanged, 39 whose fact changed; 13 current facts have no note.
+- **Review sheet gap:** the sheet shows no pest or target column. A step without a quantity gets the claim "the advice includes …", which names no pest, so e63c#57 (stem borer) and e63c#58 (leaffolder) read identically.
+
+## Pending for schema v1.5
+
+1. **`ControlMeasure.targets` is optional for general practices** (decided 2026-10-22, built): no target only with the code-set flag `general_practice`, when nothing around the fact names a pest; inside a pest-specific row or section the target stays required. The v1.4 doc says `TARGETS` 1..n.
 
 ### Items (recorded 2026-10-20 to 2026-10-22, now in v1.4)
 
