@@ -238,6 +238,14 @@ data/gold/           hand-annotated sections (committed)
   - 2 approved default-scope rules, both section-scoped: per ha unless stated, p. 63; nursery area 800 m² per ha, p. 62.
   - 11 proposed region section scopes, in integrated farming systems, agrometeorology and sorghum.
   - 1 approved purpose section scope: "RICE - VARIETAL SEED PRODUCTION" (PDF pp. 73-75), `purposes = ["purpose:seed"]`. It quotes the heading on the rendered p. 73, so its units carry `purpose:seed` with origin `section`.
+- **DFPD uniform specification, KMS 2026-27** (`registry/dfpd_uniform_spec_kms_2026_27.toml`, added 2026-10-22):
+  - downloaded from the Odisha Food, Supplies & Consumer Welfare Department's site (the url), sha256 `19e85992…`, 14 pages, 4,173,951 bytes; `data/raw/*.pdf` is gitignored, so the PDF is never committed;
+  - national: no `state_id`, `region_scope = ["country:in"]`, `authority_tier = 3` until the regulatory tier (v1.5 item A);
+  - a state forward: Odisha letter No. 14453 dated 21/08/2026 (PDF pp. 1-3) forwarding DFPD letter F. No.8-1/2022-S&I (E-381310) dated 17.08.2026 (pp. 4-5) and its enclosures (pp. 6-14). Recorded in `notes`;
+  - scanned, with an unreliable scanner OCR layer, so `ocr = "force"`;
+  - one chapter per enclosure by its printed heading, all proposed: paddy p. 6, rice p. 7 (notes p. 8), TPDS issue standards p. 9, jowar p. 10, bajra p. 11, maize p. 12, ragi p. 13, minor millets p. 14, plus the two letters. Only p. 5 prints a page number, so `Chapter.printed_page` is optional (None = the page prints none) and still checked when given.
+  - **Conversion (2026-10-22, CPU, 266 s): not usable for extraction yet.** 9 tables, 16 units in 10 chapters. In the paddy table the six limits are right, but the "Foreign matter" label is lost, the "Damaged, discoloured, sprouted and weevilled grains" label is garbled, the S.No column is empty, the footnote "* Damaged, sprouted and weevilled grains should not exceed 4%." is missing and the paragraph and N.B. text are cut. Maize has no values; rice rows 2-6 are garbage; the rice value-cut footnote loses its middle; '%' is often read as '9/o', 'c70', '96'. Side-by-side review: `data/review/dfpd_tables_review.html` (not committed). The minor-millets chapter heading was not found.
+- **Pick an entry by id, never by position:** `kg.registry.read_entry(source_id)`. `read_registry()` is sorted by file name, so `dfpd_…` comes before `tnau_…`.
 - **A `section_scope` has `regions`, `purposes` (`purpose:<id>`) or both.** A purposes-only scope leaves the unit's regions alone. Units carry `purposes` with origin `section`, and the model never sets a section-level purpose.
 
 ## Conversion (`kg/convert`)
@@ -992,6 +1000,18 @@ Commits c9bbb42 (models, vocab), 9579f15 (prompt v4), f94f93b (list-level fact_k
 ## Pending for schema v1.5
 
 1. **`ControlMeasure.targets` is optional for general practices** (decided 2026-10-22, built): no target only with the code-set flag `general_practice`, when nothing around the fact names a pest; inside a pest-specific row or section the target stays required. The v1.4 doc says `TARGETS` 1..n.
+
+Decided 2026-10-22 for QualitySpec, from the DFPD uniform specification KMS 2026-27 (`source:dfpd_uniform_spec_kms_2026_27`). **Not built yet**; paddy first, rice and coarse grains after approval:
+
+2. **(A) A "regulatory" authority tier** that outranks books for QualitySpec. The source is tier 3 ("other") until then.
+3. **(B) QualitySpec `grade`** (`grade_a | common`) **and `commodity_form`** (`paddy | raw_rice | parboiled_rice`).
+4. **(C) `limit_type`** (`max | min`) **and an inclusive flag.**
+5. **(D) A fixed `parameter` list**, with the printed name kept in raw.
+6. **(E) Value-cut rules** (e.g. rice moisture, PDF p. 7: no value cut up to 14 %, procurement up to 15 % with a value cut between 14 % and 15 %) stay in `unmapped` and the fact is held for now; their design comes after the table is seen.
+7. **(F) Seasons are linked by `supersedes`**, and queries use the latest season. The DFPD letter (PDF p. 4) says the specifications continue to apply unless otherwise communicated.
+8. **(G) A `quality_check` template (Q19)**, and `drying_target` shows the procurement moisture limit when the purpose is selling grain.
+9. **(H) QualitySpec value ranges (check 3), code-built claims (step 12) and a review-sheet order** (today `ORDER` has no QualitySpec, so a sheet with one stops).
+10. **(I) A full hand-check of every fact against the rendered page**, instead of a gold set, for this source.
 
 ### Items (recorded 2026-10-20 to 2026-10-22, now in v1.4)
 
