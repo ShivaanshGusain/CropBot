@@ -136,15 +136,20 @@ def conflict_key(fact: dict) -> str:
 
 
 def value_key(fact: dict) -> str:
-    """The values a conflict compares: subtype values, amounts, offsets, clause and condition values."""
+    """The values a conflict compares: subtype values, amounts, offsets, clause and condition values. Each
+    option of an alternative group adds its operation, method, anchor, targets with formulation and amounts
+    (schema v1.4), sorted and without its option number, so renumbering alone changes nothing."""
     fields = {k: v for k, v in fact.items() if k not in CORE_VALUE_SKIP}
-    steps = sorted([s["order"], s.get("alt_group"), s.get("alt_option"), s.get("offset_min"), s.get("offset_max"),
+    steps = sorted([s["order"], s.get("alt_group"), s.get("operation"), s.get("method"), s.get("anchor"),
+                    s.get("offset_min"), s.get("offset_max"),
                     s.get("offset_unit"), s.get("month_start"), s.get("month_end"),
                     s.get("repeat_count"), s.get("repeat_interval"), s.get("repeat_interval_unit"),
+                    s.get("repeat_offsets") or [], s.get("duration_min"), s.get("duration_max"), s.get("duration_unit"),
                     sorted([a["target_id"], a.get("formulation"), a.get("value"), a.get("min"), a.get("max"),
                             a.get("unit"), a.get("basis"), a.get("area_cents"),
                             a.get("conc_value"), a.get("conc_min"), a.get("conc_max"), a.get("conc_unit"),
-                            a.get("ratio_part"), a.get("ratio_whole"), a.get("share_pct")] for a in s["applies"]),
+                            a.get("ratio_part"), a.get("ratio_whole"), a.get("share_pct"),
+                            a.get("mix_conc_value"), a.get("mix_conc_unit")] for a in s["applies"]),
                     sorted([c["variable"], c["op"], c["value"], c.get("value_max")] for c in s.get("conditions") or [])]
                    for s in fact["steps"])
     clauses = sorted([c["observation"], c["value"], c["unit"], c.get("sampling_unit"), c.get("sampling_count"),

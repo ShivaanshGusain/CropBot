@@ -362,8 +362,17 @@ def _conditions(d: dict) -> list:
 def fact_key_parts(f: Fact, d: dict) -> dict:
     """source + section path + subtype + applicability + identity + step slots; values excluded.
     Identity includes the fact's conditions (variable, op, raw) and a DryingSpec's storage term.
-    A step slot is order, alternative, operation, method, anchor and targets (method and anchor:
-    schema v1.3). The quote's location (first segment ref) separates facts the rest cannot tell apart."""
+    A step outside an alternative group is the slot [order, operation, method, anchor, targets]; an
+    alternative group is one slot [order, alt_group, "options"], so adding, removing or renumbering an
+    option changes the id and value_key, never the fact_key (schema v1.4). The quote's location (first
+    segment ref) separates facts the rest cannot tell apart."""
+    slots = []
+    for s in d["steps"]:
+        if s["alt_group"] is None:
+            slots.append([s["order"], s["operation"], s.get("method"), s.get("anchor"),
+                          sorted(a["target_id"] or "" for a in s["applies"])])
+        elif [s["order"], s["alt_group"], "options"] not in slots:
+            slots.append([s["order"], s["alt_group"], "options"])
     return {"source": f.unit["source_id"], "section": f.unit["section_path"], "subtype": d["subtype"],
             "applicability": {k: sorted(d.get(k) or []) for k in ("crop_ids", "variety_ids", "season_ids", "system_ids",
                                                                    "soil_ids", "purpose_ids", "stage_ids")}
@@ -371,8 +380,7 @@ def fact_key_parts(f: Fact, d: dict) -> dict:
             "identity": {k: d.get(k) for k in ("pest_ids", "target_ids", "recommends", "kind", "concerns",
                                                "control_class", "dose_basis", "storage_term_raw", "about_ids")}
                         | {"conditions": _conditions(d)},
-            "steps": [[s["order"], s["alt_group"], s["alt_option"], s["operation"], s.get("method"), s.get("anchor"),
-                       sorted(a["target_id"] or "" for a in s["applies"])] for s in d["steps"]],
+            "steps": slots,
             "passage": (f.quote_check["refs"] or [None])[0]}
 
 
