@@ -855,10 +855,13 @@ Approved 2026-10-21. Only a person approves or rejects a fact, through the workb
   - **Guide:** "How to review" holds the approved guide text, including the two lines on unmapped conditions and on pesticide rows.
   - **Meta:** a hidden `meta` sheet names the source.
   - **AI pre-check (`--precheck <csv>`, 2026-10-22):** two locked columns, "AI pre-check" (OK / CHECK / FIX) and "AI note", just before the reviewer columns. FIX is red (`F8696B`), CHECK yellow (`FFEB84`), OK unfilled.
-    - Notes are matched by fact_id. The sheet is refused if a note names no row, a row has no note, a fact_id repeats or a result isn't allowed; a differing review_no is only reported.
+    - Notes are matched by fact_id. The sheet is refused if a note names no row, a fact_id repeats, a result isn't OK / CHECK / FIX or blank, or a note has neither a result nor a text; a differing review_no is only reported.
+    - Since 2026-10-22 a row without a note keeps blank cells, and a note may have a blank result (an earlier note that no longer applies; no fill). The output counts both.
     - The guide has a line saying the column is a hint, not a decision.
     - The import never reads these columns, and a workbook without them still imports.
-    - **TNAU:** `data/review/ai_precheck_notes.csv` (external AI pre-check, not committed): 64 OK, 29 CHECK, 7 FIX. No fact or status was changed from it.
+    - **TNAU:** `data/review/ai_precheck_notes.csv` (external AI pre-check of the v1.3 facts, not committed): 64 OK, 29 CHECK, 7 FIX. No fact or status was changed from it.
+    - **v1.4 notes** `data/review/ai_precheck_notes_v14.csv` (not committed), from the mapping and the user's decisions of 2026-10-22: the 13 notes whose concern v1.4 fixed have a blank result and "Earlier AI note no longer applies (fixed in v1.4); not re-checked."; #9 and #40 are CHECK, "Purpose is now in the values but not in the instruction."; the other 85 keep their result and note. Result: 64 OK, 19 CHECK, 4 FIX, 13 blank with a note, 13 facts without a note.
+  - **Scope column** (2026-10-22): starts with the fact's pests, targets and ABOUT pest; a ControlMeasure without a target shows "target: none (general practice)".
 - **`row_hash`** (`kg.load.facts.row_hash`): fact id + quotes + `value_key` + applicability (regions, exclusions, duration group). The status is not part of it.
 - **Import** (`kg.review.importer`; `--check` writes nothing).
   - **A row is refused, with its reason, when:**
@@ -887,7 +890,7 @@ Approved 2026-10-21. Only a person approves or rejects a fact, through the workb
   - Import, then a re-import (no-op), then two loads: nothing created, snapshot `16a61bad…` unchanged (704 nodes, 1038 relationships; v4 data, 2026-10-22).
   - Emptied and reloaded, the database gets the 4 decisions back; a second load changes nothing.
   - The approved grain-drying fact is served without the unverified label.
-- **TNAU workbook:** `data/review/expert_review_tnau.xlsx`, from the main database (2026-10-21). The committed decisions file holds only its header row; no decision has been imported.
+- **TNAU workbook:** `data/review/expert_review_tnau.xlsx`, regenerated from the main database on 2026-10-22 after the v1.4 reload: 113 rows, 4 orange Unmapped cells, the v1.4 notes. `import --check` on it: 113 not reviewed, 0 refused. The committed decisions file holds only its header row; no decision has been imported.
 
 ## Scope rules for extraction and normalisation
 
@@ -984,7 +987,7 @@ Commits c9bbb42 (models, vocab), 9579f15 (prompt v4), f94f93b (list-level fact_k
   - step 13, main database (no reset): load 1 created 39 nodes and 67 relationships; load 2 created none, snapshot identical (`c28bd3b9…`, 745 nodes, 1106 relationships). 113 facts: 12 extracted, 101 needs_review (C2#24 through the review conflict); none missing; no U+FFFD. The 10 query fixtures and the live review test pass (its snapshot `e840f7c1…`, 745 nodes, 1106 relationships);
   - step 15: recall agreeing **75–85**/90 (83 % [74–90] .. 94 % [88–98]), pipeline recall **84**/90 (93 % [86–97]), precision found 110/110, precision agreeing **95–105**/110 (86 % [79–92] .. 95 % [90–98]). Threshold: none. Stale adjudications unchanged (A30, B35, B36, B37, extra 8e1d#1/m2).
 - **AI pre-check notes re-mapped by quote** (`data/review/precheck_mapping.csv`, not committed): all 100 notes map one-to-one to current facts (quote + PDF page, then subtype, scope and values; the two IPM Trichogramma releases, whose v1.4 methods are both the verbatim "Release of biocontrol agents", by target). 61 unchanged, 39 whose fact changed; 13 current facts have no note.
-- **Review sheet gap:** the sheet shows no pest or target column. A step without a quantity gets the claim "the advice includes …", which names no pest, so e63c#57 (stem borer) and e63c#58 (leaffolder) read identically.
+- **Review sheet gap (fixed the same day):** the sheet showed no pest or target. A step without a quantity gets the claim "the advice includes …", which names no pest, so e63c#57 (stem borer) and e63c#58 (leaffolder) read identically. The Scope column now names them. The Jev claim still names no pest for such a step.
 
 ## Pending for schema v1.5
 
