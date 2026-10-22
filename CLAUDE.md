@@ -245,6 +245,8 @@ data/gold/           hand-annotated sections (committed)
   - scanned, with an unreliable scanner OCR layer, so `ocr = "force"`;
   - one chapter per enclosure by its printed heading, all proposed: paddy p. 6, rice p. 7 (notes p. 8), TPDS issue standards p. 9, jowar p. 10, bajra p. 11, maize p. 12, ragi p. 13, minor millets p. 14, plus the two letters. Only p. 5 prints a page number, so `Chapter.printed_page` is optional (None = the page prints none) and still checked when given.
   - **Conversion (2026-10-22, CPU, 266 s): not usable for extraction yet.** 9 tables, 16 units in 10 chapters. In the paddy table the six limits are right, but the "Foreign matter" label is lost, the "Damaged, discoloured, sprouted and weevilled grains" label is garbled, the S.No column is empty, the footnote "* Damaged, sprouted and weevilled grains should not exceed 4%." is missing and the paragraph and N.B. text are cut. Maize has no values; rice rows 2-6 are garbage; the rice value-cut footnote loses its middle; '%' is often read as '9/o', 'c70', '96'. Side-by-side review: `data/review/dfpd_tables_review.html` (not committed). The minor-millets chapter heading was not found.
+  - **The paddy schedule comes from a verified transcription, not OCR** (decided 2026-10-22): `transcriptions/dfpd_uniform_spec_kms_2026_27/p006.md`, transcribed from the 300 dpi render, `status = "proposed"` until the user checks it. The OCR conversion in `data/docling/dfpd_uniform_spec_kms_2026_27/` is kept as it is.
+  - **OCR trials (higher dpi, other engines) are deferred** to the scanned and Hindi books on the GX10.
 - **Pick an entry by id, never by position:** `kg.registry.read_entry(source_id)`. `read_registry()` is sorted by file name, so `dfpd_…` comes before `tnau_…`.
 - **A `section_scope` has `regions`, `purposes` (`purpose:<id>`) or both.** A purposes-only scope leaves the unit's regions alone. Units carry `purposes` with origin `section`, and the model never sets a section-level purpose.
 
@@ -317,6 +319,31 @@ No LLM. Input: the full `document.json`, with running-header headings dropped.
 - every caps decision;
 - items before a chapter heading, and chapters whose heading wasn't found;
 - the scope checks.
+
+## Transcriptions (`kg/transcribe`)
+
+A hand-checked copy of one scanned page whose OCR can't be trusted (2026-10-22, pending schema v1.5 items 11-13).
+```bash
+uv run python -m kg.transcribe check source:dfpd_uniform_spec_kms_2026_27   # which transcriptions are used
+uv run python -m kg.transcribe rehash <file>    # store the body hash; resets status to proposed
+```
+- **File:** `transcriptions/<source slug>/p<NNN>.md`, committed. A TOML header between `+++` lines: `source_id`, `pdf_page`, `pdf_sha256`, `rendered_dpi`, `transcribed_by`, `transcribed_at`, `status`, `checked_by`, `checked_at`, `body_sha256`, `notes`.
+- **Body, exactly as printed:**
+  - `# ` is a heading and `### ` an inline sub-heading (it stays in its section, like "N. B.");
+  - a block of `|` lines is one table: header line, `|---|` rule, then rows with equal cell counts;
+  - every other block is one text item. Blank lines separate blocks, and printed line breaks inside a block are joined with one space;
+  - anything unreadable is `[illegible]`, never guessed.
+- **The gate:** only `status = "approved"` with `checked_by`, a valid past-or-today `checked_at` and `body_sha256` equal to the body is used. Only the user approves.
+  - Editing the body breaks the hash: `rehash` stores the new one and sets the file back to proposed.
+  - A broken file, or an approved one failing a check (hash, PDF sha256, source id, file name), stops segmentation and tables; nothing is written.
+  - A proposed or rejected one is listed in the segmentation report and changes nothing.
+- **Downstream:**
+  - **Segmentation:** an approved page's converter items are all dropped and replaced, in place, by the transcription's items (refs `tr:p006#/texts/<n>`, `tr:p006#/tables/<n>`, each with `transcription` = the file). The report lists `transcribed_pages` and `transcriptions_not_used`.
+  - **Tables (step 8):** a transcription table is a ready-made part (header row first). The ruling rebuild and page check don't apply; review gets one "transcription" row.
+  - **Extraction (step 9):** the unit renders as usual, so quotes and coverage are checked against the transcription text.
+  - **Step 10:** `evidence()` sets `extraction_method = "manual_transcription"`, `transcription` and `transcription_sha256` when the quote was found in transcription items.
+  - **Step 11:** the location check reads `tr:` table rows.
+- **Tests:** `tests/transcribe/test_transcribe.py`. Approval is always simulated on a copy in a temporary folder.
 
 ## Tables (`kg/tables`)
 
@@ -1012,6 +1039,13 @@ Decided 2026-10-22 for QualitySpec, from the DFPD uniform specification KMS 2026
 8. **(G) A `quality_check` template (Q19)**, and `drying_target` shows the procurement moisture limit when the purpose is selling grain.
 9. **(H) QualitySpec value ranges (check 3), code-built claims (step 12) and a review-sheet order** (today `ORDER` has no QualitySpec, so a sheet with one stops).
 10. **(I) A full hand-check of every fact against the rendered page**, instead of a gold set, for this source.
+
+Verified page transcriptions (decided 2026-10-22; the code is built, see "Transcriptions (`kg/transcribe`)"):
+
+11. **`SourceSpan.extraction_method = "manual_transcription"`**, with `SourceSpan.transcription` (the file) and `transcription_sha256` (its approved body hash). Such a span names both; no other span does.
+12. **Transcription status:** proposed | approved | rejected. Only an approved one, checked by a person (`checked_by`, `checked_at`) and with an unchanged body, replaces the converter's text for its page.
+13. **`table_ref` may be `tr:p<NNN>#/tables/<n>`**, a table of a page transcription. The v1.4 pattern is `#/tables/<n>` only. A `tr:` ref needs `manual_transcription`.
+14. **QualitySpec grade from the heading:** a paddy limit applies to both grades (`grade_a` and `common`), because the schedule's heading says "UNIFORM SPECIFICATION OF ALL VARIETIES OF PADDY". The heading is recorded as the evidence for the grade (decided 2026-10-22, with B).
 
 ### Items (recorded 2026-10-20 to 2026-10-22, now in v1.4)
 
