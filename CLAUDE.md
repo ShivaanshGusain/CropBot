@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project rules
 
-- docs/schema_v1.4.md is the source of truth (committed and built 2026-10-22, see "Schema v1.4 build"; decisions beyond it are in "Pending for schema v1.5")
-  - Schema changes go in a new versioned file in this repo (`docs/schema_v1.5.md`, ...) and are committed.
-  - The Claude Doc is a superseded draft and is never exported again. `docs/schema_v1.1.md`, `docs/schema_v1.2.md` and `docs/schema_v1.3.md` are kept for history.
+- docs/schema_v1.5.md is the source of truth (committed 2026-10-23; the build is in progress, see "Schema v1.5 build")
+  - Schema changes go in a new versioned file in this repo (`docs/schema_v1.6.md`, ...) and are committed.
+  - The Claude Doc is a superseded draft and is never exported again. `docs/schema_v1.1.md` to `docs/schema_v1.4.md` are kept for history.
 - use uv add for dependencies
 - always MERGE on id; nothing is auto-corrected
 - every number keeps its raw text; the LLM never converts units
@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-CropBot is a farm-advice bot. This branch builds its Neo4j knowledge graph: every agronomic fact becomes a `Recommendation` node with applicability edges, ordered Steps, runtime Conditions and a `SourceSpan` quote (see `docs/schema_v1.4.md`). The stages are defined in the schema's "Build pipeline" section: register → convert → segment → tables → extract → normalise → validate → verify (Jev) → load. Product context (post-harvest focus, pilot plans) is in `CropBot_Research_Brief.md`.
+CropBot is a farm-advice bot. This branch builds its Neo4j knowledge graph: every agronomic fact becomes a `Recommendation` node with applicability edges, ordered Steps, runtime Conditions and a `SourceSpan` quote (see `docs/schema_v1.5.md`). The stages are defined in the schema's "Build pipeline" section: register → convert → segment → tables → extract → normalise → validate → verify (Jev) → load. Product context (post-harvest focus, pilot plans) is in `CropBot_Research_Brief.md`.
 
 ## Environments and commands
 
@@ -1024,7 +1024,20 @@ Commits c9bbb42 (models, vocab), 9579f15 (prompt v4), f94f93b (list-level fact_k
 - **AI pre-check notes re-mapped by quote** (`data/review/precheck_mapping.csv`, not committed): all 100 notes map one-to-one to current facts (quote + PDF page, then subtype, scope and values; the two IPM Trichogramma releases, whose v1.4 methods are both the verbatim "Release of biocontrol agents", by target). 61 unchanged, 39 whose fact changed; 13 current facts have no note.
 - **Review sheet gap (fixed the same day):** the sheet showed no pest or target. A step without a quantity gets the claim "the advice includes …", which names no pest, so e63c#57 (stem borer) and e63c#58 (leaffolder) read identically. The Scope column now names them. The Jev claim still names no pest for such a step.
 
-## Pending for schema v1.5
+## Schema v1.5 build
+
+`docs/schema_v1.5.md` (committed 2026-10-23) covers items 1-14 below. Decisions taken with it: `limit_type = absent` for the "free from …" substances; the L:B grade rule is a `length_breadth_ratio` limit; N.B. 1-2 (BIS method and sampling standards) are not extracted; DFPD is authority tier 0; DFPD chapter 1 (paddy, `crop:rice`) is approved; the grades section scope is drafted as proposed for the user to approve.
+
+Open notes on the doc (2026-10-23, not blocking):
+- `SourceSpan.transcription` is one field ("the file path and its sha256") in the doc; the code stores `transcription` and `transcription_sha256`;
+- the sentence "A section that matches no section, or more than one, fails loudly." moved to the end of the Seasons paragraph;
+- the registry table names neither `section_scope.grades` (the paddy grades from the chapter heading) nor where `marketing_season` and `season_label` come from (built as optional registry fields);
+- the absent-substance parameters are open-ended in the doc; the vocab lists the six printed on PDF p. 6;
+- `quality_check`'s farm-context inputs are not defined; "purpose selling grain" is `purpose:grain`;
+- `length_breadth_ratio` has no unit (null); an `absent` limit has no `limit_value`;
+- the per-source prompt version (`[extraction] prompt_version`; TNAU pins v4) is a pipeline setting the doc doesn't mention.
+
+### Items (decided 2026-10-22, now in v1.5)
 
 1. **`ControlMeasure.targets` is optional for general practices** (decided 2026-10-22, built): no target only with the code-set flag `general_practice`, when nothing around the fact names a pest; inside a pest-specific row or section the target stays required. The v1.4 doc says `TARGETS` 1..n.
 
