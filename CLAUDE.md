@@ -1052,8 +1052,14 @@ Commits 081b1cf (models, vocab, registry model), 8878faa (DFPD registry), a701df
 - **Review sheet:** QualitySpec after HarvestRule; Values shows the limit as stored and as printed; Scope shows commodity, grades with their origin and the season.
 - **DFPD paddy, prompt v5 hand-runs** (2026-10-24, model claude-opus-5-5): 18 facts, no parse, quote or coverage failure. Intro unit: six absent substances and the two L:B grade rules. Schedule unit: the six table limits, the 4 % footnote and the three N.B. 3 sub-limits. Not extracted: the general requirements and the grade definition sentence, the "Foreign matter" group row, N.B. 1-2 (method and sampling references) and the signature line.
   - Step 10: 2 validated (the L:B rules, needs_review for `split_from_shared_line`), 16 held with "no grade" until the grades scope is approved. Steps 11-12: all checks pass; both claims P(yes) 0.98, both controls 0.02.
-  - Step 13 is not run yet: Neo4j was down (connection refused), nothing written.
   - Hand-check page: `data/review/dfpd_quality_check.html` (not committed), every fact beside its transcription line and printed region.
+- **Grades scope approved** (2026-10-24, 0f0c2df). Re-run: units carry both grades (origin section); the rendered unit text is unchanged, so the v5 runs stand.
+  - Step 10: **18 validated, 0 held** (5 extracted, 13 needs_review for their extraction flags). Step 11: every check passes.
+  - Step 12: 16 new claims and 10 more controls in 2 requests. P(yes): the six absent substances 0.95-0.96, the L:B rules 0.98, the table limits lower (inorganic 0.78, organic 0.77, damaged/discoloured/sprouted/weevilled **0.51**, immature 0.76, admixture 0.72, moisture 0.66), the 4 % footnote 0.69, the N.B. 3 sub-limits 0.73-0.80. All 12 controls 0.02-0.05.
+  - Step 13, main database: load 1 created 29 nodes (18 facts, 11 spans) and 65 relationships; load 2 created none, snapshot identical (`6a52090b…`, 775 nodes, 1171 relationships). No conflict detected; TNAU unchanged (12 extracted, 101 needs_review); every DFPD span is `manual_transcription` naming p006.md; no U+FFFD.
+- **Step 14 after the fixtures (2026-10-24):** a grade rule (`length_breadth_ratio`) decides the grade, not acceptance: it never asks the grade and stays out of the verdict, which lists it under `grade_rules`. `quality_check` asks for `grain_moisture_pct` when moisture is unknown; other refractions are listed as `not_checked`, not asked. Citations carry `extraction_method` and `transcription`.
+- **Fixtures** (cropbot-test, both sources loaded): `q19_paddy_18_moisture` (verdict fail on moisture, cited PDF p. 6, no printed page, transcription p006.md, labelled unverified), `q19_paddy_16_moisture` (moisture passes; the verdict stays unknown because the other refractions were not given), `q19_paddy_moisture_unknown` (asks `grain_moisture_pct`), `q15_grain_drying_selling` (TNAU's 12 % drying target with the 17.0 procurement limit). With the 10 TNAU fixtures: 14 pass.
+- **Hand-check approvals** go through the expert decisions file (reviewer and note as the user names them), never by editing statuses.
 
 ### Items (decided 2026-10-22, now in v1.5)
 
