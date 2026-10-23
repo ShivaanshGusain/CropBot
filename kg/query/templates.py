@@ -10,6 +10,10 @@ CROSS_FREELY = {"QualitySpec", "Caution"}
 FALLBACK_ONLY = {"DryingSpec", "StorageRule", "PestThreshold", "HarvestRule"}
 
 
+QUALITY_FIELDS = ("commodity_form", "grades", "parameter", "parameter_raw", "limit_type", "limit_value",
+                  "limit_inclusive", "unit", "part_of", "season_label", "authority")
+
+
 class Template(NamedTuple):
     subtype: str
     fields: tuple[str, ...]        # the values an answer shows
@@ -31,6 +35,8 @@ TEMPLATES = {
         "maturity_signs", "harvest_moisture_pct_min", "harvest_moisture_pct_max", "threshing_moisture_pct_min",
         "threshing_moisture_pct_max", "duration_group")),
     "threshold": Template("PestThreshold", (), needs_pest=True),
+    # schema v1.5: Q19 "Will the mandi accept my paddy at 18% moisture?"
+    "quality_check": Template("QualitySpec", QUALITY_FIELDS),
 }
 
 _MATCH = """

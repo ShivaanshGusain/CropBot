@@ -150,6 +150,10 @@ FIELD_RANGES = {
 }
 TO_KG = {"kg": 1, "g": 0.001, "t": 1000, "l": 1, "ml": 0.001}      # l and ml read as kg (density ~1)
 DURATION_RANGES = {"minutes": (1, 240), "hours": (1, 72), "days": (1, 60)}    # approved 2026-10-22
+# schema v1.5 QualitySpec limits (item H, 2026-10-23): a refraction is a percentage of the lot; procurement
+# moisture limits sit between 5 and 25 %; a length/breadth ratio between 1 and 5
+QUALITY_RANGES = {"moisture": (5, 25), "length_breadth_ratio": (1, 5)}
+QUALITY_PCT_RANGE = (0, 100)
 OFFSET_LIMITS = {"days": 180, "hours": 72, "weeks": 26}
 
 
@@ -169,6 +173,10 @@ def check_value_ranges(fact: dict) -> dict:
             v = fact.get(name)
             if v is not None and not lo <= v <= hi:
                 problems.append("%s %g outside %g-%g" % (name, v, lo, hi))
+    if fact.get("subtype") == "QualitySpec" and fact.get("limit_value") is not None:
+        lo, hi = QUALITY_RANGES.get(fact["parameter"], QUALITY_PCT_RANGE)
+        if not lo <= fact["limit_value"] <= hi:
+            problems.append("%s limit %g outside %g-%g" % (fact["parameter"], fact["limit_value"], lo, hi))
     for s in fact["steps"]:
         limit = OFFSET_LIMITS[s["offset_unit"]]
         for k in ("offset_min", "offset_max", "repeat_offsets"):
@@ -383,7 +391,12 @@ def copied_texts(raw_fact: dict) -> list[tuple[str, str, str]]:
     out = [("%s[%d]" % (k, i), k, t) for k in COPIED_LISTS for i, t in enumerate(raw_fact.get(k) or [])]
     out += [("excluded_regions[%d].name" % i, "excluded_regions", x["name"])
             for i, x in enumerate(raw_fact.get("excluded_regions") or [])]
-    out += [(k, k, raw_fact[k]) for k in COPIED_FIELDS if isinstance(raw_fact.get(k), str) and raw_fact[k]]
+    fields = COPIED_FIELDS
+    if raw_fact.get("parameter_raw"):            # prompt v5: parameter is a list value, its printed name is here
+        fields = tuple(k for k in COPIED_FIELDS if k != "parameter") + ("parameter_raw",)
+        if raw_fact.get("unit"):
+            fields += ("unit",)
+    out += [(k, k, raw_fact[k]) for k in fields if isinstance(raw_fact.get(k), str) and raw_fact[k]]
     for s in raw_fact.get("steps") or []:
         step = "step %d" % s["order"]
         out += [("%s %s" % (step, k), k, s[k]) for k in ("stage", "method", "purpose_raw", "duration_raw") if s.get(k)]
@@ -466,12 +479,15 @@ def check_number_in_text(fact: dict) -> dict:
 
 
 def table_rows(rendered: list[str], refs: list[str]) -> str:
-    """The rendered text of the table rows a quote was found in ("[#/tables/57 row 3] Brown planthopper …")."""
+    """The rendered text of the table rows a quote was found in ("[#/tables/57 row 3] Brown planthopper …"),
+    and of their table's header line (schema v1.5: "Maximum Limit (%)" gives a limit's unit)."""
     out = []
     for ref in refs:
         if "#/tables/" in ref:
             marker = "[%s]" % ref
             out += [line[len(marker):].strip() for line in rendered if line.startswith(marker)]
+            header = "[%s header]" % ref.split(" row ", 1)[0]
+            out += [line[len(header):].strip() for line in rendered if line.startswith(header)]
     return " ".join(out)
 
 

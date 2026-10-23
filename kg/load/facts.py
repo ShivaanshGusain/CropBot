@@ -64,6 +64,11 @@ APPLICABILITY = (("crop_ids", "FOR_CROP"), ("variety_ids", "FOR_VARIETY"), ("sea
 IDENTITY = (("pest_ids", "FOR_PEST"), ("target_ids", "TARGETS"), ("concerns", "CONCERNS"),
             ("recommends", "RECOMMENDS"), ("about_ids", "ABOUT"))      # ABOUT: schema v1.3
 IDENTITY_FIELDS = ("kind", "control_class", "dose_basis", "storage_term_raw")
+# schema v1.5 QualitySpec: identity (conflict_key), and wording or provenance that is no value (value_key): two
+# seasons or two sources printing the same limit in other words agree
+QUALITY_IDENTITY = ("commodity_form", "grades", "parameter", "limit_type", "part_of")
+QUALITY_VALUE_SKIP = set(QUALITY_IDENTITY) | {"parameter_raw", "grades_origin", "grades_evidence", "authority",
+                                              "season_label", "marketing_season", "season_start_year"}
 WINDOW_FIELDS = ("storage_months_min", "storage_months_max", "storage_months_min_inclusive",
                  "storage_months_max_inclusive")
 # fact fields that become nodes or edges (or are set only by people or on create), never properties
@@ -131,7 +136,9 @@ def conflict_key(fact: dict) -> str:
                          | {"regions": sorted(r["id"] for r in fact["regions"]),
                             "duration_group": fact.get("duration_group")},
         "identity": {k: sorted(fact.get(k) or []) for k, _ in IDENTITY}
-                    | {k: fact.get(k) for k in IDENTITY_FIELDS} | {"conditions": _conditions(fact)},
+                    | {k: fact.get(k) for k in IDENTITY_FIELDS} | {"conditions": _conditions(fact)}
+                    # schema v1.5; only on QualitySpec, so no other fact's key changes
+                    | ({k: fact.get(k) for k in QUALITY_IDENTITY} if fact["subtype"] == "QualitySpec" else {}),
         "steps": slot, "window": {k: fact.get(k) for k in WINDOW_FIELDS}})[:24]
 
 
@@ -139,7 +146,8 @@ def value_key(fact: dict) -> str:
     """The values a conflict compares: subtype values, amounts, offsets, clause and condition values. Each
     option of an alternative group adds its operation, method, anchor, targets with formulation and amounts
     (schema v1.4), sorted and without its option number, so renumbering alone changes nothing."""
-    fields = {k: v for k, v in fact.items() if k not in CORE_VALUE_SKIP}
+    skip = CORE_VALUE_SKIP | (QUALITY_VALUE_SKIP if fact["subtype"] == "QualitySpec" else set())
+    fields = {k: v for k, v in fact.items() if k not in skip}
     steps = sorted([s["order"], s.get("alt_group"), s.get("operation"), s.get("method"), s.get("anchor"),
                     s.get("offset_min"), s.get("offset_max"),
                     s.get("offset_unit"), s.get("month_start"), s.get("month_end"),
@@ -448,8 +456,15 @@ def write(tx, entry, built: dict) -> dict:
                    "WHERE NOT r.id IN $ids AND NOT r.id IN $revised WITH DISTINCT r "
                    "SET r.missing_in_latest_run = true RETURN r.id AS id",
                    src=entry.id, ids=ids, revised=[x["dst"] for x in revisions])
+    # schema v1.5 seasons: a source that supersedes another marks every fact of the older one; queries skip them
+    superseded = []
+    if entry.supersedes:
+        superseded = _run(tx, created, "MATCH (r:Recommendation)-[:EVIDENCED_BY]->(:SourceSpan)-[:IN_SOURCE]->"
+                          "(:Source {id: $old}) WITH DISTINCT r WHERE r.superseded_by IS NULL "
+                          "SET r.superseded_by = $new RETURN r.id AS id", old=entry.supersedes, new=entry.id)
     detected = _run(tx, created,
                     "MATCH (a:Recommendation) MATCH (b:Recommendation {conflict_key: a.conflict_key}) WHERE a.id < b.id "
+                    "AND a.superseded_by IS NULL AND b.superseded_by IS NULL "
                     "AND a.value_key <> b.value_key AND NOT EXISTS { (a)-[:REVISION_OF*]-(b) } "
                     "MERGE (a)-[c:CONFLICTS_WITH]->(b) ON CREATE SET c.origin = 'detected' "
                     "SET a.status = CASE WHEN a.status IN $human THEN a.status ELSE 'needs_review' END, "
@@ -461,6 +476,7 @@ def write(tx, entry, built: dict) -> dict:
                     "b.status = CASE WHEN b.status IN $human THEN b.status ELSE 'needs_review' END "
                     "RETURN a.id AS a, b.id AS b", rows=built["reviewer"], human=HUMAN_STATUSES)
     report |= {"created": dict(created), "revisions": revisions, "missing_in_latest_run": [m["id"] for m in missing],
+               "superseded": [s["id"] for s in superseded],
                "conflicts_detected": detected, "conflicts_review": reviewed,
                "decisions_applied": len(built.get("decisions") or []),
                "stale_decisions": built.get("stale_decisions") or []}

@@ -154,9 +154,23 @@ def test_a_changed_value_becomes_a_needs_review_revision():
     (merge,) = [p for q, p in tx.calls if "MERGE (n:Recommendation" in q]
     assert merge["rows"][0]["status"] == "needs_review" and merge["human"] == ["approved", "rejected"]
     assert any("REVISION_OF" in q and "MERGE" in q for q, _ in tx.calls)
-    assert not any("superseded_by" in q for q, _ in tx.calls)                   # reserved for a newer edition
+    # superseded_by is set only by a source that supersedes another (schema v1.5); this one doesn't
+    assert not any("SET r.superseded_by" in q for q, _ in tx.calls)
     missing = [q for q, _ in tx.calls if "missing_in_latest_run = true" in q]
     assert missing and "DELETE" not in " ".join(q for q, _ in tx.calls)          # flagged, never deleted
+
+
+def test_a_newer_season_supersedes_the_older_sources_facts():
+    """Schema v1.5: a source with `supersedes` marks every fact of the older source; conflict detection skips
+    superseded facts, so two seasons' limits never conflict."""
+    newer = ENTRY.model_copy(update={"supersedes": "source:older_edition"})
+    built = lf.build(ENTRY, inputs(storage()), CONCEPTS)
+    tx = FakeTx([])
+    lf.write(tx, newer, built)
+    (sup,) = [(q, p) for q, p in tx.calls if "SET r.superseded_by" in q]
+    assert sup[1] == {"old": "source:older_edition", "new": ENTRY.id}
+    (detect,) = [q for q, _ in tx.calls if "CONFLICTS_WITH" in q and "detected" in q]
+    assert "a.superseded_by IS NULL AND b.superseded_by IS NULL" in detect
 
 
 def test_cautions_against_the_same_thing_in_other_words_do_not_conflict():

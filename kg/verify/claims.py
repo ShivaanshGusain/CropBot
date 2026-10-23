@@ -341,7 +341,28 @@ def field_claims(fact: dict, names: dict, printed: dict | None = None) -> list[s
         about = " or ".join(_names(fact, "about_ids", names, printed))
         for name in _names(fact, "concerns", names, printed):
             out.append(_q("%sit advises against using %s%s" % (ld, name, " for %s" % about if about else "")))
+    elif st == "QualitySpec":
+        out.append(_q(quality_claim(fact)))
     return out
+
+
+COMMODITY = {"paddy": "paddy", "raw_rice": "raw rice", "parboiled_rice": "parboiled rice"}
+GRADE_TEXT = {"grade_a": "Grade 'A'", "common": "Common"}
+
+
+def quality_claim(fact: dict) -> str:
+    """Schema v1.5: "for paddy (Grade 'A' and Common), Moisture content is at most 17%"; an absent limit is
+    "paddy is free from Argemone mexicana"; a sub-limit names the limit it sits in."""
+    grades = " and ".join(GRADE_TEXT[g] for g in fact["grades"])
+    what = "%s (%s)" % (COMMODITY[fact["commodity_form"]], grades)
+    if fact["limit_type"] == "absent":
+        return "%s is free from %s" % (what, fact["parameter_raw"])
+    v = num(fact["limit_value"]) + ("%" if fact.get("unit") == "pct" else "")
+    inclusive = fact.get("limit_inclusive", True)
+    bound = {("max", True): "at most", ("max", False): "below", ("min", True): "at least",
+             ("min", False): "more than"}[(fact["limit_type"], inclusive)]
+    within = " within the limit for %s" % fact["part_of"].replace("_", " ") if fact.get("part_of") else ""
+    return ", for %s, %s is %s %s%s" % (what, fact["parameter_raw"], bound, v, within)
 
 
 def claims_for(fact: dict, names: dict, printed: dict | None = None) -> list[str]:
@@ -382,6 +403,9 @@ def _changed(fact: dict) -> dict | None:
             return f
     if f.get("clauses"):
         f["clauses"][0]["value"] *= 2
+        return f
+    if f.get("limit_value") is not None:                            # schema v1.5 QualitySpec
+        f["limit_value"] = f["limit_value"] + 10 if f.get("unit") == "pct" else f["limit_value"] * 2
         return f
     return None
 

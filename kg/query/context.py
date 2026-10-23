@@ -51,6 +51,18 @@ class FarmContext(Model):
     # schema v1.4 endemic_area: the farmer's answer per pest or disease ("disease:tungro": True); a concept
     # missing here is UNKNOWN, never assumed either way
     endemic: dict[str, bool] = {}
+    # schema v1.5 quality_check: what is sold, its grade, the measured value of each quality parameter
+    # ({"moisture": 18}; moisture falls back to observations["grain_moisture_pct"]) and whether each
+    # substance a specification requires to be absent was found ({"weevils": False})
+    commodity_form: Literal["paddy", "raw_rice", "parboiled_rice"] | None = None
+    grade: Literal["grade_a", "common"] | None = None
+    quality: dict[str, float] = {}
+    present: dict[str, bool] = {}
+
+    def quality_value(self, parameter: str):
+        if parameter == "moisture" and "moisture" not in self.quality:
+            return self.observations.get("grain_moisture_pct")
+        return self.quality.get(parameter)
 
     def region_ids(self) -> list[str]:
         """District + own-state zones + state + country: the regions a fact may be scoped to."""

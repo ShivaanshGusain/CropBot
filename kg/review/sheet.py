@@ -15,8 +15,8 @@ from collections import Counter
 from kg.load.facts import row_hash
 from kg.schema.vocab import SCOPE_IN_UNMAPPED_REASON
 
-ORDER = ("DryingSpec", "StorageRule", "HarvestRule", "NutrientDose", "SeedRate", "Spacing", "SeedTreatment",
-         "IrrigationRule", "PestThreshold", "ControlMeasure", "Caution")
+ORDER = ("DryingSpec", "StorageRule", "HarvestRule", "QualitySpec", "NutrientDose", "SeedRate", "Spacing",
+         "SeedTreatment", "IrrigationRule", "PestThreshold", "ControlMeasure", "Caution")
 FACTS, GUIDE, META = "Facts", "How to review", "meta"
 # (key, header, width); the reviewer columns are the only editable cells
 COLUMNS = (("review_no", "Review no.", 8), ("fact_id", "Fact id", 22), ("subtype", "Subtype", 15),
@@ -92,6 +92,12 @@ def scope(fact: dict, names: dict) -> str:
             parts.append("%s: %s" % (label, ", ".join(_name(names, x) for x in fact[key])))
     if fact["subtype"] == "ControlMeasure" and not fact.get("target_ids"):
         parts.append("target: none (general practice)")
+    if fact["subtype"] == "QualitySpec":                    # schema v1.5
+        parts.append("commodity: %s" % fact["commodity_form"])
+        parts.append("grades: %s (%s%s)" % (", ".join(fact["grades"]), fact["grades_origin"],
+                                            ": %s" % fact["grades_evidence"] if fact.get("grades_evidence") else ""))
+        if fact.get("season_label"):
+            parts.append("season: %s" % fact["season_label"])
     for label, key in (("variety", "variety_ids"), ("season", "season_ids"), ("system", "system_ids"),
                        ("soil", "soil_ids"), ("purpose", "purpose_ids"), ("stage", "stage_ids")):
         if fact.get(key):
@@ -113,6 +119,13 @@ def values(fact: dict, names: dict) -> str:
     lines += ["%s: %s" % (k, "; ".join(fact[k]) if isinstance(fact[k], list) else fact[k])
               for k in TEXT_FIELDS if fact.get(k)]
     lines += ["if: %s" % c["raw"] for c in fact.get("conditions") or []]
+    if fact["subtype"] == "QualitySpec":                    # schema v1.5: the limit as stored and as printed
+        lines.append("%s (printed: %s): %s%s%s" % (
+            fact["parameter"], fact["parameter_raw"], fact["limit_type"],
+            "" if fact.get("limit_value") is None else " %g%s%s" % (
+                fact["limit_value"], "%" if fact.get("unit") == "pct" else "",
+                "" if fact.get("limit_inclusive", True) else " (not inclusive)"),
+            ", part of %s" % fact["part_of"] if fact.get("part_of") else ""))
     for s in fact["steps"]:
         head = "step %d%s: %s" % (s["order"], " option %d" % s["alt_option"] if s.get("alt_option") else "",
                                   s.get("operation") or "")

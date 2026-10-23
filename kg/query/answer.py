@@ -28,7 +28,9 @@ from .logic import FALSE, TRUE, UNKNOWN, combine, policy, question
 from .templates import CROSS_FREELY, FALLBACK_ONLY, STATE_NAMES, TEMPLATES, fetch
 
 UNREVIEWED = {"extracted", "needs_review"}
-DESCRIPTIVE = {"DryingSpec", "StorageRule", "HarvestRule", "PestThreshold", "Caution"}   # shown while unreviewed
+# shown while unreviewed, labelled; QualitySpec (schema v1.5, 2026-10-23) is a printed limit, not a dose
+DESCRIPTIVE = {"DryingSpec", "StorageRule", "HarvestRule", "PestThreshold", "Caution", "QualitySpec"}
+ALL_GRADES = {"grade_a", "common"}
 LABEL_AUTO = "checked automatically against the source"
 LABEL_UNREVIEWED = "not yet verified by an expert"
 NO_LOCAL = "No local guidance available"
@@ -99,7 +101,35 @@ def applicability(row: dict, ctx) -> tuple[bool, dict, int, int]:
             unknown["duration_group"] = [dg]
         elif dg != ctx.duration_group:
             return False, {}, 0, 0
+    f = row["fact"]
+    if f["subtype"] == "QualitySpec":            # schema v1.5: what is sold, and its grade
+        form = f.get("commodity_form")
+        if ctx.commodity_form is None:
+            unknown["commodity_form"] = [form]
+        elif form != ctx.commodity_form:
+            return False, {}, 0, 0
+        grades = set(f.get("grades") or [])
+        if ctx.grade is None:
+            if grades != ALL_GRADES:              # a limit for every grade needs no question
+                unknown["grade"] = sorted(grades)
+        elif ctx.grade not in grades:
+            return False, {}, 0, 0
     return True, unknown, explicit, variety
+
+
+def quality_check(f: dict, ctx) -> dict:
+    """Schema v1.5: the farmer's value against one limit: pass, fail, or unknown when not given."""
+    if f["limit_type"] == "absent":
+        found = ctx.present.get(f["parameter"])
+        result = UNKNOWN if found is None else (FALSE if found else TRUE)
+        return {"parameter": f["parameter"], "value": found, "result": {TRUE: "pass", FALSE: "fail"}.get(result, "unknown")}
+    v = ctx.quality_value(f["parameter"])
+    if v is None:
+        return {"parameter": f["parameter"], "value": None, "result": "unknown"}
+    limit, inclusive = f["limit_value"], f.get("limit_inclusive") is not False
+    ok = (v < limit or (inclusive and v == limit)) if f["limit_type"] == "max" else \
+        (v > limit or (inclusive and v == limit))
+    return {"parameter": f["parameter"], "value": v, "result": "pass" if ok else "fail"}
 
 
 def candidates(rows: list[dict], ctx, t) -> tuple[list[dict], list[dict], list[dict], list[str]]:
@@ -135,9 +165,12 @@ def candidates(rows: list[dict], ctx, t) -> tuple[list[dict], list[dict], list[d
 def slot(c: dict, t) -> str:
     row, f = c["row"], c["row"]["fact"]
     gives = sorted(k for k in t.fields if f.get(k) not in (None, []) and not k.endswith("_inclusive"))
+    quality = [f.get(k) for k in ("commodity_form", "grades", "parameter", "limit_type", "part_of")] \
+        if f["subtype"] == "QualitySpec" else []          # schema v1.5: one slot per limit
     return json.dumps([f["subtype"], sorted(row["pest_ids"]), sorted(row["target_ids"]), sorted(row["concerns"]),
                        f.get("kind"), f.get("storage_term_raw"), [f.get(k) for k in WINDOW], gives,
-                       sorted({s.get("operation") for s in row["steps"]}), sorted(c["unknown"].items())], default=str)
+                       sorted({s.get("operation") for s in row["steps"]}), sorted(c["unknown"].items()), quality],
+                      default=str)
 
 
 def rank(c: dict, ctx, scope: str) -> tuple:
@@ -210,7 +243,7 @@ def render(c: dict, ctx, t, scope: str, label_fallback: str | None, asks: dict) 
     src = row["evidence"][0]["source"] if row["evidence"] else {}
     labels = [x for x in (LABEL_AUTO if status == "auto_verified" else LABEL_UNREVIEWED if unreviewed else None,
                           label_fallback) if x]
-    return {
+    served = {
         "id": f["id"], "subtype": f["subtype"], "summary_en": f.get("summary_en"),
         "duration_group": f.get("duration_group"), "labels": labels,
         "branch": c["unknown"], "values": values, "clauses": clauses, "steps": shown_steps,
@@ -223,7 +256,10 @@ def render(c: dict, ctx, t, scope: str, label_fallback: str | None, asks: dict) 
                      "printed_page": span.get("printed_page"), "source_title": src.get("title"),
                      "status": status, "verifier_score": f.get("verifier_score"),
                      "missing_in_latest_run": bool(f.get("missing_in_latest_run"))},
-    }, []
+    }
+    if f["subtype"] == "QualitySpec":
+        served["check"] = quality_check(f, ctx)
+    return served, []
 
 
 def answer(driver, template_name: str, ctx, database=None) -> dict:
@@ -289,4 +325,27 @@ def answer(driver, template_name: str, ctx, database=None) -> dict:
     out["asks"] = list(asks.values())
     if not out["slots"]:
         out["message"] = "No rule for this storage period in the source" if gap else NO_VERIFIED
+    if template_name == "quality_check":
+        out["verdict"] = verdict(out)
+    if template_name == "drying_target" and ctx.purpose == "purpose:grain":
+        out["procurement_moisture"] = procurement_moisture(driver, ctx, database)
     return out
+
+
+def verdict(out: dict) -> dict:
+    """Schema v1.5: fail if any served limit fails; pass only when every served limit was checked and passed;
+    else unknown, with the limits not checked."""
+    checks = [(f["check"], f) for s in out["slots"] for f in s["facts"] if f.get("check")]
+    failed = [c["parameter"] for c, _ in checks if c["result"] == "fail"]
+    unchecked = [c["parameter"] for c, _ in checks if c["result"] == "unknown"]
+    result = "fail" if failed else "unknown" if unchecked or not checks else "pass"
+    return {"result": result, "failed": failed, "not_checked": unchecked,
+            "passed": [c["parameter"] for c, _ in checks if c["result"] == "pass"]}
+
+
+def procurement_moisture(driver, ctx, database=None) -> list[dict]:
+    """Schema v1.5: drying_target for grain also shows the procurement moisture limit, so "dry to X" and
+    "accepted up to Y" appear together (the commodity is paddy unless the farmer said otherwise)."""
+    sub = answer(driver, "quality_check", ctx.model_copy(update={"commodity_form": ctx.commodity_form or "paddy"}),
+                 database)
+    return [f for s in sub["slots"] for f in s["facts"] if f["values"].get("parameter") == "moisture"]

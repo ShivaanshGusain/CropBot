@@ -30,8 +30,8 @@ from kg.extract import EXTRACTED_DIR, get_unit
 from kg.extract.versions import source_version
 from kg.registry import ROOT
 from kg.schema import FACT
-from kg.schema.vocab import (CONDITION_VARIABLES, FORMULATION_OPERATION, FORMULATION_OVERRIDES, Basis, Unit,
-                             ValueType)
+from kg.schema.vocab import (CONDITION_VARIABLES, FORMULATION_OPERATION, FORMULATION_OVERRIDES, Basis,
+                             CommodityForm, Grade, LimitType, QualityParameter, Unit, ValueType)
 
 from .link import Linker
 from .units import (canon_basis, canon_conc_unit, canon_duration_unit, canon_unit, formulation_code, period_offset,
@@ -62,6 +62,7 @@ class Fact:
         self.run, self.unit, self.raw, self.index = run, unit, raw["fact"], raw["index"]
         self.quote_check = raw["quote_check"]
         self.subheading = raw.get("subheading") or ""
+        self.entry = None                 # the registry entry; run() sets it (QualitySpec takes its authority)
         self.blocks, self.review, self.links, self.conversions = [], [], [], []
         self.inherits_from = set()        # (unit id, raw index) of the facts its amounts came from
 
@@ -401,6 +402,8 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
         d["about_ids"] = [f.link(linker, n, ("pest", "disease"), "caution pest") for n in r.get("about") or []]
     elif st == "DoseFormula":
         f.blocks.append("DoseFormula coefficients are not parsed yet")
+    elif st == "QualitySpec":
+        quality_spec(f, d)
     copy_fields = {"VarietyRecommendation": (), "SowingWindow": ("start_month", "start_day", "end_month", "end_day"),
                    "SeedRate": ("method",),
                    "Spacing": tuple(k for k in r if k.startswith(("row_cm", "plant_cm", "hills_per_m2",
@@ -411,8 +414,7 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
                    "DryingSpec": tuple(k for k in r if k.startswith(("target_moisture", "storage_months"))
                                        ) + ("storage_term_raw", "method"),
                    "StorageRule": tuple(k for k in r if k.startswith(("storage_months", "min_moisture", "max_moisture"))
-                                        ) + ("structure",),
-                   "QualitySpec": ("authority", "valid_for_season", "parameter", "limit_value")}
+                                        ) + ("structure",)}
     for k in copy_fields.get(st, ()):
         d[k] = r[k]
     if st == "Spacing" and "seedlings_per_hill" in r:
@@ -422,12 +424,6 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
         d["raw"] = {("seedlings_per_hill_min" if k == "seedlings_per_hill" else k): v for k, v in d["raw"].items()}
         if "seedlings_per_hill_min" in d["raw"]:
             d["raw"]["seedlings_per_hill_max"] = d["raw"]["seedlings_per_hill_min"]
-    if st == "QualitySpec" and r["unit"]:
-        u = canon_unit(r["unit"])
-        if u is None:
-            f.blocks.append("no canonical unit %r" % r["unit"])
-        else:
-            d["unit"] = u.unit.value
     # steps
     d["steps"] = []
     for s in r["steps"]:
@@ -498,6 +494,52 @@ def _conditions(d: dict) -> list:
     return sorted({(c["variable"], c["op"], c["raw"]) for c in found})
 
 
+QUALITY_IDENTITY = ("commodity_form", "grades", "parameter", "limit_type", "part_of")
+VALUE_CUT = re.compile(r"value\s*cut", re.I)
+
+
+def quality_spec(f: Fact, d: dict) -> None:
+    """Schema v1.5 QualitySpec. Authority and season from the registry, never the model; vocabulary values
+    checked; grades from the quote (origin text) or an approved section scope (origin section, its heading
+    as evidence). A value-cut rule in unmapped holds the fact (v1.5: not modelled yet)."""
+    r, e = f.raw, f.entry
+    if f.run["prompt_version"] in ("v1", "v2", "v3", "v4"):
+        f.blocks.append("QualitySpec needs prompt v5 (schema v1.5)")
+        return
+    d.update(authority=e.publisher, season_label=e.season_label, marketing_season=e.marketing_season,
+             season_start_year=e.edition_year if e.season_label else None)
+    for field, enum in (("commodity_form", CommodityForm), ("parameter", QualityParameter),
+                        ("limit_type", LimitType), ("part_of", QualityParameter)):
+        value = r.get(field)
+        if value is None and field == "part_of":
+            d[field] = None
+        elif value not in {x.value for x in enum}:
+            f.blocks.append("%s %r is not in the fixed list" % (field, value))
+        else:
+            d[field] = value
+    if not r.get("parameter_raw"):
+        f.blocks.append("parameter_raw (the refraction as printed) is missing")
+    d["parameter_raw"] = r.get("parameter_raw")
+    d["limit_value"], d["limit_inclusive"] = r["limit_value"], r["limit_inclusive"]
+    unit = (r.get("unit") or "").strip()
+    d["unit"] = Unit.PCT.value if unit == "%" else None
+    if unit and unit != "%":
+        f.blocks.append("QualitySpec unit %r is not a percentage" % unit)
+    if r.get("grades"):
+        bad = [g for g in r["grades"] if g not in {x.value for x in Grade}]
+        if bad:
+            f.blocks.append("grades %s are not in the fixed list" % bad)
+        d.update(grades=list(r["grades"]), grades_origin="text", grades_evidence=None)
+    elif f.unit.get("grades"):
+        d.update(grades=[g["id"] for g in f.unit["grades"]], grades_origin="section",
+                 grades_evidence=f.unit["grades"][0]["evidence"])
+    else:
+        f.blocks.append("no grade: the quote names none and no approved section scope gives one")
+    cuts = [u for u in r["unmapped"] if VALUE_CUT.search(u)]
+    if cuts:
+        f.blocks.append("value-cut rule held until modelled (schema v1.5): %s" % cuts)
+
+
 def fact_key_parts(f: Fact, d: dict) -> dict:
     """source + section path + subtype + applicability + identity + step slots; values excluded.
     Identity includes the fact's conditions (variable, op, raw) and a DryingSpec's storage term.
@@ -518,7 +560,9 @@ def fact_key_parts(f: Fact, d: dict) -> dict:
                              | {"regions": sorted(x["id"] for x in d["regions"]), "duration_group": d["duration_group"]},
             "identity": {k: d.get(k) for k in ("pest_ids", "target_ids", "recommends", "kind", "concerns",
                                                "control_class", "dose_basis", "storage_term_raw", "about_ids")}
-                        | {"conditions": _conditions(d)},
+                        | {"conditions": _conditions(d)}
+                        # schema v1.5; only on QualitySpec, so no other fact's key changes
+                        | ({k: d.get(k) for k in QUALITY_IDENTITY} if d["subtype"] == "QualitySpec" else {}),
             "steps": slots,
             "passage": (f.quote_check["refs"] or [None])[0]}
 
@@ -570,6 +614,7 @@ def run(entry) -> dict:
         unit = get_unit(entry, rec["unit_id"])
         for raw in rec["facts"]:
             f = Fact(rec, unit, raw)
+            f.entry = entry
             crop = chapter_crop.get(unit["chapter"]["title"])
             if crop is None:
                 f.blocks.append("chapter %r is not approved: no crop_id" % unit["chapter"]["title"])

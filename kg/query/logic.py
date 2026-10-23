@@ -23,6 +23,8 @@ QUESTIONS = {
     "spider_count_per_hill": "How many spiders do you see per hill?",
     "pest_count": "How many pests do you count?",
     "grain_moisture_pct": "What is the grain moisture now?",
+    "commodity_form": "Are you selling paddy, raw rice or parboiled rice?",     # schema v1.5 quality_check
+    "grade": "Is your paddy Grade 'A' or Common?",
     "das": "How many days ago did you sow?",
     "sowing_date": "When did you sow?",
     "endemic_area": "Is your area known for this pest or disease?",
