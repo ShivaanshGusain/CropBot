@@ -29,7 +29,12 @@ def summarise(out: dict) -> dict:
             "hidden": [{"quote": h.get("quote")} for h in out["hidden"]], "message": out["message"],
             "facts": [{"quote": f["citation"]["quote"], "labels": f["labels"],
                        "clauses": [c["value"] for c in f["clauses"]],
-                       "conflicts": [c.get("quote") or "" for c in f["conflicts"]]} for f in facts]}
+                       "conflicts": [c.get("quote") or "" for c in f["conflicts"]],
+                       "checks": (f.get("check") or {}).get("result"),          # schema v1.5 quality_check
+                       "citations": {k: f["citation"].get(k) for k in ("pdf_page", "printed_page", "extraction_method",
+                                                                       "transcription")}} for f in facts],
+            "verdict": out.get("verdict"),
+            "procurement": [{"quote": f["citation"]["quote"]} for f in out.get("procurement_moisture") or []]}
 
 
 def matches(entry, fact: dict) -> bool:
@@ -64,15 +69,22 @@ def check(expect: dict, got: dict) -> list[str]:
             ok, have = one_to_one(want, got["visible"]), [f["quote"] for f in got["visible"]]
         elif key == "hidden":
             ok, have = all(any(matches(e, h) for h in got["hidden"]) for e in want), got["hidden"]
-        elif key in ("labels", "clauses", "conflicts"):
+        elif key in ("labels", "clauses", "conflicts", "checks", "citations"):
             ok, have = True, {}
             for snippet, value in want.items():
                 named = [f for f in got["facts"] if snippet in (f["quote"] or "")]
                 have[snippet] = [f[key] for f in named]
                 if key == "conflicts":
                     ok &= len(named) == 1 and all(any(s in q for q in named[0][key]) for s in value)
+                elif key == "citations":                          # the keys the fixture names
+                    ok &= len(named) == 1 and all(named[0][key].get(k) == v for k, v in value.items())
                 else:
                     ok &= len(named) == 1 and named[0][key] == value
+        elif key == "verdict":                                     # the keys the fixture names
+            ok, have = got["verdict"] is not None and all(got["verdict"].get(k) == v for k, v in want.items()), \
+                got["verdict"]
+        elif key == "procurement":
+            ok, have = one_to_one(want, got["procurement"]), [f["quote"] for f in got["procurement"]]
         else:
             ok, have = want == got[key], got[key]
         if not ok:
@@ -86,8 +98,11 @@ def loaded(neo4j_test_db):
         pytest.skip("needs data/validated and data/verified for the TNAU guide")
     driver, name = neo4j_test_db
     concepts = reset_and_seed(driver, name)                  # the test database only
-    entry = read_entry("source:tnau_agriculture_2020")
-    lf.load(driver, entry, lf.build(entry, lf.read_inputs(entry), concepts), name)
+    for source in ("source:tnau_agriculture_2020", "source:dfpd_uniform_spec_kms_2026_27"):
+        if not (VALIDATED_DIR / source.split(":", 1)[1] / "facts.jsonl").exists():
+            pytest.skip("needs data/validated and data/verified for %s" % source)
+        entry = read_entry(source)
+        lf.load(driver, entry, lf.build(entry, lf.read_inputs(entry), concepts), name)
     return driver, name
 
 
@@ -97,7 +112,10 @@ def test_fixture(loaded, path):
     fx = json.loads(path.read_text(encoding="utf-8"))
     out = answer(driver, fx["template"], FarmContext.model_validate(fx["context"]), name)
     assert check(fx["expect"], summarise(out)) == []
-    for f in (f for s in out["slots"] for f in s["facts"]):        # every served fact carries its citation
+    served = [f for s in out["slots"] for f in s["facts"]] + list(out.get("procurement_moisture") or [])
+    for f in served:                                                # every served fact carries its citation
         c = f["citation"]
-        assert c["quote"] and c["pdf_page"] and c["printed_page"] and c["source_title"] and c["status"]
+        assert c["quote"] and c["pdf_page"] and c["source_title"] and c["status"]
+        assert c["printed_page"] or f["subtype"] == "QualitySpec"   # the DFPD schedules print no page number
         assert "verifier_score" in c
+        assert bool(c["transcription"]) == (c["extraction_method"] == "manual_transcription")

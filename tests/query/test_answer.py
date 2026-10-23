@@ -59,7 +59,8 @@ def test_unknown_storage_months_asks_and_branches_by_term_never_maps():
     assert long_fact["labels"] == [LABEL_UNREVIEWED] and long_fact["conflicts"][0]["origin"] == "review"
     assert long_fact["citation"] == {"quote": "q", "pdf_page": 74, "printed_page": "62",
                                      "source_title": "Crop Production Guide", "status": "needs_review",
-                                     "verifier_score": 0.9, "missing_in_latest_run": False}
+                                     "verifier_score": 0.9, "missing_in_latest_run": False,
+                                     "extraction_method": None, "transcription": None}   # schema v1.5 citation
     known = answer(FakeDriver([SHORT, LONG]), "drying_target", ctx(purpose="purpose:seed", storage_months=3))
     assert known["asks"] == [] and len(known["slots"]) == 2                        # both terms, no mapping
     assert any("not mapped to 3 months" in n for n in known["notes"])

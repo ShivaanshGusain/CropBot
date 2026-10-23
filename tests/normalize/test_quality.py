@@ -150,7 +150,14 @@ def test_quality_check_and_verdict():
     out = {"slots": [{"facts": [{"check": {"parameter": "moisture", "result": "fail"}},
                                 {"check": {"parameter": "admixture_lower_class", "result": "unknown"}}]}]}
     assert verdict(out) == {"result": "fail", "failed": ["moisture"], "not_checked": ["admixture_lower_class"],
-                            "passed": []}
+                            "passed": [], "grade_rules": []}
+    # a grade rule is reported, never counted: L:B 2.0 makes paddy Common, it does not reject it
+    rule = {"check": {"parameter": "length_breadth_ratio", "value": 2.0, "result": "fail"},
+            "values": {"grades": ["grade_a"]}}
+    lone = verdict({"slots": [{"facts": [rule, {"check": {"parameter": "moisture", "result": "pass"}}]}]})
+    assert (lone["result"], lone["failed"], lone["grade_rules"][0]["grades"]) == ("pass", [], ["grade_a"])
+    lb = {**row, "fact": {**f, "parameter": "length_breadth_ratio", "grades": ["grade_a"]}}
+    assert applicability(lb, FarmContext(crop="crop:rice", commodity_form="paddy"))[1] == {}   # no grade question
 
 
 def test_review_sheet_shows_the_limit():

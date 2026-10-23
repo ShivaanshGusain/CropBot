@@ -31,6 +31,9 @@ UNREVIEWED = {"extracted", "needs_review"}
 # shown while unreviewed, labelled; QualitySpec (schema v1.5, 2026-10-23) is a printed limit, not a dose
 DESCRIPTIVE = {"DryingSpec", "StorageRule", "HarvestRule", "PestThreshold", "Caution", "QualitySpec"}
 ALL_GRADES = {"grade_a", "common"}
+ASKED_PARAMETERS = {"moisture": "grain_moisture_pct"}   # quality_check asks for these when unknown
+# a grade rule decides which grade the produce is, not whether it is accepted ("L:B >= 2.5 is Grade 'A'")
+CLASSIFYING = {"length_breadth_ratio"}
 LABEL_AUTO = "checked automatically against the source"
 LABEL_UNREVIEWED = "not yet verified by an expert"
 NO_LOCAL = "No local guidance available"
@@ -110,7 +113,8 @@ def applicability(row: dict, ctx) -> tuple[bool, dict, int, int]:
             return False, {}, 0, 0
         grades = set(f.get("grades") or [])
         if ctx.grade is None:
-            if grades != ALL_GRADES:              # a limit for every grade needs no question
+            # a limit for every grade needs no question; a grade rule is how the grade is found, so it never asks
+            if grades != ALL_GRADES and f.get("parameter") not in CLASSIFYING:
                 unknown["grade"] = sorted(grades)
         elif ctx.grade not in grades:
             return False, {}, 0, 0
@@ -255,7 +259,9 @@ def render(c: dict, ctx, t, scope: str, label_fallback: str | None, asks: dict) 
         "citation": {"quote": span.get("quote"), "pdf_page": span.get("pdf_page"),
                      "printed_page": span.get("printed_page"), "source_title": src.get("title"),
                      "status": status, "verifier_score": f.get("verifier_score"),
-                     "missing_in_latest_run": bool(f.get("missing_in_latest_run"))},
+                     "missing_in_latest_run": bool(f.get("missing_in_latest_run")),
+                     # schema v1.5: a quote from an approved page transcription names it
+                     "extraction_method": span.get("extraction_method"), "transcription": span.get("transcription")},
     }
     if f["subtype"] == "QualitySpec":
         served["check"] = quality_check(f, ctx)
@@ -327,6 +333,10 @@ def answer(driver, template_name: str, ctx, database=None) -> dict:
         out["message"] = "No rule for this storage period in the source" if gap else NO_VERIFIED
     if template_name == "quality_check":
         out["verdict"] = verdict(out)
+        # the value a farmer can be asked for; other refractions are listed as not checked
+        for parameter, variable in ASKED_PARAMETERS.items():
+            if parameter in out["verdict"]["not_checked"] and not any(a["variable"] == variable for a in out["asks"]):
+                out["asks"].append(question(variable))
     if template_name == "drying_target" and ctx.purpose == "purpose:grain":
         out["procurement_moisture"] = procurement_moisture(driver, ctx, database)
     return out
@@ -335,12 +345,16 @@ def answer(driver, template_name: str, ctx, database=None) -> dict:
 def verdict(out: dict) -> dict:
     """Schema v1.5: fail if any served limit fails; pass only when every served limit was checked and passed;
     else unknown, with the limits not checked."""
-    checks = [(f["check"], f) for s in out["slots"] for f in s["facts"] if f.get("check")]
+    every = [(f["check"], f) for s in out["slots"] for f in s["facts"] if f.get("check")]
+    checks = [(c, f) for c, f in every if c["parameter"] not in CLASSIFYING]
     failed = [c["parameter"] for c, _ in checks if c["result"] == "fail"]
     unchecked = [c["parameter"] for c, _ in checks if c["result"] == "unknown"]
     result = "fail" if failed else "unknown" if unchecked or not checks else "pass"
     return {"result": result, "failed": failed, "not_checked": unchecked,
-            "passed": [c["parameter"] for c, _ in checks if c["result"] == "pass"]}
+            "passed": [c["parameter"] for c, _ in checks if c["result"] == "pass"],
+            # grade rules are reported, never counted: L:B below 2.5 makes paddy Common, it does not reject it
+            "grade_rules": [{"grades": f["values"].get("grades"), **c} for c, f in every
+                            if c["parameter"] in CLASSIFYING]}
 
 
 def procurement_moisture(driver, ctx, database=None) -> list[dict]:
