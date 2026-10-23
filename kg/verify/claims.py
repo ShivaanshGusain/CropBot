@@ -405,7 +405,8 @@ def _changed(fact: dict) -> dict | None:
         f["clauses"][0]["value"] *= 2
         return f
     if f.get("limit_value") is not None:                            # schema v1.5 QualitySpec
-        f["limit_value"] = f["limit_value"] + 10 if f.get("unit") == "pct" else f["limit_value"] * 2
+        # always stricter than printed: a looser limit ("at most 27%" for 17%) is implied by the true one
+        f["limit_value"] = f["limit_value"] / 2 if f["limit_type"] == "max" else f["limit_value"] * 2
         return f
     return None
 

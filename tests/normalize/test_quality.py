@@ -126,7 +126,12 @@ def test_claims_read_like_the_page():
     sub = quality(parameter="dhatura_seeds", parameter_raw="Dhatura", limit_value=0.025, raw={"limit_value": "0.025%"},
                   part_of="poisonous_seeds")
     assert claims_for(sub, {})[0].endswith("Dhatura is at most 0.025% within the limit for poisonous seeds?")
-    assert _changed(quality())["limit_value"] == 27.0                     # a number control: +10 points
+    # a number control is stricter than printed, never looser (a looser limit is implied by the true one)
+    assert _changed(quality())["limit_value"] == 8.5
+    lb = quality(quote="If the ratio is greater than & equal to 2.5, then it is classified as Grade ‘A ’",
+                 table_ref=None, table_row=None, parameter="length_breadth_ratio", parameter_raw="ratio",
+                 limit_type="min", limit_value=2.5, unit=None, raw={"limit_value": "2.5"}, grades=["grade_a"])
+    assert _changed(lb)["limit_value"] == 5.0
 
 
 def test_quality_check_and_verdict():
