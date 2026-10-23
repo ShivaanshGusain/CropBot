@@ -22,8 +22,10 @@ STEP = {"order": 1, "operation": "sowing", "instruction_en": "Use 30 kg seed per
     ("DoseFormula", {"target_nutrient": "nutrient:n", "coefficients": {"T": 4.25, "SN": 0.45},
                      "raw": {"coefficients": "FN = 4.25 T - 0.45 SN"}}),
     ("WeatherRule", {"operation": "spraying", "advice": "avoid"}),
-    ("QualitySpec", {"authority": "FCI", "parameter": "moisture", "limit_value": 17, "unit": "pct",
-                     "raw": {"limit_value": "17%"}}),
+    ("QualitySpec", {"authority": "DFPD", "commodity_form": "paddy", "grades": ["grade_a", "common"],
+                     "grades_origin": "section", "grades_evidence": "UNIFORM SPECIFICATION OF ALL VARIETIES OF PADDY",
+                     "parameter": "moisture", "parameter_raw": "Moisture content", "limit_type": "max",
+                     "limit_value": 17, "unit": "pct", "raw": {"limit_value": "17.0"}}),
 ])
 def test_the_other_seven_subtypes_validate(subtype, fields):
     assert FACT.validate_python(fact("rec:x", subtype, "s", SPAN, **fields)).subtype == subtype

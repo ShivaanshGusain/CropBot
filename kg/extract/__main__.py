@@ -7,7 +7,7 @@ from kg.registry import read_registry
 
 from . import (ExtractError, build, cached, compare, get_unit, ingest, load_run, load_units, out_dir,
                write_prompt)
-from .versions import LATEST, VERSIONS
+from .versions import LATEST, VERSIONS, source_version
 
 KEYS = ("parse_failures", "quote_failures", "quotes_found_more_than_once", "not_extracted",
         "not_extracted_failures", "uncovered", "sentences_outside_quotes", "extraction_flags", "unmapped",
@@ -65,13 +65,15 @@ def main(argv=None) -> int:
         q.add_argument("source_id")
         q.add_argument("--unit", required=True)
         q.add_argument("--model", required=True, help="the model that answers, recorded as extraction_model")
-        q.add_argument("--prompt", default=LATEST, choices=sorted(VERSIONS))
+        q.add_argument("--prompt", choices=sorted(VERSIONS), help="default: the source's pinned version, else %s"
+                       % LATEST)
         if name == "ingest":
             q.add_argument("--response", required=True, type=Path, help="file holding the model's answer")
             q.add_argument("--force", action="store_true", help="replace an answer with the same cache key")
     r = sub.add_parser("report", help="summaries of every stored answer for one prompt version")
     r.add_argument("source_id")
-    r.add_argument("--prompt", default=LATEST, choices=sorted(VERSIONS))
+    r.add_argument("--prompt", choices=sorted(VERSIONS), help="default: the source's pinned version, else %s"
+                   % LATEST)
     c = sub.add_parser("compare", help="two runs of one unit")
     c.add_argument("source_id")
     c.add_argument("--unit", required=True)
@@ -79,6 +81,8 @@ def main(argv=None) -> int:
     c.add_argument("--to", dest="b", required=True, help="a prompt version (its latest run) or a run file")
     a = p.parse_args(argv)
     entry = _entry(a.source_id)
+    if getattr(a, "prompt", "x") is None:
+        a.prompt = source_version(entry)
     try:
         if a.cmd == "find":
             for u in load_units(entry):

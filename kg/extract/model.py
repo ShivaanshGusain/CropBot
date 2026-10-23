@@ -404,11 +404,18 @@ class StorageRule(RawFact):
 class QualitySpec(RawFact):
     NUMERIC_FIELDS = ("limit_value",)
     subtype: Literal["QualitySpec"]
-    authority: str | None = None
-    valid_for_season: str | None = None
-    parameter: Text
+    authority: str | None = None                    # prompts v1-v4; v5 takes it from the registry
+    valid_for_season: str | None = None             # prompts v1-v4; v5 takes the season from the registry
+    parameter: Text                                 # v5: a value of the fixed list (step 10 checks it)
     limit_value: NonNeg | None = None
-    unit: str | None = None
+    unit: str | None = None                         # as printed ("%"), or empty for a ratio or an absent limit
+    # prompt v5 (schema v1.5); step 10 checks the vocabulary values
+    commodity_form: str | None = None
+    grades: list[str] = []                          # only when the quote names the grade
+    parameter_raw: str | None = None                # the refraction as printed
+    limit_type: str | None = None                   # max | min | absent
+    limit_inclusive: bool = True
+    part_of: str | None = None                      # the parameter a sub-limit sits inside
 
 
 class Caution(RawFact):

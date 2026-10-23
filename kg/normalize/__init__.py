@@ -27,7 +27,7 @@ from collections import Counter, defaultdict
 from pydantic import ValidationError
 
 from kg.extract import EXTRACTED_DIR, get_unit
-from kg.extract.versions import LATEST
+from kg.extract.versions import source_version
 from kg.registry import ROOT
 from kg.schema import FACT
 from kg.schema.vocab import (CONDITION_VARIABLES, FORMULATION_OPERATION, FORMULATION_OVERRIDES, Basis, Unit,
@@ -553,7 +553,7 @@ def resolve_quantity_refs(built: list[tuple["Fact", dict]]) -> None:
 
 
 def latest_runs(entry):
-    d = EXTRACTED_DIR / entry.id.split(":", 1)[1] / LATEST
+    d = EXTRACTED_DIR / entry.id.split(":", 1)[1] / source_version(entry)
     return [json.loads(p.read_text(encoding="utf-8")) for p in sorted(d.glob("*.json")) if p.name != "report.json"]
 
 

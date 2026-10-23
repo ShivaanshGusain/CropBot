@@ -33,17 +33,30 @@ V3_FLAGS = frozenset(f.value for f in ExtractionFlag) - {"general_practice"}
 # v4: the program, not the model, applies the formulation table and sets operation_from_formulation
 V4_FLAGS = V3_FLAGS - {"operation_from_formulation"}
 
+# fields prompt v5 adds for schema v1.5's QualitySpec; v1 to v4 answers never have them. v5 drops authority and
+# valid_for_season, which code takes from the registry
+V5_FIELDS = frozenset({"commodity_form", "grades", "parameter_raw", "limit_type", "limit_inclusive", "part_of"})
+V5_DROPPED = frozenset({"authority", "valid_for_season"})
+
 VERSIONS = {
-    "v1": Version("v1", "list", frozenset({"extraction_flags"}) | V3_FIELDS | V4_FIELDS,
+    "v1": Version("v1", "list", frozenset({"extraction_flags"}) | V3_FIELDS | V4_FIELDS | V5_FIELDS,
                   frozenset({"instruction_en"}), False),
-    "v2": Version("v2", "object", frozenset({"instruction_en"}) | V3_FIELDS | V4_FIELDS, frozenset(), True,
-                  V2_FLAGS),
-    "v3": Version("v3", "object", frozenset({"instruction_en", "seedlings_per_hill"}) | V4_FIELDS, frozenset(),
-                  True, V3_FLAGS),
-    "v4": Version("v4", "object", frozenset({"instruction_en", "seedlings_per_hill"}), frozenset(), True, V4_FLAGS),
+    "v2": Version("v2", "object", frozenset({"instruction_en"}) | V3_FIELDS | V4_FIELDS | V5_FIELDS, frozenset(),
+                  True, V2_FLAGS),
+    "v3": Version("v3", "object", frozenset({"instruction_en", "seedlings_per_hill"}) | V4_FIELDS | V5_FIELDS,
+                  frozenset(), True, V3_FLAGS),
+    "v4": Version("v4", "object", frozenset({"instruction_en", "seedlings_per_hill"}) | V5_FIELDS, frozenset(), True,
+                  V4_FLAGS),
+    "v5": Version("v5", "object", frozenset({"instruction_en", "seedlings_per_hill"}) | V5_DROPPED, frozenset(),
+                  True, V4_FLAGS),
 }
-# the default for prepare/report and the runs step 10 reads (v4 since its four hand-runs, 2026-10-22)
+# the default for prepare/report, and for step 10 when a source pins none (registry [extraction] prompt_version)
 LATEST = "v4"
+
+
+def source_version(entry) -> str:
+    """The prompt version a source's runs use: its registry pin, else LATEST."""
+    return entry.extraction.prompt_version or LATEST
 
 
 def field_names(version: str) -> set[str]:

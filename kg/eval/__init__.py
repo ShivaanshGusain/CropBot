@@ -46,7 +46,7 @@ from kg.eval.gold import FACT_SHEETS, GOLD_DIR, out_name
 from kg.extract import EXTRACTED_DIR
 from kg.extract.numbers import printed_numbers
 from kg.extract.quotes import normalise
-from kg.extract.versions import LATEST
+from kg.extract.versions import source_version
 from kg.normalize import NORMALIZED_DIR
 from kg.normalize.units import canon_basis, canon_unit
 from kg.registry import ROOT
@@ -178,7 +178,8 @@ def gold_value(row: dict) -> dict | None:
 # --- atoms ------------------------------------------------------------------------------------------
 
 def latest_runs(source_id: str) -> dict:
-    d = EXTRACTED_DIR / source_id.split(":", 1)[1] / LATEST
+    from kg.registry import read_entry
+    d = EXTRACTED_DIR / source_id.split(":", 1)[1] / source_version(read_entry(source_id))
     return {p.stem: json.loads(p.read_text(encoding="utf-8")) for p in sorted(d.glob("*.json")) if p.stem != "report"}
 
 

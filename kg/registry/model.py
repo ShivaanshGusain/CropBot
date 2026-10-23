@@ -5,13 +5,13 @@ the local file, extraction settings, default-scope rules and section scopes.
 `to_source()` builds the graph node from it.
 """
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field, PositiveInt, model_validator
+from pydantic import Field, PositiveInt, StringConstraints, model_validator
 
 from kg.schema.core import Model, Source, Text
 from kg.schema.ids import CropId, PurposeId, RegionId, SourceId, StateId
-from kg.schema.vocab import AuthorityTier
+from kg.schema.vocab import AuthorityTier, Grade
 
 RuleStatus = Literal["proposed", "approved", "rejected"]
 
@@ -43,16 +43,19 @@ class DefaultScopeRule(Model):
 
 
 class SectionScope(Section):
-    """Section -> regions override (schema: "Section overrides") and/or the purpose of everything
-    in the section (e.g. seed production -> purpose:seed)."""
+    """Section -> regions override (schema: "Section overrides"), the purpose of everything in the section
+    (e.g. seed production -> purpose:seed), and/or (schema v1.5) the grades its QualitySpec limits apply to.
+    The heading is the evidence; it may be a chapter's own heading ("UNIFORM SPECIFICATION OF ALL VARIETIES OF
+    PADDY")."""
     regions: list[RegionId] = []
     purposes: list[PurposeId] = []
+    grades: list[Grade] = []
     status: RuleStatus
 
     @model_validator(mode="after")
     def _something(self):
-        if not self.regions and not self.purposes:
-            raise ValueError("a section_scope needs regions, purposes or both")
+        if not self.regions and not self.purposes and not self.grades:
+            raise ValueError("a section_scope needs regions, purposes or grades")
         return self
 
 
@@ -179,6 +182,8 @@ class Extraction(Model):
     page_range: tuple[PositiveInt, PositiveInt] | None = None
     crop: str | None = None             # single-crop books
     note: str | None = None
+    # the prompt version this source's runs use (kg.extract.versions.source_version); none = the latest
+    prompt_version: Annotated[str, StringConstraints(pattern=r"^v\d+$")] | None = None
 
 
 class RegistryEntry(Model):
@@ -198,6 +203,10 @@ class RegistryEntry(Model):
     rights_note: str | None = None
     supersedes: SourceId | None = None  # an older edition of the same book
     notes: list[str] = []               # known problems with the file, e.g. missing pages
+    # schema v1.5, a regulatory specification: its season as printed and the marketing season's short name.
+    # QualitySpec facts take these (season_start_year = edition_year), never the model
+    season_label: str | None = None     # "KHARIF MARKETING SEASON 2026-2027"
+    marketing_season: str | None = None # "KMS"
     printed_pages: list[PrintedPages] = []
     chapters: list[Chapter] = []
     heading_fix: list[HeadingFix] = []
@@ -244,6 +253,10 @@ class RegistryEntry(Model):
             if self.printed_page(ch.pdf_page) != want:
                 raise ValueError("chapter %s %r: PDF p. %d is printed p. %s, not %s" % (
                     ch.number, ch.title, ch.pdf_page, self.printed_page(ch.pdf_page), want))
+        if self.season_label and str(self.edition_year) not in self.season_label:
+            raise ValueError("season_label %r does not name edition_year %d" % (self.season_label, self.edition_year))
+        if bool(self.season_label) != bool(self.marketing_season):
+            raise ValueError("season_label and marketing_season go together")
         numbers = [ch.number for ch in self.chapters]
         if len(numbers) != len(set(numbers)):
             raise ValueError("duplicate chapter numbers")

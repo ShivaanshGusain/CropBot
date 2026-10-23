@@ -180,8 +180,9 @@ def _subtree_pages(node: Node) -> list[int]:
 
 
 def check_scopes(entry, built, units) -> list[dict]:
-    """Each section scope and default-scope section must match exactly one section node."""
-    nodes = [n for _, root in built for n in root.walk() if n.kind != "chapter"]
+    """Each section scope and default-scope section must match exactly one section node. A chapter's own
+    heading counts too (schema v1.5: "UNIFORM SPECIFICATION OF ALL VARIETIES OF PADDY" scopes its grades)."""
+    nodes = [n for _, root in built for n in root.walk()]
     checks = []
     targets = [("default_scope", r.rule, r.status, r.section, r) for r in entry.default_scope if r.section]
     targets += [("section_scope", s.heading, s.status, s, s) for s in entry.section_scope]
@@ -204,7 +205,7 @@ def resolve_scopes(entry, units, checks) -> None:
             by_node.setdefault(id(c["_node"]), []).append(c)
     for u in units:
         regions = [{"id": r, "origin": "source"} for r in entry.region_scope]
-        purposes = []
+        purposes, grades = [], []
         rules = [r.label() for r in entry.default_scope if r.status == "approved" and r.section is None]
         chain, n = [], u["_node"]
         while n is not None:
@@ -217,9 +218,14 @@ def resolve_scopes(entry, units, checks) -> None:
                         regions = [{"id": r, "origin": "section"} for r in c["_obj"].regions]
                     if c["_obj"].purposes:
                         purposes = [{"id": p, "origin": "section"} for p in c["_obj"].purposes]
+                    if c["_obj"].grades:           # schema v1.5: the heading is the evidence
+                        grades = [{"id": g.value, "origin": "section", "evidence": c["heading"]}
+                                  for g in c["_obj"].grades]
                 else:
                     rules.append(c["_obj"].label())
         u["regions"], u["purposes"], u["default_scope"] = regions, purposes, rules
+        if grades:
+            u["grades"] = grades
 
 
 def numbering_gaps(built) -> list[dict]:

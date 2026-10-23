@@ -14,7 +14,8 @@ from pydantic import Field, TypeAdapter, model_validator
 
 from .core import Recommendation, Text, ThresholdClause, check_range
 from .ids import (ConcernId, ControlTargetId, NutrientId, PestOrDiseaseId, StorageTargetId, VarietyId)
-from .vocab import CautionKind, ControlClass, DoseBasis, OperationType, Unit, WeatherAdvice
+from .vocab import (UNITLESS_PARAMETERS, CautionKind, CommodityForm, ControlClass, DoseBasis, Grade, LimitType,
+                    OperationType, QualityParameter, Unit, WeatherAdvice)
 
 Pct = Annotated[float, Field(ge=0, le=100)]
 Months = Annotated[float, Field(ge=0)]
@@ -205,13 +206,43 @@ class WeatherRule(Recommendation):
 
 
 class QualitySpec(Recommendation):
+    """Schema v1.5: one fact per printed regulatory limit. authority and the season fields come from the
+    registry (code), never from the model."""
     NUMERIC_FIELDS = ("limit_value",)
     subtype: Literal["QualitySpec"]
-    authority: Text                          # regulatory: the current procurement notice, not books
-    valid_for_season: str | None = None
-    parameter: Text                          # moisture | foreign_matter | damaged | ...
+    authority: Text                          # the registry entry's publisher
+    season_label: str | None = None          # as printed, e.g. "KHARIF MARKETING SEASON 2026-2027"
+    marketing_season: str | None = None      # "KMS"
+    season_start_year: int | None = None     # 2026
+    commodity_form: CommodityForm
+    grades: list[Grade] = Field(min_length=1)
+    grades_origin: Literal["text", "section"]   # the quote names the grade, or an approved section scope does
+    grades_evidence: str | None = None       # for origin section: the heading the scope quotes
+    parameter: QualityParameter
+    parameter_raw: Text                      # the refraction as printed
+    limit_type: LimitType
     limit_value: float | None = Field(default=None, ge=0)
+    limit_inclusive: bool = True
     unit: Unit | None = None
+    part_of: QualityParameter | None = None  # the limit this sub-limit sits inside
+
+    @model_validator(mode="after")
+    def _limit(self):
+        if self.limit_type == LimitType.ABSENT:
+            if self.limit_value is not None or self.unit is not None:
+                raise ValueError("an absent limit has no limit_value or unit")
+        elif self.limit_value is None:
+            raise ValueError("a %s limit needs limit_value" % self.limit_type.value)
+        elif self.parameter in UNITLESS_PARAMETERS:
+            if self.unit is not None:
+                raise ValueError("%s has no unit" % self.parameter.value)
+        elif self.unit != Unit.PCT:
+            raise ValueError("a %s limit on %s is a percentage" % (self.limit_type.value, self.parameter.value))
+        if self.part_of == self.parameter:
+            raise ValueError("a limit cannot be part of itself")
+        if self.grades_origin == "section" and not self.grades_evidence:
+            raise ValueError("grades from a section scope need the heading as evidence")
+        return self
 
 
 ALL_SUBTYPES = FIRST_SLICE + (SeedRate, Spacing, SeedTreatment, IrrigationRule, DoseFormula,

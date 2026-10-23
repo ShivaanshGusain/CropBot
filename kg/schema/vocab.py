@@ -191,10 +191,59 @@ class ExtractionMethod(StrEnum):
 
 
 class AuthorityTier(IntEnum):
-    """1 = state agricultural university package of practices; 2 = ICAR national guidance; 3 = other."""
+    """0 = regulatory (official procurement or quality specification; schema v1.5); 1 = state agricultural
+    university package of practices; 2 = ICAR national guidance; 3 = other. Lower ranks first."""
+    REGULATORY = 0
     STATE_POP = 1
     ICAR = 2
     OTHER = 3
+
+
+# --- schema v1.5: QualitySpec ------------------------------------------------------
+
+class CommodityForm(StrEnum):
+    PADDY = "paddy"
+    RAW_RICE = "raw_rice"
+    PARBOILED_RICE = "parboiled_rice"
+
+
+class Grade(StrEnum):
+    GRADE_A = "grade_a"
+    COMMON = "common"
+
+
+class LimitType(StrEnum):
+    MAX = "max"
+    MIN = "min"
+    ABSENT = "absent"          # "free from …": the substance must not be present
+
+
+class QualityParameter(StrEnum):
+    """The fixed list (schema v1.5 "QualitySpec parameters"). A combined refraction is one parameter."""
+    FOREIGN_MATTER_INORGANIC = "foreign_matter_inorganic"
+    FOREIGN_MATTER_ORGANIC = "foreign_matter_organic"
+    DAMAGED_DISCOLOURED_SPROUTED_WEEVILLED = "damaged_discoloured_sprouted_weevilled"
+    DAMAGED_SPROUTED_WEEVILLED = "damaged_sprouted_weevilled"
+    IMMATURE_SHRUNKEN_SHRIVELLED = "immature_shrunken_shrivelled"
+    ADMIXTURE_LOWER_CLASS = "admixture_lower_class"
+    MOISTURE = "moisture"
+    POISONOUS_SEEDS = "poisonous_seeds"
+    DHATURA_SEEDS = "dhatura_seeds"
+    AKRA_SEEDS = "akra_seeds"
+    LENGTH_BREADTH_RATIO = "length_breadth_ratio"
+    # substances a specification requires to be absent (limit_type absent), as printed on DFPD p. 6
+    MOULDS = "moulds"
+    WEEVILS = "weevils"
+    OBNOXIOUS_SMELL = "obnoxious_smell"
+    ARGEMONE_MEXICANA = "argemone_mexicana"
+    LATHYRUS_SATIVUS = "lathyrus_sativus"
+    DELETERIOUS_SUBSTANCES = "deleterious_substances"
+
+
+ABSENT_PARAMETERS = frozenset({QualityParameter.MOULDS, QualityParameter.WEEVILS, QualityParameter.OBNOXIOUS_SMELL,
+                               QualityParameter.ARGEMONE_MEXICANA, QualityParameter.LATHYRUS_SATIVUS,
+                               QualityParameter.DELETERIOUS_SUBSTANCES})
+UNITLESS_PARAMETERS = frozenset({QualityParameter.LENGTH_BREADTH_RATIO})   # a ratio has no unit
 
 
 # --- concepts (closed lists only; used by concepts/ seeds) ------------------------

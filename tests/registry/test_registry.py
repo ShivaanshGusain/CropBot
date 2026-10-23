@@ -129,7 +129,7 @@ def test_section_scopes_and_their_review_status():
 
 def test_section_scope_needs_regions_or_purposes(reg):
     edit(reg, r'^purposes = \["purpose:seed"\]$', "")
-    assert "needs regions, purposes or both" in problems(reg)
+    assert "needs regions, purposes or grades" in problems(reg)
 
 
 def test_section_scope_purpose_must_be_a_purpose_id(reg):
