@@ -48,12 +48,23 @@ DFPD_ID = "source:dfpd_uniform_spec_kms_2026_27"
 
 def test_the_dfpd_specification_is_national_and_its_schedules_print_no_page_numbers():
     entry = read_entry(DFPD_ID)
-    assert (entry.state_id, entry.region_scope, entry.authority_tier) == (None, ["country:in"], 3)
+    assert (entry.state_id, entry.region_scope, entry.authority_tier) == (None, ["country:in"], 0)   # regulatory
     assert (entry.edition_year, entry.edition_label, entry.extraction.ocr) == (2026, "2026-27", "force")
+    assert (entry.season_label, entry.marketing_season) == ("KHARIF MARKETING SEASON 2026-2027", "KMS")
     assert any("No. 14453 dated 21/08/2026" in n and "17.08.2026" in n for n in entry.notes)   # a state forward
     paddy = next(c for c in entry.chapters if c.number == "1")
-    assert (paddy.pdf_page, paddy.printed_page, paddy.status, paddy.crop_id) == (6, None, "proposed", "crop:rice")
+    assert (paddy.pdf_page, paddy.printed_page, paddy.status, paddy.crop_id) == (6, None, "approved", "crop:rice")
+    assert all(c.status == "proposed" for c in entry.chapters if c.number != "1")
     assert entry.printed_page(5) == "2" and entry.printed_page(6) is None
+    [scope] = entry.section_scope
+    assert (scope.heading, scope.pdf_pages, scope.grades, scope.regions, scope.purposes) == (
+        "UNIFORM SPECIFICATION OF ALL VARIETIES OF PADDY", (6, 6), ["grade_a", "common"], [], [])
+
+
+def test_a_season_label_must_name_the_edition_year(reg):
+    edit(reg, r'^season_label = "KHARIF MARKETING SEASON 2026-2027"', 'season_label = "KHARIF MARKETING SEASON 2027-2028"',
+         name=DFPD)
+    assert "does not name edition_year 2026" in problems(reg)
 
 
 def test_a_printed_page_on_an_unnumbered_page_fails(reg):
