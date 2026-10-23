@@ -113,6 +113,7 @@ offset = -4
 ocr = "auto"
 ocr_lang = ["en"]
 note = "Page 7 (Tamil preface) uses a legacy font; it is not crop content."
+prompt_version = "v4"   # the prompt of the four hand-runs (2026-10-22); steps 9-15 read v4 runs for this book
 
 # --- default scope: only status = "approved" rules are used ------------------------
 

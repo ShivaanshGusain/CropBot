@@ -44,7 +44,7 @@ def store(tmp_path, monkeypatch):
     return tmp_path
 
 
-@pytest.mark.parametrize("version", ["v1", "v2", "v3", "v4"])
+@pytest.mark.parametrize("version", ["v1", "v2", "v3", "v4", "v5"])
 def test_prompt_field_reference_matches_the_raw_model(version):
     text, _ = ex.prompt_template(version)
     section = text.split("## Field reference", 1)[1].split("\n## ", 1)[0]
@@ -59,12 +59,20 @@ def test_v2_drops_instruction_en_and_adds_flags():
     assert {"facts", "not_extracted", "reason"} <= field_names("v2")
 
 
-@pytest.mark.parametrize("version", ["v1", "v2", "v3", "v4"])
+@pytest.mark.parametrize("version", ["v1", "v2", "v3", "v4", "v5"])
 def test_prompt_has_each_slot_once_and_vocabularies_come_from_code(version):
     text, _ = ex.prompt_template(version)
     assert all(text.count(s) == 1 for s in ex.SLOTS)
-    vocab = ex.render_vocabularies()
+    vocab = ex.render_vocabularies(version)
     assert "last_puddling" in vocab and "spider_count_per_hill (count, number)" in vocab
+    # schema v1.5's QualitySpec lists appear from v5 on; earlier prompts render exactly as before
+    assert ("- limit_type: max, min, absent" in vocab) == (version == "v5")
+    assert ("damaged_discoloured_sprouted_weevilled" in vocab) == (version == "v5")
+
+
+def test_tnau_pins_v4_so_its_runs_are_read():
+    from kg.extract.versions import source_version
+    assert source_version(ENTRY) == "v4" and LATEST == "v5"
 
 
 def test_render_unit_and_segments():

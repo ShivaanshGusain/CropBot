@@ -25,9 +25,9 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from kg.registry import ROOT
-from kg.schema.vocab import (CONDITION_VARIABLES, Anchor, CautionKind, ConditionOp, ControlClass,
-                             DoseBasis, DurationGroup, OffsetUnit, OperationType, Subtype,
-                             WeatherAdvice)
+from kg.schema.vocab import (CONDITION_VARIABLES, Anchor, CautionKind, CommodityForm, ConditionOp, ControlClass,
+                             DoseBasis, DurationGroup, Grade, LimitType, OffsetUnit, OperationType,
+                             QualityParameter, Subtype, WeatherAdvice)
 from kg.segment import UNITS_DIR
 from kg.tables import TABLES_DIR
 
@@ -150,11 +150,16 @@ def render_default_scope(entry, unit: dict) -> str:
     return "\n".join(out) or "none"
 
 
-def render_vocabularies() -> str:
-    lines = ["- %s: %s" % (name, ", ".join(v.value for v in enum)) for name, enum in (
-        ("operation", OperationType), ("anchor", Anchor), ("offset_unit", OffsetUnit),
-        ("op", ConditionOp), ("duration_group", DurationGroup), ("dose_basis", DoseBasis),
-        ("control_class", ControlClass), ("advice", WeatherAdvice), ("kind", CautionKind))]
+def render_vocabularies(version: str = PROMPT_VERSION) -> str:
+    """The fixed lists the prompt shows. v5 adds the QualitySpec lists; earlier versions render exactly as
+    they did, so their kept prompts stay byte-identical."""
+    lists = [("operation", OperationType), ("anchor", Anchor), ("offset_unit", OffsetUnit),
+             ("op", ConditionOp), ("duration_group", DurationGroup), ("dose_basis", DoseBasis),
+             ("control_class", ControlClass), ("advice", WeatherAdvice), ("kind", CautionKind)]
+    if int(version[1:]) >= 5:
+        lists += [("commodity_form", CommodityForm), ("grade", Grade), ("limit_type", LimitType),
+                  ("quality parameter", QualityParameter)]
+    lines = ["- %s: %s" % (name, ", ".join(v.value for v in enum)) for name, enum in lists]
     lines.append("- condition variable (unit, value type):")
     for name, spec in CONDITION_VARIABLES.items():
         lines.append("  - %s (%s, %s)" % (name, spec.unit.value if spec.unit else "no unit",
@@ -180,7 +185,7 @@ def build(entry, unit: dict, model: str, tables: dict | None = None, version: st
     unit_sha = hashlib.sha256(("%s\n\n%s" % (scope, unit_text)).encode("utf-8")).hexdigest()
     key = hashlib.sha256(json.dumps([unit_sha, version, prompt_sha, model]).encode()).hexdigest()
     prompt = (template.replace("{{subtypes}}", ", ".join(s.value for s in Subtype))
-              .replace("{{vocabularies}}", render_vocabularies())
+              .replace("{{vocabularies}}", render_vocabularies(version))
               .replace("{{default_scope}}", scope).replace("{{unit}}", unit_text))
     return {"prompt": prompt, "segments": segments, "prompt_sha256": prompt_sha, "version": version,
             "unit_text_sha256": unit_sha, "cache_key": key}

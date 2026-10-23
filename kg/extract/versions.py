@@ -50,8 +50,9 @@ VERSIONS = {
     "v5": Version("v5", "object", frozenset({"instruction_en", "seedlings_per_hill"}) | V5_DROPPED, frozenset(),
                   True, V4_FLAGS),
 }
-# the default for prepare/report, and for step 10 when a source pins none (registry [extraction] prompt_version)
-LATEST = "v4"
+# the default for prepare/report, and for step 10 when a source pins none (registry [extraction] prompt_version).
+# v5 since 2026-10-23; TNAU pins v4, the prompt its four hand-runs used
+LATEST = "v5"
 
 
 def source_version(entry) -> str:
