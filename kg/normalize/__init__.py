@@ -14,7 +14,7 @@ formulation table sets granules and dusts in a "spray" list (flag operation_from
 list at stated times keeps repeat_offsets; endemic_area values link to a pest or disease. A ControlMeasure
 with no target naming no pest anywhere around it is a general practice (flag general_practice, 2026-10-22).
 Output: data/normalized/<id>/{facts.jsonl, held.jsonl, report.json},
-        data/review/proposed_concepts.csv (all gitignored).
+        data/review/proposed_concepts_<id>.csv (all gitignored).
 """
 
 import copy
@@ -38,7 +38,7 @@ from .units import (canon_basis, canon_conc_unit, canon_duration_unit, canon_uni
                     ratio_words, repeat, sample, water_l_per_ha)
 
 NORMALIZED_DIR = ROOT / "data" / "normalized"
-PROPOSED_CSV = ROOT / "data" / "review" / "proposed_concepts.csv"
+PROPOSED_CSV = "proposed_concepts"   # data/review/proposed_concepts_<source slug>.csv (kg.registry.review_csv)
 APPLIES_TARGETS = ("nutrient", "fertilizer", "organic_input", "ai", "input")      # input: schema v1.3
 PEST_TARGETS = ("pest", "disease", "weed", "disorder")
 APPLICABILITY = {"varieties": ("variety_ids", ("variety",), "variety"),

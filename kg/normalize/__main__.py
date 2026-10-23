@@ -5,7 +5,7 @@ import re
 import sys
 from collections import Counter, defaultdict
 
-from kg.registry import read_registry
+from kg.registry import read_registry, review_csv
 
 from . import NORMALIZED_DIR, PROPOSED_CSV, run
 
@@ -65,8 +65,9 @@ def write(entry, result, rep) -> None:
                                         "count": 0, "facts": []})
             row["count"] += 1
             row["facts"].append("%s#%d" % (x["unit_id"].rsplit(":", 1)[1], x["raw_index"]))
-    PROPOSED_CSV.parent.mkdir(parents=True, exist_ok=True)
-    with open(PROPOSED_CSV, "w", encoding="utf-8", newline="") as f:
+    path = review_csv(PROPOSED_CSV, entry)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=("name", "name_type", "reason", "count", "facts"))
         w.writeheader()
         for row in sorted(seen.values(), key=lambda r: (r["name_type"], r["name"].lower())):

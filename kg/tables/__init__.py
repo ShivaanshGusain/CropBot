@@ -4,7 +4,7 @@ against the page, pivot variety tables.
   uv run python -m kg.tables source:tnau_agriculture_2020 [--chapters RICE,WHEAT]
 
 Input: data/docling/<id>/document.json and data/units/<id>/units.jsonl (run kg.segment first).
-Output: data/tables/<id>/{tables.jsonl, varieties.jsonl, report.json} and data/review/tables.csv
+Output: data/tables/<id>/{tables.jsonl, varieties.jsonl, report.json} and data/review/tables_<id>.csv
 (all gitignored).
 """
 
@@ -12,7 +12,7 @@ import csv
 import json
 from collections import Counter
 
-from kg.registry import ROOT
+from kg.registry import ROOT, review_csv
 
 from .check import PageChecker
 from .rebuild import Rebuilt, crossings, rebuild
@@ -21,7 +21,7 @@ from .varieties import (duration_group_of, duration_outliers, duration_reference
                         pivot, possible_duplicates, variety_mentions)
 
 TABLES_DIR = ROOT / "data" / "tables"
-REVIEW_CSV = ROOT / "data" / "review" / "tables.csv"
+REVIEW_CSV = "tables"      # data/review/tables_<source slug>.csv (kg.registry.review_csv)
 REVIEW_FIELDS = ("source_id", "chapter", "table_ref", "pdf_page", "printed_page", "check", "detail",
                  "docling", "page", "variety_id")
 COW_BOX_PAGE = 134       # the COW(W)1 block in "I. SEASON AND VARIETY" of the wheat chapter
@@ -153,8 +153,9 @@ def write(entry, result) -> dict:
     with open(out / "varieties.jsonl", "w", encoding="utf-8") as f:
         for v in result["varieties"]:
             f.write(v.model_dump_json() + "\n")
-    REVIEW_CSV.parent.mkdir(parents=True, exist_ok=True)
-    with open(REVIEW_CSV, "w", encoding="utf-8", newline="") as f:
+    review_path = review_csv(REVIEW_CSV, entry)
+    review_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(review_path, "w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=REVIEW_FIELDS, extrasaction="ignore")
         w.writeheader()
         w.writerows(result["review"])
@@ -177,7 +178,7 @@ def write(entry, result) -> dict:
         "duration_reference": result["duration_reference"],
         "duration_outliers": result["duration_outliers"],
         "cow_box_context": result["cow_box_context"],
-        "outputs": {"dir": str(out), "review_csv": str(REVIEW_CSV)},
+        "outputs": {"dir": str(out), "review_csv": str(review_path)},
     }
     (out / "report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     return report

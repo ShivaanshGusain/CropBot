@@ -3,7 +3,7 @@ import csv
 import json
 import sys
 
-from kg.registry import read_registry
+from kg.registry import read_registry, review_csv
 
 from . import CHECKS, REVIEW_CSV, VALIDATED_DIR, report, run
 
@@ -15,8 +15,9 @@ def write(entry, res, rep) -> None:
         for row in res["facts"]:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
     (out / "report.json").write_text(json.dumps(rep, indent=2, ensure_ascii=False), encoding="utf-8")
-    REVIEW_CSV.parent.mkdir(parents=True, exist_ok=True)
-    with open(REVIEW_CSV, "w", encoding="utf-8", newline="") as f:
+    path = review_csv(REVIEW_CSV, entry)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="") as f:
         w = csv.writer(f)
         w.writerow(["unit_id", "raw_index", "fact_id", "subtype", "check", "status", "reason"])
         for row in res["facts"]:

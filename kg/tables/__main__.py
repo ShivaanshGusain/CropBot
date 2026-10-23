@@ -10,7 +10,7 @@ from . import print_report, run, write
 def main():
     ap = argparse.ArgumentParser(prog="python -m kg.tables", description="Stitch, check and pivot tables")
     ap.add_argument("source_id")
-    ap.add_argument("--chapters", default="RICE,WHEAT", help="chapter titles (default: RICE,WHEAT)")
+    ap.add_argument("--chapters", help="chapter titles, comma-separated (default: the source's approved chapters)")
     args = ap.parse_args()
     try:
         entries = {e.id: e for e in read_registry()}
@@ -22,7 +22,9 @@ def main():
     units = UNITS_DIR / entry.id.split(":", 1)[1] / "units.jsonl"
     if not units.exists():
         raise SystemExit("no units at %s; run uv run python -m kg.segment %s" % (units, entry.id))
-    result = run(entry, output_dir(entry), units, tuple(c.strip() for c in args.chapters.split(",")))
+    chapters = (tuple(c.strip() for c in args.chapters.split(",")) if args.chapters
+                else tuple(c.path_label() for c in entry.chapters if c.status == "approved"))
+    result = run(entry, output_dir(entry), units, chapters)
     print_report(write(entry, result))
 
 

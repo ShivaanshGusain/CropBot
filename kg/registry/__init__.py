@@ -75,6 +75,12 @@ def read_registry(directory: Path = REGISTRY_DIR, root: Path = ROOT,
     return [e for _, e in entries]
 
 
+def review_csv(name: str, entry) -> Path:
+    """data/review/<name>_<source slug>.csv: one review file per source, so a run for one book never overwrites
+    another's rows (2026-10-23)."""
+    return ROOT / "data" / "review" / ("%s_%s.csv" % (name, entry.id.split(":", 1)[1]))
+
+
 def read_entry(source_id: str, directory: Path = REGISTRY_DIR, root: Path = ROOT) -> RegistryEntry:
     """The entry with this id. Every entry is validated, as in read_registry; entries are sorted by file
     name, so never pick one by position."""

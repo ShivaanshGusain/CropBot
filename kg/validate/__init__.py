@@ -5,7 +5,7 @@
 Every check returns pass, fail or skip with a reason. A failure only adds a review reason: an
 `extracted` fact becomes `needs_review`; nothing is corrected, nothing becomes approved (Jev, step 12,
 decides auto_verified). Input: data/normalized/<id>/facts.jsonl and the step 9 runs it came from.
-Output: data/validated/<id>/{facts.jsonl, report.json} and data/review/validation.csv (gitignored).
+Output: data/validated/<id>/{facts.jsonl, report.json} and data/review/validation_<id>.csv (gitignored).
 
   1 quote_location   the quote is found exactly once in its unit; a fact's table_ref/row is where it was found
   2 raw_numbers      every raw text is in the quote; every parsed number is printed in its raw text
@@ -39,7 +39,7 @@ from kg.schema.vocab import NOT_SCOPE, SCOPE_IN_UNMAPPED, SCOPE_IN_UNMAPPED_REAS
 
 NORMALIZED_DIR = ROOT / "data" / "normalized"
 VALIDATED_DIR = ROOT / "data" / "validated"
-REVIEW_CSV = ROOT / "data" / "review" / "validation.csv"
+REVIEW_CSV = "validation"      # data/review/validation_<source slug>.csv (kg.registry.review_csv)
 CHECKS = ("quote_location", "raw_numbers", "value_ranges", "alternatives", "ingredients", "review_kept",
           "range_narrowed", "lost_glyph", "printed_text", "scope_in_unmapped", "number_in_text")
 NARROWED = "printed range stored as a single bound"
