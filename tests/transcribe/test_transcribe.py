@@ -1,10 +1,10 @@
-"""Verified page transcriptions (kg.transcribe): the committed DFPD p. 6 file, the approval gate, and what an
-approved transcription changes downstream (segmentation, tables, quote checks, SourceSpans). Approval is
-always simulated on a copy in a temporary folder; the committed file stays proposed."""
+"""Verified page transcriptions (kg.transcribe): the committed DFPD p. 6 file (approved by the user on
+2026-10-23), the approval gate, and what an approved transcription changes downstream (segmentation, tables,
+quote checks, SourceSpans). Every other status is simulated on a copy in a temporary folder."""
 
 import datetime as dt
 import json
-import shutil
+import re
 
 import pytest
 from pydantic import ValidationError
@@ -16,33 +16,37 @@ from kg.transcribe import (TranscriptionError, body_sha256, for_source, parse_bo
 
 ENTRY = read_entry("source:dfpd_uniform_spec_kms_2026_27")
 P006 = source_dir(ENTRY) / "p006.md"
-TODAY = dt.date(2026, 10, 22)
+TODAY = dt.date(2026, 10, 23)
 DOCLING = output_dir(ENTRY)
 needs_conversion = pytest.mark.skipif(not (DOCLING / "document.json").exists(),
                                       reason="needs the DFPD conversion in data/docling/")
 
 
-def approved_copy(tmp_path, checked_by="TEST REVIEWER", checked_at="2026-10-22", edit_body=None):
+def copy_with(tmp_path, status="approved", checked_by="TEST REVIEWER", checked_at="2026-10-22", edit_body=None):
+    """A copy of the committed p006.md with these header values (and an optional text replacement)."""
     d = tmp_path / "tr"
-    d.mkdir()
+    d.mkdir(parents=True)
     text = P006.read_text(encoding="utf-8")
-    text = text.replace('status = "proposed"', 'status = "approved"', 1)
-    text = text.replace('checked_by = ""', 'checked_by = "%s"' % checked_by, 1)
-    text = text.replace('checked_at = ""', 'checked_at = "%s"' % checked_at, 1)
+    for key, value in (("status", status), ("checked_by", checked_by), ("checked_at", checked_at)):
+        text = re.sub(r'(?m)^%s = ".*"$' % key, '%s = "%s"' % (key, value), text, count=1)
     if edit_body:
         text = text.replace(*edit_body)
     (d / "p006.md").write_text(text, encoding="utf-8", newline="\n")
     return d
 
 
+def approved_copy(tmp_path, **kw):
+    return copy_with(tmp_path, "approved", **kw)
+
+
 # --- the committed transcription ---------------------------------------------------------------------------
 
-def test_the_committed_p006_is_proposed_hashed_and_as_printed():
+def test_the_committed_p006_is_approved_hashed_and_as_printed():
     t = read(P006)
     h = t.header
     assert (h.source_id, h.pdf_page, h.pdf_sha256, h.rendered_dpi) == (ENTRY.id, 6, ENTRY.sha256, 300)
-    assert (h.status, h.checked_by, h.checked_at, h.transcribed_by) == (
-        "proposed", "", "", "Claude Code from rendered page")
+    assert (h.status, h.checked_at, h.transcribed_by) == ("approved", "2026-10-23", "Claude Code from rendered page")
+    assert h.checked_by.strip()                                    # approved by the user, 2026-10-23
     assert h.body_sha256 == body_sha256(t.body)
     kinds = [b["kind"] for b in t.blocks]
     assert kinds == ["heading", "text", "heading", "table", "text", "subheading", "text", "text", "text", "text"]
@@ -57,22 +61,22 @@ def test_the_committed_p006_is_proposed_hashed_and_as_printed():
     assert "[illegible]" not in t.body
 
 
-def test_a_proposed_transcription_is_never_used():
-    found = for_source(ENTRY, today=TODAY)
-    assert found["approved"] == {} and [(t.page, s) for t, s, _ in found["other"]] == [(6, "proposed")]
+def test_the_committed_p006_is_used():
+    assert list(for_source(ENTRY, today=TODAY)["approved"]) == [6]
 
 
 # --- the approval gate --------------------------------------------------------------------------------------
 
-def test_an_approved_copy_is_used(tmp_path):
-    found = for_source(ENTRY, approved_copy(tmp_path), today=TODAY)
-    assert list(found["approved"]) == [6]
+@pytest.mark.parametrize("status", ["proposed", "rejected"])
+def test_a_proposed_or_rejected_transcription_is_never_used(tmp_path, status):
+    found = for_source(ENTRY, copy_with(tmp_path, status, "", ""), today=TODAY)
+    assert found["approved"] == {} and [(t.page, s) for t, s, _ in found["other"]] == [(6, status)]
 
 
 @pytest.mark.parametrize("kw, problem", [
     ({"checked_by": ""}, "approved without checked_by"),
     ({"checked_at": ""}, "approved without a valid checked_at"),
-    ({"checked_at": "2026-10-23"}, "is in the future"),
+    ({"checked_at": "2026-10-24"}, "is in the future"),
     ({"edit_body": ("17.0", "18.0")}, "the body changed after body_sha256 was stored"),
     ({"edit_body": ('pdf_sha256 = "19e8', 'pdf_sha256 = "29e8')}, "pdf_sha256 does not match"),
     ({"edit_body": ('source_id = "source:dfpd', 'source_id = "source:xdfpd')}, "is not source:dfpd"),
@@ -116,7 +120,7 @@ def test_body_format_errors(body, problem):
 @needs_conversion
 def test_segmentation_uses_the_converter_until_approval_then_the_transcription(tmp_path):
     from kg.segment.report import segment
-    before, rep = segment(ENTRY, DOCLING, source_dir(ENTRY))
+    before, rep = segment(ENTRY, DOCLING, copy_with(tmp_path / "proposed", "proposed", "", ""))
     assert not any(i["ref"].startswith("tr:") for u in before for i in u["items"])
     assert rep["transcribed_pages"] == [] and rep["transcriptions_not_used"][0]["status"] == "proposed"
 
