@@ -57,8 +57,8 @@ def test_the_dfpd_specification_is_national_and_its_schedules_print_no_page_numb
     assert all(c.status == "proposed" for c in entry.chapters if c.number != "1")
     assert entry.printed_page(5) == "2" and entry.printed_page(6) is None
     [scope] = entry.section_scope
-    assert (scope.heading, scope.pdf_pages, scope.grades, scope.regions, scope.purposes) == (
-        "UNIFORM SPECIFICATION OF ALL VARIETIES OF PADDY", (6, 6), ["grade_a", "common"], [], [])
+    assert (scope.heading, scope.pdf_pages, scope.grades, scope.regions, scope.purposes, scope.status) == (
+        "UNIFORM SPECIFICATION OF ALL VARIETIES OF PADDY", (6, 6), ["grade_a", "common"], [], [], "approved")
 
 
 def test_a_season_label_must_name_the_edition_year(reg):
