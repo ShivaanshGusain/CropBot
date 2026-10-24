@@ -1,6 +1,6 @@
 # CropBot knowledge graph: handover
 
-For teammates who haven't worked on the pipeline. The KG-building phase closed on 2026-10-24. This page says what is in the graph, how to connect, and how the agent asks it questions. Everything else (every decision, every number, every known problem) is in `CLAUDE.md`; the schema is `docs/schema_v1.6.md`.
+For teammates who haven't worked on the pipeline. The KG-building phase closed on 2026-10-24. This page says what is in the graph, how to get it on your machine, and how the agent asks it questions. Everything else (every decision, every number, every known problem) is in `CLAUDE.md`; the schema is `docs/schema_v1.6.md`.
 
 ## 1. What is in the graph (main database, 2026-10-24)
 
@@ -11,36 +11,80 @@ Every agronomic fact is a `Recommendation` node with a subtype label, applicabil
 | Source | Region | Authority tier | Facts in the graph | Held (not loaded) |
 |---|---|---|---|---|
 | `source:tnau_agriculture_2020`: TNAU Crop Production Guide, Agriculture 2020 (rice chapter, 4 sections) | Tamil Nadu (`state:33`) | 1 (state university) | 113: 12 extracted, 101 needs_review | 11 |
-| `source:dfpd_uniform_spec_kms_2026_27`: DFPD uniform specification, paddy, KMS 2026-27 | national (`country:in`) | 0 (regulatory) | 18 QualitySpec, all **approved** | 0 |
-| `source:gbpuat_kharif_advisory_2020`: GBPUAT Pantnagar, kharif advisory 2020 (rice rows) | Uttarakhand (`state:5`) | 1 | 8, all **approved**: 2 VarietyRecommendation, 6 SowingWindow | 4 (Chetki Dhan, Jethi Rice) |
+| `source:dfpd_uniform_spec_kms_2026_27`: DFPD uniform specification, paddy, KMS 2026-27 (DFPD letter dated 17.08.2026) | national (`country:in`) | 0 (regulatory) | 18 QualitySpec, all **approved** | 0 |
+| `source:gbpuat_kharif_advisory_2020`: GBPUAT Pantnagar, "Advisory for Kharif Season in Uttarakhand", dated 02.05.2020 (rice rows) | Uttarakhand (`state:5`) | 1 | 8, all **approved**: 2 VarietyRecommendation, 6 SowingWindow | 4 (Chetki Dhan, Jethi Rice) |
 
 TNAU by subtype: ControlMeasure 44, NutrientDose 13, Caution 12, SeedTreatment 12, PestThreshold 8, IrrigationRule 6, HarvestRule 5, StorageRule 5, SeedRate 4, DryingSpec 3, Spacing 1.
 
-**Status** is set only by people, through the expert decisions file (`data/review/expert_decisions.csv`): `approved` facts are served as they are; `extracted` and `needs_review` are unreviewed (see section 5). No TNAU fact has been reviewed yet.
+The GBPUAT advisory is dated 02.05.2020 (the date in its URL's file name and its PDF metadata; the page itself prints no date). Its windows and varieties are for the 2020 kharif season and have not been checked against a newer advisory.
+
+**Status.** Code sets `extracted` or `needs_review` (steps 10–12: needs_review whenever something about the fact needs a person's look; `auto_verified` would also come from code, but no threshold is set, so no fact has it). Only `approved` and `rejected` come from people, through the expert decisions file (`data/review/expert_decisions.csv`). `approved` facts are served as they are; `extracted` and `needs_review` are unreviewed (section 5). No TNAU fact has been reviewed yet.
 
 **The three approved answers** (served with no warning label):
 1. **Paddy procurement quality** (`quality_check`): the 18 DFPD limits for paddy, KMS 2026-27 (moisture at most 17 %, foreign matter, damaged grains, the substances paddy must be free from, …), for every state.
 2. **Rice varieties for Uttarakhand** (`varieties_for`): 16 varieties for Tarai, Bhabhar & Plain; 8 for the irrigated hills (mid and high hills).
 3. **Rice sowing and transplanting windows for Uttarakhand** (`sowing_window`): Tarai nursery 16 May – 7 June and transplanting 25 June – 7 July; irrigated mid hills nursery 1–15 May and transplanting 16–30 June; irrigated high hills nursery 16–30 April and transplanting 1–15 June.
 
-## 2. Starting Neo4j and connecting
+## 2. Getting the graph on your machine
 
-- **Server:** Neo4j 2026.09.0 Enterprise, run from Neo4j Desktop on the development machine. Start the DBMS in Neo4j Desktop and wait until it shows **Running**. It listens for Bolt on `127.0.0.1:7687`.
-- **Databases:** `neo4j` (the home database: the real graph) and `cropbot-test` (live tests only; every live test empties it first).
+Dump shared at: <link>
+
+The dump is `neo4j.dump` (345,278 bytes, sha256 `edd99b47c31d8c6127f48a137cc238ff2c263f008481c3193ae76f6a4ddaa9c9`), made on 2026-10-24 from the main database.
+
+1. **Install Neo4j 2026.09.0 Enterprise**, the version and edition the dump was made with and tested on (the development machine runs it in Neo4j Desktop 2). Create a local DBMS of that version, set its password and leave it stopped. Community edition: see "Community edition" below.
+2. **Load the dump.** Put the file in a folder of its own, named exactly `neo4j.dump` (the load looks for `<database>.dump`), then, with the DBMS stopped, from the DBMS's installation folder:
+
+   ```bash
+   bin/neo4j-admin database load neo4j --from-path=<folder with neo4j.dump> --overwrite-destination=true
+   ```
+
+   On Windows it is `bin\neo4j-admin.bat`; on the development machine it needed `JAVA_HOME` set to Neo4j Desktop's bundled Java 21 runtime. If the DBMS is already running (Enterprise only), stop just the database instead: run `STOP DATABASE neo4j WAIT` on the `system` database, load, then `START DATABASE neo4j WAIT`. Then start the DBMS.
+3. **Python environment:** install [uv](https://docs.astral.sh/uv/), then in the repo root:
+
+   ```bash
+   uv sync
+   ```
+
+   The project needs Python 3.13 (`requires-python = ">=3.13"`, pinned to 3.13 in `.python-version`); uv fetches it if it is missing.
+4. **`.env`:** copy `.env.example` to `.env` in the repo root and fill in `NEO4J_URI` (your DBMS's Bolt URL, port 7687 by default), `NEO4J_USER` and `NEO4J_PASSWORD` (the password you set in step 1). `BEATAPI_API_KEY` is needed only to build the graph. Never commit `.env`.
+5. **Check the connection and the data:**
+
+   ```bash
+   uv run python scripts/check_neo4j.py
+   ```
+
+   ```bash
+   uv run python -m kg.load.facts --snapshot
+   ```
+
+   The first prints the server version; the second must print sha256 `13c96aef…` with 842 nodes and 1,280 relationships.
+6. **Ask one question:**
+
+   ```bash
+   uv run python -c "from kg.query import ask; out = ask('sowing_window', {'crop': 'crop:rice', 'state': 'state:5', 'zones': ['zone:uk_tarai_bhabhar_plain']}); print([(f['values']['window_for'], f['citation']['quote']) for s in out['slots'] for f in s['facts']])"
+   ```
+
+   It prints the Tarai nursery and transplanting windows with their quotes.
+
+**Community edition.** The dump's store format is `block-block-1.1` (introduced in Neo4j 5.14.0; read with `neo4j-admin database info neo4j` on 2026-10-24). Whether Neo4j Community 2026.09 loads it is **untested**: no Community distribution was available on the development machine, and testing needs a download of Community 2026.09.0. Until someone tests it, use 2026.09.0 Enterprise. If Community turns out to refuse the format, two routes exist, both untested here: convert the store on Enterprise before dumping (`neo4j-admin database migrate`), or rebuild the graph from the repository (`kg.load.seed`, then `kg.load.facts` for each source). The rebuild also needs `data/tables/`, `data/normalized/`, `data/validated/` and `data/verified/`, which are not in `backups/` yet.
+
+## 3. Starting Neo4j and connecting
+
+- **Server:** Neo4j 2026.09.0 Enterprise. Start the DBMS (Neo4j Desktop: wait until it shows **Running**). It listens for Bolt on port 7687.
+- **Databases:** `neo4j` (the home database: the real graph) and, on the development machine, `cropbot-test` (live tests only; every live test empties it first).
 - **Connection settings** come only from `.env` in the repo root, which is never committed. The names (see `.env.example`):
-  - `NEO4J_URI`: the Bolt URL of the local server (port 7687);
+  - `NEO4J_URI`: the Bolt URL of the local server;
   - `NEO4J_USER`, `NEO4J_PASSWORD`;
   - `BEATAPI_API_KEY`: the Jev verifier, needed only to build the graph, never to query it.
-- **Check the connection:** `uv run python scripts/check_neo4j.py` prints the server version.
-- **Backup** (2026-10-24, gitignored `backups/`): `neo4j.dump` (the `neo4j` database, restored into `cropbot-test` and checked: same snapshot hash) and zips of `data/extracted/` (the hand-run extraction answers), `data/docling/` (the conversions) and `data/raw/` (the PDFs), none of which are on GitHub. To restore the dump: stop the database (`STOP DATABASE neo4j WAIT` on the `system` database), run `neo4j-admin database load neo4j --from-path=backups --overwrite-destination=true` from the DBMS's `bin` folder, then `START DATABASE neo4j WAIT`.
+- **Backup** (2026-10-24, gitignored `backups/` on the development machine): `neo4j.dump` (restored into `cropbot-test` and checked: same snapshot hash) and zips of `data/extracted/` (the hand-run extraction answers), `data/docling/` (the conversions) and `data/raw/` (the PDFs), none of which are on GitHub.
 
-## 3. How the agent queries: pick a template, never write raw Cypher
+## 4. How the agent queries: pick a template, never write raw Cypher
 
 The only entry point is
 
 ```python
 from kg.query import ask
-answer = ask(template, farm_context)      # -> dict (section 4)
+answer = ask(template, farm_context)      # -> dict (section 5)
 ```
 
 - `template` is one of the seven names below. Each has fixed Cypher in `kg/query/templates.py`; the agent never writes or edits graph queries. A question no template covers gets no answer from the graph.
@@ -69,6 +113,15 @@ answer = ask(template, farm_context)      # -> dict (section 4)
 | `forecast` | `{"rain_mm_24h": 12}` | `rain_mm_24h`, `rain_days_3d`, `tmax_c` |
 | `endemic` | `{"disease:tungro": true}` | whether the area is known for a pest or disease |
 | `commodity_form`, `grade`, `quality`, `present` | `"paddy"`, `{"moisture": 18}` | `quality_check` only: what is sold, its grade, measured values, substances found |
+
+### Choosing the farmer's zone
+
+No district has an LGD code yet and there is no district → zone mapping, so the agent cannot derive a zone from where the farmer lives. For an Uttarakhand farmer it asks instead and sets `zones` itself:
+
+- **plains or hills?** Plains (Tarai, Bhabhar and the plains) → `["zone:uk_tarai_bhabhar_plain"]`.
+- **for hills, the altitude:** 900–1500 m → `["zone:uk_mid_hills"]`; 1500 m and above → `["zone:uk_high_hills"]`. Also ask whether the field is irrigated (`"systems": ["system:irrigated"]`): the hill varieties and windows are for irrigated hills, and without a system the answer asks for it.
+
+Without a zone, `varieties_for` and `sowing_window` answer "No local guidance available" (checked on the main database with `{"crop": "crop:rice", "state": "state:5"}`): their facts are scoped to zones, and they never fall back to the state or to another state.
 
 ### The templates, one example each
 
@@ -122,7 +175,23 @@ ask("sowing_window", {"crop": "crop:rice", "state": "state:5", "zones": ["zone:u
 
 Varieties and sowing windows never cross state lines: a farmer outside Uttarakhand gets "No local guidance available", never another state's varieties.
 
-## 4. What an answer contains
+### Uttarakhand farmers get Tamil Nadu advice for drying, storage, harvest and thresholds
+
+The graph has no Uttarakhand source for these four. For `state:5`, `drying_target`, `storage`, `harvest_readiness` and `threshold` therefore fall back to the Tamil Nadu (TNAU) facts: the answer's `scope` is `fallback`, and every served fact carries the label **"From a Tamil Nadu source"** besides "not yet verified by an expert". The agent must show that label with the advice. Run on the main database on 2026-10-24, for a Tarai farmer drying grain:
+
+```python
+ask("drying_target", {"crop": "crop:rice", "state": "state:5", "zones": ["zone:uk_tarai_bhabhar_plain"],
+                      "purpose": "purpose:grain"})
+# scope "fallback", asks [], 1 slot:
+#   DryingSpec, status extracted, values {"target_moisture_pct_max": 12.0},
+#   labels ["not yet verified by an expert", "From a Tamil Nadu source"],
+#   citation source:tnau_agriculture_2020, PDF p. 39 (printed p. 27)
+# procurement_moisture: the DFPD paddy moisture limit 17.0 (national, approved, no label)
+```
+
+The same context with the other three templates (storage `purpose:seed`; harvest_readiness `purpose:seed`, `duration_group: "medium"`; threshold `pest:brown_planthopper` with no spiders) also returned `scope: "fallback"`, every served fact labelled "From a Tamil Nadu source": storage 3 facts (and it asks the storage months), harvest_readiness 2, threshold 1.
+
+## 5. What an answer contains
 
 `ask` returns a dict:
 
@@ -149,12 +218,19 @@ Each served fact in `slots[].facts` has `id`, `subtype`, `summary_en`, `labels`,
 **How to show it to a farmer**
 - If `asks` is not empty, ask those questions first (or show every slot with its `branch`, "if you store for 8 to 9 months: …").
 - Show each served fact's advice with its citation: the source title and page, and the quote when the farmer wants to check. `printed_page` is the page number printed in the book (None when the page prints none); `pdf_page` is the PDF's page.
-- Show every label verbatim next to the advice: **"not yet verified by an expert"** (an unreviewed fact), "checked automatically against the source", or "From a Tamil Nadu source" (a fallback answer for another state).
+- Show every label next to the advice: **"not yet verified by an expert"** (an unreviewed fact), "checked automatically against the source", or "From a Tamil Nadu source" (a fallback answer for another state).
 - Never show what is in `hidden` as advice; it is there for logging and review. Doses (fertilizer and pesticide amounts) from unreviewed facts are always hidden, and so is any step applying a pesticide whose registration has not been checked.
 - With `disagreement: true`, show both values and their sources; don't pick one.
 - If `message` is set and `slots` is empty, say so; don't fill the gap from general knowledge.
 
-## 5. Adding a new source, in short
+## 6. Language
+
+The graph is in English: every quote, value, label and question is English, as printed in the sources. The agent may translate the advice into the farmer's language, but:
+- quotes are shown unchanged, in the source's own words, never translated or reworded (a translation may be added beside a quote, marked as a translation);
+- labels keep their meaning exactly: "not yet verified by an expert" must still say that no expert has checked it, and "From a Tamil Nadu source" that the advice comes from another state; a translation may not soften, drop or merge them;
+- numbers, units and dates are carried over as they are (no unit conversion, no rounding).
+
+## 7. Adding a new source, in short
 
 The full rules are in `CLAUDE.md` (one section per stage); the order is fixed and each stage's output is checked by a person before the next.
 
@@ -167,13 +243,14 @@ The full rules are in `CLAUDE.md` (one section per stage); the order is fixed an
 7. **Review:** a person checks every fact (`kg.review sheet`, or a hand-check page) and approvals are imported through the decisions file (`kg.review import`), then reloaded twice.
 8. **Fixtures:** one farm context per question in `tests/query/fixtures/`, run live on `cropbot-test`.
 
-## 6. Known limits and backlog
+## 8. Known limits and backlog
 
 See `CLAUDE.md` for the details; in short:
-- **Coverage is small:** one TNAU rice chapter (four sections), the DFPD paddy schedule, and the GBPUAT rice rows. No wheat facts, no other crop, no Hindi source yet.
+- **Coverage is small:** one TNAU rice chapter (four sections), the DFPD paddy schedule, and the GBPUAT rice rows (2020). No wheat facts, no other crop, no Hindi source yet. Uttarakhand farmers get Tamil Nadu advice, labelled, for drying, storage, harvest and thresholds (section 4).
 - **Almost all TNAU facts are unreviewed** (`needs_review` or `extracted`): their doses are hidden and descriptive facts carry the unverified label. The agronomist's review workbook (`data/review/expert_review_tnau.xlsx`) is waiting.
 - **No pesticide is served:** every active ingredient's registration status is `unknown` until the CIB&RC list is loaded, and pesticide steps fail closed.
 - **No auto-verification threshold** yet (the gold set is too small to calibrate one), so nothing becomes `auto_verified`.
-- **Districts have no LGD codes** yet; the agent matches farmers by state and zone.
+- **Districts have no LGD codes** and there is no district → zone mapping: the agent asks plains or hills and the altitude (section 4).
+- **Community edition is untested** for the dump (section 2).
 - **Held facts:** Chetki Dhan and Jethi Rice (GBPUAT; no concepts for spring rice, upland or the direct-seeding type), and 11 TNAU facts (CLAUDE.md lists each reason).
 - **Backlog:** the Jev claim lead-in should read "for irrigated rice", not "for the crop under irrigated"; prompt v6 shows the model no crop, so only a hand-run can tell other crops' rows in a multi-crop table; the open schema notes (v1.4-v1.6) and the proposed items in `CLAUDE.md`.
