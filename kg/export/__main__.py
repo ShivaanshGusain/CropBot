@@ -18,6 +18,8 @@ def main(argv=None) -> int:
     c.add_argument("--database", default="neo4j")
     lo = sub.add_parser("load", help="rebuild an empty, non-home database from the JSONL")
     lo.add_argument("--database", required=True)
+    lo.add_argument("--into-empty-home", action="store_true",
+                    help="allow the home database, only if it has 0 nodes and 0 relationships (Community, AuraDB Free)")
     sub.add_parser("secrets", help="check kg_snapshot/ for .env secrets and key-like strings")
     for p in (w, c, lo):
         p.add_argument("--dir", default=str(SNAPSHOT_DIR), help="the snapshot folder (default kg_snapshot/)")
@@ -38,7 +40,7 @@ def main(argv=None) -> int:
                 print("\n".join(problems) if problems else "kg_snapshot/ matches %s" % a.database)
                 return 1 if problems else 0
             else:
-                print(json.dumps(load(driver, a.database, Path(a.dir)), indent=1))
+                print(json.dumps(load(driver, a.database, Path(a.dir), a.into_empty_home), indent=1))
     except ExportError as e:
         print("refused: %s" % e, file=sys.stderr)
         return 1

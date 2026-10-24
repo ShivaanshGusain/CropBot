@@ -11,8 +11,8 @@ import kg.export as ex
 
 class FakeDriver:
     """Answers the export's two graph queries from fixed rows, in a scrambled order."""
-    def __init__(self, nodes, rels, home="neo4j", count=0):
-        self.nodes, self.rels, self.home, self.count = nodes, rels, home, count
+    def __init__(self, nodes, rels, home="neo4j", count=0, rel_count=0):
+        self.nodes, self.rels, self.home, self.count, self.rel_count = nodes, rels, home, count, rel_count
 
     def execute_query(self, q, database_=None, **params):
         if q.startswith("MATCH (n) RETURN labels"):
@@ -23,6 +23,8 @@ class FakeDriver:
             return [{"name": self.home}], None, None
         if q.startswith("MATCH (n) RETURN count"):
             return [{"n": self.count}], None, None
+        if q.startswith("MATCH ()-[r]->() RETURN count"):
+            return [{"n": self.rel_count}], None, None
         raise AssertionError(q)
 
 
@@ -74,6 +76,17 @@ def test_the_loader_refuses_the_home_database_and_a_database_that_is_not_empty()
         ex.load(FakeDriver([], []), "system")
     with pytest.raises(ex.ExportError, match="refusing 'cropbot-test': it is not empty"):
         ex.load(FakeDriver([], [], count=3), "cropbot-test")
+
+
+def test_into_empty_home_is_explicit_and_only_for_a_completely_empty_home_database():
+    with pytest.raises(ex.ExportError, match="it is the home database; .* --into-empty-home"):
+        ex.load(FakeDriver([], [], home="neo4j"), "neo4j")                          # the default refuses
+    with pytest.raises(ex.ExportError, match=r"not empty \(5 nodes, 0 relationships\); --into-empty-home loads only"):
+        ex.load(FakeDriver([], [], home="neo4j", count=5), "neo4j", into_empty_home=True)
+    with pytest.raises(ex.ExportError, match=r"not empty \(0 nodes, 2 relationships\)"):
+        ex.load(FakeDriver([], [], home="neo4j", rel_count=2), "neo4j", into_empty_home=True)
+    with pytest.raises(ex.ExportError, match="refusing 'system'"):
+        ex.load(FakeDriver([], [], home="system"), "system", into_empty_home=True)
 
 
 def test_the_loader_refuses_labels_outside_the_schema(tmp_path):

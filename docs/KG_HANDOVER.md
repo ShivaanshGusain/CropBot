@@ -64,7 +64,7 @@ Download the files you need; don't delete or overwrite anything in this folder: 
      ```
 
      On Windows it is `bin\neo4j-admin.bat`, and it needs `JAVA_HOME` set to Neo4j Desktop's bundled Java 21 runtime. If the DBMS is already running, stop just the database instead: run `STOP DATABASE neo4j WAIT` on the `system` database, load, then `START DATABASE neo4j WAIT`. Then start the DBMS.
-   - **(b) the JSONL, into a separate empty database.** `kg.export load` writes through Bolt (no `neo4j-admin`) and refuses the home database and any database that is not empty, so it never overwrites a graph. Create the database first (Enterprise, on the `system` database: `CREATE DATABASE kg WAIT`), then:
+   - **(b) the JSONL, into a separate empty database.** `kg.export load` writes through Bolt (no `neo4j-admin`) and refuses any database that is not empty, and the home database by default (`--into-empty-home` allows an empty one: see "Community edition and AuraDB Free" below), so it never overwrites a graph. Create the database first (Enterprise, on the `system` database: `CREATE DATABASE kg WAIT`), then:
 
      ```bash
      uv run python -m kg.export load --database kg
@@ -100,8 +100,14 @@ Whenever the graph is reloaded (a new source, new approvals, a re-run), keep `kg
 
 `write` refuses, writing nothing, if a `.env` password, key, token or secret value or a key-like string turns up in the files; reviewer names and notes are expected (they are in the decisions file too).
 
-**Community edition.** The dump's store format is `block-block-1.1` (introduced in Neo4j 5.14.0; read with `neo4j-admin database info neo4j` on 2026-10-24). Whether Neo4j Community loads it is **untested**, so teammates use Neo4j Desktop (step 2). For a Community deployment later, test first (recorded in the CLAUDE.md backlog). Three routes, none tested on Community:
-- **the JSONL:** `kg.export load` uses only Cypher over Bolt and uniqueness constraints, which Community supports. Community has one user database, the home database, which `kg.export load` refuses as it stands, so this route needs a deliberate option to load an empty home database;
+**Community edition and AuraDB Free.** The dump's store format is `block-block-1.1` (introduced in Neo4j 5.14.0; read with `neo4j-admin database info neo4j` on 2026-10-24). Whether Neo4j Community loads it is **untested**, so teammates use Neo4j Desktop (step 2). For a Community or AuraDB Free deployment later, test first (recorded in the CLAUDE.md backlog). Three routes, none tested on Community or Aura:
+- **the JSONL into the empty home database** (the route for a server with only one database, as Community and AuraDB Free have). `kg.export load` uses only Cypher over Bolt and uniqueness constraints, and on such a server the only database is the home database, which `load` refuses by default. Pass the option explicitly:
+
+  ```bash
+  uv run python -m kg.export load --database neo4j --into-empty-home
+  ```
+
+  It loads only when the home database has 0 nodes and 0 relationships, and refuses otherwise ("it is not empty (842 nodes, 1280 relationships)"), so it never overwrites a graph; without the option the home database is always refused. Then run `kg.export check` and query with `ask()` as usual (no `database=` needed). Tested on 2026-10-24 on `cropbot-test` posing as the home database: refused by default, refused with one node in it, loaded once empty, with the same snapshot hash;
 - **migrate the store format:** on Enterprise, convert the database with `neo4j-admin database migrate` to a store format Community supports, dump it again, and load that dump into Community;
 - **rebuild with the pipeline's loaders:** `uv run python -m kg.load.seed`, then `uv run python -m kg.load.facts <source>` for each source, from the gitignored `data/tables/`, `data/normalized/`, `data/validated/` and `data/verified/` (unzip them from the Drive backups). The snapshot hash then differs (`created_at` records the time of the load); compare counts and statuses instead.
 

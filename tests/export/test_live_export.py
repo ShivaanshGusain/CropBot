@@ -34,3 +34,26 @@ def test_export_empty_load_gives_the_same_snapshot(neo4j_test_db, tmp_path):
     assert loaded["snapshot"] == before
     assert ex.check(driver, name, tmp_path) == []
     assert again["facts_by_source_and_status"] == ex.facts_by_status(driver, name)
+
+
+def test_into_empty_home_on_a_simulated_single_database_server(neo4j_test_db, tmp_path, monkeypatch):
+    """cropbot-test plays the home database (as on Community or AuraDB Free): refused by default, refused
+    with --into-empty-home while anything is in it, loaded with it once it is completely empty."""
+    driver, name = neo4j_test_db
+    concepts = reset_and_seed(driver, name)
+    entry = read_entry("source:gbpuat_kharif_advisory_2020")
+    if not (VALIDATED_DIR / "gbpuat_kharif_advisory_2020" / "facts.jsonl").exists():
+        pytest.skip("needs data/validated and data/verified for GBPUAT")
+    lf.load(driver, entry, lf.build(entry, lf.read_inputs(entry), concepts), name)
+    before = lf.snapshot(driver, name)
+    ex.write(driver, name, tmp_path)
+    monkeypatch.setattr(ex, "home_databases", lambda d: {name})
+    driver.execute_query("MATCH (n) DETACH DELETE n", database_=name)
+    with pytest.raises(ex.ExportError, match="it is the home database"):
+        ex.load(driver, name, tmp_path)
+    driver.execute_query("CREATE (:Crop {id: 'crop:leftover'})", database_=name)
+    with pytest.raises(ex.ExportError, match=r"not empty \(1 nodes, 0 relationships\)"):
+        ex.load(driver, name, tmp_path, into_empty_home=True)
+    driver.execute_query("MATCH (n) DETACH DELETE n", database_=name)
+    loaded = ex.load(driver, name, tmp_path, into_empty_home=True)
+    assert loaded["home"] is True and loaded["snapshot"] == before

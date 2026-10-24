@@ -4,6 +4,7 @@ when the graph changed, a Neo4j dump.
   uv run python -m kg.export write [--database neo4j] [--dump]   # kg_snapshot/ from the database
   uv run python -m kg.export check [--database neo4j]            # kg_snapshot/ against the database, no writes
   uv run python -m kg.export load --database cropbot-test        # rebuild an EMPTY, non-home database from the JSONL
+  uv run python -m kg.export load --database neo4j --into-empty-home   # Community / AuraDB Free: the empty home database
   uv run python -m kg.export secrets                             # kg_snapshot/ holds no .env secret
 
 - nodes.jsonl: one node per line, {"id", "labels" (sorted), "props" (sorted keys)}, sorted by id.
@@ -231,14 +232,28 @@ def check(driver, database: str = "neo4j", src: Path = SNAPSHOT_DIR) -> list[str
     return problems
 
 
-def load(driver, database: str, src: Path = SNAPSHOT_DIR) -> dict:
-    """Rebuild an empty database from the JSONL alone: constraints, nodes by label set, relationships by type,
-    in one transaction. Refuses the home or system database and any database that is not empty."""
+def home_databases(driver) -> set[str]:
     homes, _, _ = driver.execute_query("SHOW DATABASES YIELD name, home WHERE home RETURN name", database_="system")
-    if not database or database == "system" or database in {r["name"] for r in homes}:
-        raise ExportError("refusing %r: load only into an empty database that is not the home database" % database)
-    if driver.execute_query("MATCH (n) RETURN count(n) AS n", database_=database)[0][0]["n"]:
-        raise ExportError("refusing %r: it is not empty" % database)
+    return {r["name"] for r in homes}
+
+
+def load(driver, database: str, src: Path = SNAPSHOT_DIR, into_empty_home: bool = False) -> dict:
+    """Rebuild an empty database from the JSONL alone: constraints, nodes by label set, relationships by type,
+    in one transaction. Refuses the system database and any database that is not empty. The home database is
+    refused too unless `into_empty_home` is passed explicitly (2026-10-24: Community and AuraDB Free have only
+    the home database), and even then only when it has 0 nodes and 0 relationships."""
+    if not database or database == "system":
+        raise ExportError("refusing %r: name the database to load" % database)
+    home = database in home_databases(driver)
+    if home and not into_empty_home:
+        raise ExportError("refusing %r: it is the home database; load into another empty database, or pass "
+                          "--into-empty-home if this server has only the home database and it is empty" % database)
+    nodes_now = driver.execute_query("MATCH (n) RETURN count(n) AS n", database_=database)[0][0]["n"]
+    rels_now = driver.execute_query("MATCH ()-[r]->() RETURN count(r) AS n", database_=database)[0][0]["n"]
+    if nodes_now or rels_now:
+        raise ExportError("refusing %r: it is not empty (%d nodes, %d relationships)%s" % (
+            database, nodes_now, rels_now, "; --into-empty-home loads only a completely empty home database"
+            if home else ""))
     nodes, rels, manifest = read_snapshot(src)
     allowed = set(NODE_LABELS)
     bad = sorted({l for n in nodes for l in n["labels"] if l not in allowed or not NAME.match(l)})
@@ -270,5 +285,5 @@ def load(driver, database: str, src: Path = SNAPSHOT_DIR) -> dict:
 
     with driver.session(database=database) as session:
         session.execute_write(work)
-    return {"database": database, "created": dict(created), "manifest_snapshot": manifest["snapshot"],
+    return {"database": database, "home": home, "created": dict(created), "manifest_snapshot": manifest["snapshot"],
             "snapshot": snapshot(driver, database)}
