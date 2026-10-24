@@ -27,7 +27,7 @@ The GBPUAT advisory is dated 02.05.2020 (the date in its URL's file name and its
 
 ## 2. Getting the graph on your machine
 
-Dump shared at: https://drive.google.com/drive/folders/1JxrvL_QkruGKKS9QinPvpJGMPF_RY-6E?usp=sharing
+Dump shared at: https://drive.google.com/drive/folders/1JxrvL_QkruGKKS9QinPvpJGMPF_RY-6E?usp=sharing (open the "backups" subfolder: all 12 files from `backups/` are there, their sizes checked against the local copies)
 
 Download the files you need; don't delete or overwrite anything in this folder: it is the only shared copy of the backups. Ask Suryansh before changing it.
 
