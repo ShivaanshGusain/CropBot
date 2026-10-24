@@ -31,7 +31,7 @@ Dump shared at: <link>
 
 The dump is `neo4j.dump` (345,278 bytes, sha256 `edd99b47c31d8c6127f48a137cc238ff2c263f008481c3193ae76f6a4ddaa9c9`), made on 2026-10-24 from the main database.
 
-1. **Install Neo4j 2026.09.0 Enterprise**, the version and edition the dump was made with and tested on (the development machine runs it in Neo4j Desktop 2). Create a local DBMS of that version, set its password and leave it stopped. Community edition: see "Community edition" below.
+1. **Install Neo4j Desktop and create a local DBMS of version 2026.09 or newer.** Desktop's local DBMSs are Neo4j Enterprise under the developer licence, the edition this dump needs. The dump was made with and loaded on 2026.09.0 (Neo4j Desktop 2, 2026-10-24); a newer DBMS version is expected to load it but has not been tried. Set the DBMS's password and leave it stopped. Don't use Community edition for now (see "Community edition" below).
 2. **Load the dump.** Put the file in a folder of its own, named exactly `neo4j.dump` (the load looks for `<database>.dump`), then, with the DBMS stopped, from the DBMS's installation folder:
 
    ```bash
@@ -66,11 +66,13 @@ The dump is `neo4j.dump` (345,278 bytes, sha256 `edd99b47c31d8c6127f48a137cc238f
 
    It prints the Tarai nursery and transplanting windows with their quotes.
 
-**Community edition.** The dump's store format is `block-block-1.1` (introduced in Neo4j 5.14.0; read with `neo4j-admin database info neo4j` on 2026-10-24). Whether Neo4j Community 2026.09 loads it is **untested**: no Community distribution was available on the development machine, and testing needs a download of Community 2026.09.0. Until someone tests it, use 2026.09.0 Enterprise. If Community turns out to refuse the format, two routes exist, both untested here: convert the store on Enterprise before dumping (`neo4j-admin database migrate`), or rebuild the graph from the repository (`kg.load.seed`, then `kg.load.facts` for each source). The rebuild also needs `data/tables/`, `data/normalized/`, `data/validated/` and `data/verified/`, which are not in `backups/` yet.
+**Community edition.** The dump's store format is `block-block-1.1` (introduced in Neo4j 5.14.0; read with `neo4j-admin database info neo4j` on 2026-10-24). Whether Neo4j Community loads it is **untested**, so teammates use Neo4j Desktop (step 1). For a Community deployment later, test the load first (recorded in the CLAUDE.md backlog); there are two routes, neither tested here:
+- **migrate the store format:** on Enterprise, convert the database with `neo4j-admin database migrate` to a store format Community supports, dump it again, and load that dump into Community;
+- **rebuild from the repository:** on an empty Community database, run the loaders from the repo: `uv run python -m kg.load.seed` (constraints and concepts), then `uv run python -m kg.load.facts <source>` for each of the three sources (each applies the committed expert decisions). The snapshot hash will not match `13c96aef…`, because it covers every property and `created_at` records the time of the load; check instead the 842 nodes and 1,280 relationships and the fact counts by status (section 1). The loaders read the pipeline outputs in `data/tables/`, `data/normalized/`, `data/validated/` and `data/verified/`, which are gitignored; they must be backed up with the rest of `data/` first (on 2026-10-24 `backups/` holds only `data/extracted/`, `data/docling/` and `data/raw/`).
 
 ## 3. Starting Neo4j and connecting
 
-- **Server:** Neo4j 2026.09.0 Enterprise. Start the DBMS (Neo4j Desktop: wait until it shows **Running**). It listens for Bolt on port 7687.
+- **Server:** a Neo4j Desktop local DBMS, 2026.09 or newer (Enterprise, developer licence; the development machine runs 2026.09.0). Start the DBMS in Neo4j Desktop and wait until it shows **Running**. It listens for Bolt on port 7687.
 - **Databases:** `neo4j` (the home database: the real graph) and, on the development machine, `cropbot-test` (live tests only; every live test empties it first).
 - **Connection settings** come only from `.env` in the repo root, which is never committed. The names (see `.env.example`):
   - `NEO4J_URI`: the Bolt URL of the local server;
@@ -251,6 +253,6 @@ See `CLAUDE.md` for the details; in short:
 - **No pesticide is served:** every active ingredient's registration status is `unknown` until the CIB&RC list is loaded, and pesticide steps fail closed.
 - **No auto-verification threshold** yet (the gold set is too small to calibrate one), so nothing becomes `auto_verified`.
 - **Districts have no LGD codes** and there is no district → zone mapping: the agent asks plains or hills and the altitude (section 4).
-- **Community edition is untested** for the dump (section 2).
+- **Community edition is untested** for the dump: use Neo4j Desktop; test a Community load before any Community deployment (section 2).
 - **Held facts:** Chetki Dhan and Jethi Rice (GBPUAT; no concepts for spring rice, upland or the direct-seeding type), and 11 TNAU facts (CLAUDE.md lists each reason).
 - **Backlog:** the Jev claim lead-in should read "for irrigated rice", not "for the crop under irrigated"; prompt v6 shows the model no crop, so only a hand-run can tell other crops' rows in a multi-crop table; the open schema notes (v1.4-v1.6) and the proposed items in `CLAUDE.md`.
