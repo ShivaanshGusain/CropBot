@@ -1,4 +1,4 @@
-"""The step 14 templates on the loaded TNAU facts, one farm-context fixture per question.
+"""The step 14 templates on the loaded TNAU, DFPD and GBPUAT facts, one farm-context fixture per question.
 
   uv run python -m pytest tests/query/test_live_fixtures.py --neo4j-test-db cropbot-test
 
@@ -32,7 +32,11 @@ def summarise(out: dict) -> dict:
                        "conflicts": [c.get("quote") or "" for c in f["conflicts"]],
                        "checks": (f.get("check") or {}).get("result"),          # schema v1.5 quality_check
                        "citations": {k: f["citation"].get(k) for k in ("pdf_page", "printed_page", "extraction_method",
-                                                                       "transcription", "status")}} for f in facts],
+                                                                       "transcription", "status", "source_id")},
+                       # schema v1.6: a list's varieties, a window's operation and dates as stored
+                       "varieties": sorted(v["id"] for v in f["values"].get("recommends") or []),
+                       "windows": [f["values"].get(k) for k in ("window_for", "start_month", "start_day", "end_month",
+                                                                "end_day")]} for f in facts],
             "verdict": out.get("verdict"),
             "procurement": [{"quote": f["citation"]["quote"]} for f in out.get("procurement_moisture") or []]}
 
@@ -69,7 +73,7 @@ def check(expect: dict, got: dict) -> list[str]:
             ok, have = one_to_one(want, got["visible"]), [f["quote"] for f in got["visible"]]
         elif key == "hidden":
             ok, have = all(any(matches(e, h) for h in got["hidden"]) for e in want), got["hidden"]
-        elif key in ("labels", "clauses", "conflicts", "checks", "citations"):
+        elif key in ("labels", "clauses", "conflicts", "checks", "citations", "varieties", "windows"):
             ok, have = True, {}
             for snippet, value in want.items():
                 named = [f for f in got["facts"] if snippet in (f["quote"] or "")]
@@ -98,7 +102,8 @@ def loaded(neo4j_test_db):
         pytest.skip("needs data/validated and data/verified for the TNAU guide")
     driver, name = neo4j_test_db
     concepts = reset_and_seed(driver, name)                  # the test database only
-    for source in ("source:tnau_agriculture_2020", "source:dfpd_uniform_spec_kms_2026_27"):
+    for source in ("source:tnau_agriculture_2020", "source:dfpd_uniform_spec_kms_2026_27",
+                   "source:gbpuat_kharif_advisory_2020"):
         if not (VALIDATED_DIR / source.split(":", 1)[1] / "facts.jsonl").exists():
             pytest.skip("needs data/validated and data/verified for %s" % source)
         entry = read_entry(source)
@@ -116,6 +121,7 @@ def test_fixture(loaded, path):
     for f in served:                                                # every served fact carries its citation
         c = f["citation"]
         assert c["quote"] and c["pdf_page"] and c["source_title"] and c["status"]
-        assert c["printed_page"] or f["subtype"] == "QualitySpec"   # the DFPD schedules print no page number
+        # a printed page whenever the cited page prints one (the DFPD schedules and the GBPUAT advisory print none)
+        assert c["printed_page"] == read_entry(c["source_id"]).printed_page(c["pdf_page"])
         assert "verifier_score" in c
         assert bool(c["transcription"]) == (c["extraction_method"] == "manual_transcription")

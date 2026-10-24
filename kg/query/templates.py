@@ -37,6 +37,11 @@ TEMPLATES = {
     "threshold": Template("PestThreshold", (), needs_pest=True),
     # schema v1.5: Q19 "Will the mandi accept my paddy at 18% moisture?"
     "quality_check": Template("QualitySpec", QUALITY_FIELDS),
+    # schema v1.6: Q1 "Which paddy variety should I sow?" (the varieties are RECOMMENDS edges) and Q2 "When
+    # should I sow?" (one answer slot per window_for); neither ever crosses state lines
+    "varieties_for": Template("VarietyRecommendation", ("note",)),
+    "sowing_window": Template("SowingWindow", ("window_for", "start_month", "start_day", "end_month", "end_day",
+                                               "raw_start_month", "raw_end_month")),
 }
 
 _MATCH = """
@@ -64,6 +69,7 @@ RETURN r {.*} AS fact,
   [(r)-[e]->(x) WHERE type(e) = 'FOR_PEST' | x.id] AS pest_ids,
   [(r)-[e]->(x) WHERE type(e) = 'TARGETS' | x.id] AS target_ids,
   [(r)-[e]->(x) WHERE type(e) = 'CONCERNS' | x.id] AS concerns,
+  [(r)-[e]->(x) WHERE type(e) = 'RECOMMENDS' | {id: x.id, name: x.name_en}] AS recommends,
   [(r)-[e]->(c) WHERE type(e) = 'WHEN' | c {.*}] AS conditions,
   [(r)-[:HAS_STEP]->(st) | st {.*,
       applies: [(st)-[a:APPLIES]->(t) | a {.*, target_id: t.id, target_name: t.name_en,

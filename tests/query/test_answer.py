@@ -58,7 +58,8 @@ def test_unknown_storage_months_asks_and_branches_by_term_never_maps():
     long_fact = out["slots"][0]["facts"][0]
     assert long_fact["labels"] == [LABEL_UNREVIEWED] and long_fact["conflicts"][0]["origin"] == "review"
     assert long_fact["citation"] == {"quote": "q", "pdf_page": 74, "printed_page": "62",
-                                     "source_title": "Crop Production Guide", "status": "needs_review",
+                                     "source_title": "Crop Production Guide",
+                                     "source_id": "source:tnau_agriculture_2020", "status": "needs_review",
                                      "verifier_score": 0.9, "missing_in_latest_run": False,
                                      "extraction_method": None, "transcription": None}   # schema v1.5 citation
     known = answer(FakeDriver([SHORT, LONG]), "drying_target", ctx(purpose="purpose:seed", storage_months=3))

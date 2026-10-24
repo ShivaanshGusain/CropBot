@@ -171,6 +171,8 @@ def slot(c: dict, t) -> str:
     gives = sorted(k for k in t.fields if f.get(k) not in (None, []) and not k.endswith("_inclusive"))
     quality = [f.get(k) for k in ("commodity_form", "grades", "parameter", "limit_type", "part_of")] \
         if f["subtype"] == "QualitySpec" else []          # schema v1.5: one slot per limit
+    if f["subtype"] == "SowingWindow":                    # schema v1.6: one slot per operation the window is for
+        quality = [f.get("window_for") or "sowing"]
     return json.dumps([f["subtype"], sorted(row["pest_ids"]), sorted(row["target_ids"]), sorted(row["concerns"]),
                        f.get("kind"), f.get("storage_term_raw"), [f.get(k) for k in WINDOW], gives,
                        sorted({s.get("operation") for s in row["steps"]}), sorted(c["unknown"].items()), quality],
@@ -241,6 +243,8 @@ def render(c: dict, ctx, t, scope: str, label_fallback: str | None, asks: dict) 
     # an inclusive flag is shown only beside its bound; on its own it is not an answer
     values = {k: f[k] for k in t.fields if f.get(k) not in (None, [])
               and (not k.endswith("_inclusive") or f.get(k.removesuffix("_inclusive")) is not None)}
+    if row.get("recommends"):                              # schema v1.6: the varieties are edges, not properties
+        values["recommends"] = sorted(row["recommends"], key=lambda v: v["id"])
     if not values and not shown_steps and not clauses:
         return None, [h["reason"] for h in hidden_steps] or ["nothing applies"]
     span = row["evidence"][0]["span"] if row["evidence"] else {}
@@ -258,6 +262,7 @@ def render(c: dict, ctx, t, scope: str, label_fallback: str | None, asks: dict) 
                          [*rank(c, ctx, scope)[:3], -rank(c, ctx, scope)[3], rank(c, ctx, scope)[4]])),
         "citation": {"quote": span.get("quote"), "pdf_page": span.get("pdf_page"),
                      "printed_page": span.get("printed_page"), "source_title": src.get("title"),
+                     "source_id": src.get("id"),
                      "status": status, "verifier_score": f.get("verifier_score"),
                      "missing_in_latest_run": bool(f.get("missing_in_latest_run")),
                      # schema v1.5: a quote from an approved page transcription names it
