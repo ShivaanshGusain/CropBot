@@ -27,20 +27,27 @@ The GBPUAT advisory is dated 02.05.2020 (the date in its URL's file name and its
 
 ## 2. Getting the graph on your machine
 
+**The graph is in the repository**, in `kg_snapshot/` (2026-10-24; written by `kg.export`):
+
+| File | Bytes | What it is |
+|---|---|---|
+| `nodes.jsonl` | 554,424 | every node, one per line: `{"id", "labels", "props"}`, sorted by id |
+| `relationships.jsonl` | 149,930 | every relationship: `{"type", "start", "end", "props"}`, sorted by type, start, end |
+| `manifest.json` | 2,430 | snapshot hash, counts by label and type, facts by source and status, export time, source commit, Neo4j version, file sha256s |
+| `neo4j.dump` | 345,615 | the same graph as a Neo4j dump (store format `block-block-1.1`, Neo4j 2026.09.0 Enterprise) |
+
+All four hold snapshot `13c96aef…` (842 nodes, 1,280 relationships). The JSONL is plain text and diffs cleanly: it is the reviewable copy. `.gitattributes` keeps these files byte for byte on every checkout, so their sha256s in the manifest still hold. Rebuilt from the JSONL alone, `cropbot-test` gave exactly this snapshot hash, `created_at` included, and the same counts and statuses as main.
+
+The older backups (the zipped `data/` folders and the first dump) are on Google Drive:
+
 Dump shared at: https://drive.google.com/drive/folders/1JxrvL_QkruGKKS9QinPvpJGMPF_RY-6E?usp=sharing (open the "backups" subfolder: all 12 files from `backups/` are there, their sizes checked against the local copies)
 
 Download the files you need; don't delete or overwrite anything in this folder: it is the only shared copy of the backups. Ask Suryansh before changing it.
 
-The dump is `neo4j.dump` (345,278 bytes, sha256 `edd99b47c31d8c6127f48a137cc238ff2c263f008481c3193ae76f6a4ddaa9c9`), made on 2026-10-24 from the main database.
+### Steps
 
-1. **Install Neo4j Desktop and create a local DBMS of version 2026.09 or newer.** Desktop's local DBMSs are Neo4j Enterprise under the developer licence, the edition this dump needs. The dump was made with and loaded on 2026.09.0 (Neo4j Desktop 2, 2026-10-24); a newer DBMS version is expected to load it but has not been tried. Set the DBMS's password and leave it stopped. Don't use Community edition for now (see "Community edition" below).
-2. **Load the dump.** Put the file in a folder of its own, named exactly `neo4j.dump` (the load looks for `<database>.dump`), then, with the DBMS stopped, from the DBMS's installation folder:
-
-   ```bash
-   bin/neo4j-admin database load neo4j --from-path=<folder with neo4j.dump> --overwrite-destination=true
-   ```
-
-   On Windows it is `bin\neo4j-admin.bat`; on the development machine it needed `JAVA_HOME` set to Neo4j Desktop's bundled Java 21 runtime. If the DBMS is already running (Enterprise only), stop just the database instead: run `STOP DATABASE neo4j WAIT` on the `system` database, load, then `START DATABASE neo4j WAIT`. Then start the DBMS.
+1. **Clone the repository** (`kg-pipeline` branch).
+2. **Install Neo4j Desktop and create a local DBMS of version 2026.09 or newer.** Desktop's local DBMSs are Neo4j Enterprise under the developer licence, the edition the dump needs. The dump was made with and loaded on 2026.09.0 (Neo4j Desktop 2, 2026-10-24); a newer DBMS version is expected to load it but has not been tried. Set the DBMS's password and leave it stopped. Don't use Community edition for now (see "Community edition" below).
 3. **Python environment:** install [uv](https://docs.astral.sh/uv/), then in the repo root:
 
    ```bash
@@ -48,29 +55,55 @@ The dump is `neo4j.dump` (345,278 bytes, sha256 `edd99b47c31d8c6127f48a137cc238f
    ```
 
    The project needs Python 3.13 (`requires-python = ">=3.13"`, pinned to 3.13 in `.python-version`); uv fetches it if it is missing.
-4. **`.env`:** copy `.env.example` to `.env` in the repo root and fill in `NEO4J_URI` (your DBMS's Bolt URL, port 7687 by default), `NEO4J_USER` and `NEO4J_PASSWORD` (the password you set in step 1). `BEATAPI_API_KEY` is needed only to build the graph. Never commit `.env`.
-5. **Check the connection and the data:**
+4. **`.env`:** copy `.env.example` to `.env` in the repo root and fill in `NEO4J_URI` (your DBMS's Bolt URL, port 7687 by default), `NEO4J_USER` and `NEO4J_PASSWORD` (the password you set in step 2). `NEO4J_HOME` (the DBMS's folder) and `NEO4J_JAVA_HOME` (Neo4j Desktop's Java 21 runtime) are needed only to make a dump; `BEATAPI_API_KEY` only to build the graph. Never commit `.env`.
+5. **Load the graph**, either way:
+   - **(a) the dump, into the home database `neo4j`.** With the DBMS stopped, from the DBMS's installation folder:
+
+     ```bash
+     bin/neo4j-admin database load neo4j --from-path=<repo>/kg_snapshot --overwrite-destination=true
+     ```
+
+     On Windows it is `bin\neo4j-admin.bat`, and it needs `JAVA_HOME` set to Neo4j Desktop's bundled Java 21 runtime. If the DBMS is already running, stop just the database instead: run `STOP DATABASE neo4j WAIT` on the `system` database, load, then `START DATABASE neo4j WAIT`. Then start the DBMS.
+   - **(b) the JSONL, into a separate empty database.** `kg.export load` writes through Bolt (no `neo4j-admin`) and refuses the home database and any database that is not empty, so it never overwrites a graph. Create the database first (Enterprise, on the `system` database: `CREATE DATABASE kg WAIT`), then:
+
+     ```bash
+     uv run python -m kg.export load --database kg
+     ```
+
+     It checks the files' sha256s against the manifest, creates the id constraints, nodes and relationships in one transaction, and prints the counts and the snapshot. Query that database with `ask(..., database="kg")`.
+6. **Check the connection and the data:**
 
    ```bash
    uv run python scripts/check_neo4j.py
    ```
 
    ```bash
-   uv run python -m kg.load.facts --snapshot
+   uv run python -m kg.export check
    ```
 
-   The first prints the server version; the second must print sha256 `13c96aef…` with 842 nodes and 1,280 relationships.
-6. **Ask one question:**
+   The first prints the server version; the second compares the database (add `--database kg` for route b) with `kg_snapshot/` and must print "kg_snapshot/ matches".
+7. **Ask one question:**
 
    ```bash
    uv run python -c "from kg.query import ask; out = ask('sowing_window', {'crop': 'crop:rice', 'state': 'state:5', 'zones': ['zone:uk_tarai_bhabhar_plain']}); print([(f['values']['window_for'], f['citation']['quote']) for s in out['slots'] for f in s['facts']])"
    ```
 
-   It prints the Tarai nursery and transplanting windows with their quotes.
+   It prints the Tarai nursery and transplanting windows with their quotes (for route b, pass `database="kg"` to `ask`).
 
-**Community edition.** The dump's store format is `block-block-1.1` (introduced in Neo4j 5.14.0; read with `neo4j-admin database info neo4j` on 2026-10-24). Whether Neo4j Community loads it is **untested**, so teammates use Neo4j Desktop (step 1). For a Community deployment later, test the load first (recorded in the CLAUDE.md backlog); there are two routes, neither tested here:
+### After any reload: export, then commit
+
+Whenever the graph is reloaded (a new source, new approvals, a re-run), keep `kg_snapshot/` in step with it:
+
+1. `uv run python -m kg.export check`. If it prints "kg_snapshot/ matches", the graph did not change: commit nothing, and never commit a routine re-export.
+2. If it reports a difference, the graph changed: `uv run python -m kg.export write --dump` (it stops, dumps and restarts the database; it needs `NEO4J_HOME` and `NEO4J_JAVA_HOME`) and `uv run python -m kg.export secrets`.
+3. Review `git diff kg_snapshot/` (the JSONL shows exactly which nodes and properties changed), then commit `kg_snapshot/` with the change it reflects. The dump is committed only in this case, when the graph changed, so binary history grows only with real changes.
+
+`write` refuses, writing nothing, if a `.env` password, key, token or secret value or a key-like string turns up in the files; reviewer names and notes are expected (they are in the decisions file too).
+
+**Community edition.** The dump's store format is `block-block-1.1` (introduced in Neo4j 5.14.0; read with `neo4j-admin database info neo4j` on 2026-10-24). Whether Neo4j Community loads it is **untested**, so teammates use Neo4j Desktop (step 2). For a Community deployment later, test first (recorded in the CLAUDE.md backlog). Three routes, none tested on Community:
+- **the JSONL:** `kg.export load` uses only Cypher over Bolt and uniqueness constraints, which Community supports. Community has one user database, the home database, which `kg.export load` refuses as it stands, so this route needs a deliberate option to load an empty home database;
 - **migrate the store format:** on Enterprise, convert the database with `neo4j-admin database migrate` to a store format Community supports, dump it again, and load that dump into Community;
-- **rebuild from the repository:** on an empty Community database, run the loaders from the repo: `uv run python -m kg.load.seed` (constraints and concepts), then `uv run python -m kg.load.facts <source>` for each of the three sources (each applies the committed expert decisions). The snapshot hash will not match `13c96aef…`, because it covers every property and `created_at` records the time of the load; check instead the 842 nodes and 1,280 relationships and the fact counts by status (section 1). The loaders read the pipeline outputs in `data/tables/`, `data/normalized/`, `data/validated/` and `data/verified/`, which are gitignored; unzip them from `backups/` (section 3) into `data/` first.
+- **rebuild with the pipeline's loaders:** `uv run python -m kg.load.seed`, then `uv run python -m kg.load.facts <source>` for each source, from the gitignored `data/tables/`, `data/normalized/`, `data/validated/` and `data/verified/` (unzip them from the Drive backups). The snapshot hash then differs (`created_at` records the time of the load); compare counts and statuses instead.
 
 ## 3. Starting Neo4j and connecting
 

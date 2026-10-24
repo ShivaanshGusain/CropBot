@@ -28,6 +28,12 @@ The KG-building phase is closed. Start with `docs/KG_HANDOVER.md` (what is in th
   - `neo4j.dump` (sha256 `edd99b47…`, 345,278 bytes), dumped with `neo4j-admin database dump neo4j` while the database was stopped with `STOP DATABASE neo4j WAIT`. The DBMS itself was not stopped: Neo4j Desktop runs it as a console process with no service, so `neo4j stop` doesn't apply, and killing it would be an unclean shutdown.
   - Restore check: the dump loaded into `cropbot-test` (`neo4j-admin database load … --overwrite-destination=true`, the database stopped then started) gives the same snapshot hash as main. The live tests have since emptied and reloaded `cropbot-test`.
   - One zip per gitignored `data/` folder, each entry count checked against the folder: `data_{raw,docling,extracted,units,tables,normalized,validated,verified,eval,loaded,review}_2026-10-24.zip` (3, 110, 74, 6, 9, 9, 6, 22, 1, 3, 29 files). With the dump, 12 files, 19,262,070 bytes; the list with sizes is in `docs/KG_HANDOVER.md`. `data/gold/` is committed.
+- **The graph in the repo** (`kg_snapshot/`, 3bd94c1; `kg/export`, d320c2e): `nodes.jsonl` and `relationships.jsonl` (deterministic, sorted, all properties, DateTime as `{"$datetime": ISO}`), `manifest.json` and `neo4j.dump` (345,615 bytes; a re-dump of the same graph is not byte-identical, the JSONL is).
+  - `uv run python -m kg.export write [--dump]`, `check`, `load --database <empty, non-home>`, `secrets`. `--dump` stops, dumps and starts the database, using `NEO4J_HOME` and `NEO4J_JAVA_HOME` (`.env.example`, names only).
+  - Proof (2026-10-24): `cropbot-test` emptied and rebuilt from the JSONL alone gave the same snapshot hash as main (`13c96aef…`, `created_at` included), and the same counts by label and type and facts by source and status. No `.env` secret or key-like string in the files.
+  - `.gitattributes` keeps `kg_snapshot/` byte for byte (`-text`); without it, autocrlf would break the manifest's sha256s on Windows checkouts.
+  - **Workflow:** after any reload, `kg.export check`; only if it reports a change, `write --dump`, `secrets`, review `git diff kg_snapshot/`, commit. Never commit a routine re-export (decided 2026-10-24).
+  - `kg.export load` refuses the home database, so a teammate's JSONL rebuild goes into a separate database (`CREATE DATABASE kg`, then `ask(..., database="kg")`); Community, with only a home database, would need a deliberate option for an empty home database.
 - **The agent's entry point:** `kg.query.ask(template, farm_context)` (`kg/query/ask.py`): a template name and a FarmContext or a dict; it returns the dict `kg.query.answer` returns and raises `AskError` for an unknown template, a bad context or missing `.env` settings. The 18 live fixtures go through it. Pick a template, never write Cypher.
 
 ## Environments and commands
@@ -65,6 +71,9 @@ uv run python -m kg.verify source:tnau_agriculture_2020           # step 12: ask
 uv run python -m kg.load.facts source:tnau_agriculture_2020 --check   # step 13: build and check every row, no database
 uv run python -m kg.load.facts source:tnau_agriculture_2020           # step 13: one write transaction
 uv run python -m kg.load.facts --snapshot                             # hash of the whole graph (idempotency proof)
+uv run python -m kg.export check                                      # kg_snapshot/ against the database, no writes
+uv run python -m kg.export write --dump                               # only when the graph changed: kg_snapshot/ + dump
+uv run python -m kg.export load --database cropbot-test               # rebuild an empty, non-home database from the JSONL
 uv run python -m kg.eval.gold [--check]                               # frozen gold workbook -> data/gold/*.jsonl, unchanged
 uv run python -m kg.eval source:tnau_agriculture_2020                 # step 15: data/eval/<id>/report.json, data/review/gold_*.csv
 uv run python -m kg.review sheet source:tnau_agriculture_2020 --out data/review/expert_review_tnau.xlsx --precheck data/review/ai_precheck_notes.csv   # step 16 workbook
