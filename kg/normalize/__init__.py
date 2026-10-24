@@ -31,8 +31,9 @@ from kg.extract.versions import source_version
 from kg.registry import ROOT
 from kg.schema import FACT
 from kg.schema.vocab import (CONDITION_VARIABLES, FORMULATION_OPERATION, FORMULATION_OVERRIDES, Basis,
-                             CommodityForm, Grade, LimitType, QualityParameter, Unit, ValueType)
+                             CommodityForm, Grade, LimitType, QualityParameter, Unit, ValueType, WindowFor)
 
+from . import calendar_words
 from .link import Linker
 from .units import (canon_basis, canon_conc_unit, canon_duration_unit, canon_unit, formulation_code, period_offset,
                     ratio_words, repeat, sample, water_l_per_ha)
@@ -330,8 +331,9 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
     # regions: the unit's (source or section), or the text's; exclusions expanded by code
     regions = [dict(x) for x in unit["regions"]]
     if r["regions"]:
-        ids = [f.link(linker, n, ("zone", "district", "state"), "region") for n in r["regions"]]
-        regions = [{"id": i, "origin": "text"} for i in ids if i]
+        # schema v1.6: a printed area naming several zones ("Irrigated Hills") links to all of them
+        ids = [i for n in r["regions"] for i in f.link_many(linker, n, ("zone", "district", "state"), "region")]
+        regions = [{"id": i, "origin": "text"} for i in dict.fromkeys(ids) if i]
     if r["excluded_regions"]:
         excluded = [(f.link(linker, x["name"], ("zone", "district"), "excluded region"), x["raw"])
                     for x in r["excluded_regions"]]
@@ -361,8 +363,12 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
     names = {}
     st = r["subtype"]
     if st == "VarietyRecommendation":
-        d["recommends"] = [f.link(linker, n, ("variety",), "variety") for n in r["recommends"]]
+        # schema v1.6: a printed name group ("Pant Dhan- 10,12, 19, 24 & 26") is a label of every variety it names
+        ids = [i for n in r["recommends"] for i in f.link_many(linker, n, ("variety",), "variety")]
+        d["recommends"] = list(dict.fromkeys(ids))
         d["note"] = r["note"]
+    elif st == "SowingWindow":
+        sowing_window(f, d)
     elif st in ("PestThreshold",):
         d["pest_ids"] = [f.link(linker, n, ("pest", "disease"), "pest") for n in r["pests"]]
         d["clauses"] = []
@@ -404,8 +410,7 @@ def build(f: Fact, linker, crop_id, zones_of_state) -> dict | None:
         f.blocks.append("DoseFormula coefficients are not parsed yet")
     elif st == "QualitySpec":
         quality_spec(f, d)
-    copy_fields = {"VarietyRecommendation": (), "SowingWindow": ("start_month", "start_day", "end_month", "end_day"),
-                   "SeedRate": ("method",),
+    copy_fields = {"VarietyRecommendation": (), "SeedRate": ("method",),
                    "Spacing": tuple(k for k in r if k.startswith(("row_cm", "plant_cm", "hills_per_m2",
                                                                    "seedlings_per_hill_"))),
                    "NutrientDose": ("dose_basis",), "IrrigationRule": ("depth_cm", "criterion"),
@@ -540,6 +545,34 @@ def quality_spec(f: Fact, d: dict) -> None:
         f.blocks.append("value-cut rule held until modelled (schema v1.5): %s" % cuts)
 
 
+def sowing_window(f: Fact, d: dict) -> None:
+    """Schema v1.6. `window_for` from the fixed list (a v1-v5 answer has none: "sowing"). Prompt v6 gives the
+    window's calendar words: the program reads the dates from the fixed word table (kg.normalize.calendar_words),
+    logs each reading, keeps the words in raw and sends the fact to review. A v1-v5 answer gives the numbers."""
+    r = f.raw
+    d["window_for"] = r.get("window_for") or WindowFor.SOWING.value
+    if d["window_for"] not in {x.value for x in WindowFor}:
+        f.blocks.append("window_for %r is not in the fixed list" % d["window_for"])
+    if not r.get("start_raw"):
+        d.update({k: r[k] for k in ("start_month", "start_day", "end_month", "end_day")})
+        return
+    got = calendar_words.window(r["start_raw"], r.get("end_raw"))
+    if isinstance(got, str):
+        f.blocks.append(got)
+        return
+    dates, readings = got
+    d.update(dates)
+    end = r.get("end_raw") or r["start_raw"]
+    d["raw"] = {**d["raw"], "start_month": r["start_raw"], "start_day": r["start_raw"], "end_month": end,
+                "end_day": end}
+    for x in readings:
+        f.conversions.append({"fact": f.index, "field": x["bound"], "raw": x["raw"], "rule": x["rule"],
+                              "to": calendar_words.date_text(x["month"], x["day"])})
+    f.review.append("calendar words read by code (schema v1.6): %s" % "; ".join(
+        "%s %r -> %s (%s)" % (x["bound"], x["raw"], calendar_words.date_text(x["month"], x["day"]), x["rule"])
+        for x in readings))
+
+
 def fact_key_parts(f: Fact, d: dict) -> dict:
     """source + section path + subtype + applicability + identity + step slots; values excluded.
     Identity includes the fact's conditions (variable, op, raw) and a DryingSpec's storage term.
@@ -562,7 +595,9 @@ def fact_key_parts(f: Fact, d: dict) -> dict:
                                                "control_class", "dose_basis", "storage_term_raw", "about_ids")}
                         | {"conditions": _conditions(d)}
                         # schema v1.5; only on QualitySpec, so no other fact's key changes
-                        | ({k: d.get(k) for k in QUALITY_IDENTITY} if d["subtype"] == "QualitySpec" else {}),
+                        | ({k: d.get(k) for k in QUALITY_IDENTITY} if d["subtype"] == "QualitySpec" else {})
+                        # schema v1.6; only on SowingWindow: a zone's nursery and transplanting windows don't collide
+                        | ({"window_for": d.get("window_for")} if d["subtype"] == "SowingWindow" else {}),
             "steps": slots,
             "passage": (f.quote_check["refs"] or [None])[0]}
 

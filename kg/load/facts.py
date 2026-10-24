@@ -138,7 +138,9 @@ def conflict_key(fact: dict) -> str:
         "identity": {k: sorted(fact.get(k) or []) for k, _ in IDENTITY}
                     | {k: fact.get(k) for k in IDENTITY_FIELDS} | {"conditions": _conditions(fact)}
                     # schema v1.5; only on QualitySpec, so no other fact's key changes
-                    | ({k: fact.get(k) for k in QUALITY_IDENTITY} if fact["subtype"] == "QualitySpec" else {}),
+                    | ({k: fact.get(k) for k in QUALITY_IDENTITY} if fact["subtype"] == "QualitySpec" else {})
+                    # schema v1.6; only on SowingWindow: a transplanting window never conflicts with a sowing one
+                    | ({"window_for": fact.get("window_for")} if fact["subtype"] == "SowingWindow" else {}),
         "steps": slot, "window": {k: fact.get(k) for k in WINDOW_FIELDS}})[:24]
 
 
@@ -146,7 +148,8 @@ def value_key(fact: dict) -> str:
     """The values a conflict compares: subtype values, amounts, offsets, clause and condition values. Each
     option of an alternative group adds its operation, method, anchor, targets with formulation and amounts
     (schema v1.4), sorted and without its option number, so renumbering alone changes nothing."""
-    skip = CORE_VALUE_SKIP | (QUALITY_VALUE_SKIP if fact["subtype"] == "QualitySpec" else set())
+    skip = CORE_VALUE_SKIP | (QUALITY_VALUE_SKIP if fact["subtype"] == "QualitySpec" else set()) \
+        | ({"window_for"} if fact["subtype"] == "SowingWindow" else set())      # schema v1.6: identity, no value
     fields = {k: v for k, v in fact.items() if k not in skip}
     steps = sorted([s["order"], s.get("alt_group"), s.get("operation"), s.get("method"), s.get("anchor"),
                     s.get("offset_min"), s.get("offset_max"),

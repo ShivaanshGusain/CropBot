@@ -15,7 +15,7 @@ from pydantic import Field, TypeAdapter, model_validator
 from .core import Recommendation, Text, ThresholdClause, check_range
 from .ids import (ConcernId, ControlTargetId, NutrientId, PestOrDiseaseId, StorageTargetId, VarietyId)
 from .vocab import (UNITLESS_PARAMETERS, CautionKind, CommodityForm, ControlClass, DoseBasis, Grade, LimitType,
-                    OperationType, QualityParameter, Unit, WeatherAdvice)
+                    OperationType, QualityParameter, Unit, WeatherAdvice, WindowFor)
 
 Pct = Annotated[float, Field(ge=0, le=100)]
 Months = Annotated[float, Field(ge=0)]
@@ -30,6 +30,7 @@ class VarietyRecommendation(Recommendation):
 class SowingWindow(Recommendation):
     NUMERIC_FIELDS = ("start_month", "start_day", "end_month", "end_day")
     subtype: Literal["SowingWindow"]
+    window_for: WindowFor = WindowFor.SOWING                # schema v1.6
     start_month: int = Field(ge=1, le=12)
     start_day: int | None = Field(default=None, ge=1, le=31)
     end_month: int = Field(ge=1, le=12)                     # may be before start_month (Dec-Jan)

@@ -379,7 +379,8 @@ def _printed_in(text: str, q: str) -> bool:
 COPIED_LISTS = ("varieties", "seasons", "systems", "soils", "purposes", "stages", "regions", "recommends", "pests",
                 "targets", "concerns", "about", "unmapped", "maturity_signs")
 COPIED_FIELDS = ("structure", "storage_term_raw", "coefficients_raw", "target_nutrient", "soil_series", "valid_range",
-                 "authority", "valid_for_season", "parameter", "method", "criterion")
+                 "authority", "valid_for_season", "parameter", "method", "criterion",
+                 "start_raw", "end_raw")                 # prompt v6: a window's calendar words, copied as printed
 # prompt v3 asks for these only as "a short phrase" / "a few words from the text", not as printed
 PHRASE_FIELDS = ("maturity_signs", "method", "criterion")
 HEADING_FLAGS = ("scope_from_heading", "target_from_heading")

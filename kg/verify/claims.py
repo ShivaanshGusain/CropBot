@@ -15,6 +15,7 @@ import hashlib
 import re
 from difflib import SequenceMatcher
 
+from kg.normalize.calendar_words import MONTH_END, MONTH_TEXT
 from kg.schema.vocab import COUNT_WORDS, INTERVAL_WORDS
 
 BASIS = {"per_ha": "per hectare", "per_kg_seed": "per kg of seed", "per_l_water": "per litre of water",
@@ -43,6 +44,8 @@ def printed_names(raw: dict, fact: dict) -> dict:
     if [len(a) for a in out["applies"]] != shape or any(
             len(out[k]) != len(fact.get(k) or []) for k in ("pest_ids", "target_ids", "concerns", "about_ids")):
         raise ValueError("printed names don't line up with %s" % fact["id"])
+    # schema v1.6: places and variety groups as printed; one printed group may name several linked ids
+    out["regions"], out["recommends"] = list(raw.get("regions") or []), list(raw.get("recommends") or [])
     return out
 
 
@@ -343,7 +346,33 @@ def field_claims(fact: dict, names: dict, printed: dict | None = None) -> list[s
             out.append(_q("%sit advises against using %s%s" % (ld, name, " for %s" % about if about else "")))
     elif st == "QualitySpec":
         out.append(_q(quality_claim(fact)))
+    elif st == "VarietyRecommendation":
+        for name in (printed or {}).get("recommends") or [names.get(i, i) for i in fact["recommends"]]:
+            several = re.search(r",|&|\band\b", name)
+            out.append(_q("%s%s %s recommended%s" % (ld, name, "are" if several else "is", place(fact, names, printed))))
+    elif st == "SowingWindow" and fact.get("start_month"):
+        out.append(_q("%s%s%s %s" % (ld, WINDOW_TEXT[fact.get("window_for") or "sowing"], place(fact, names, printed),
+                                     window_text(fact))))
     return out
+
+
+WINDOW_TEXT = {"nursery_sowing": "the nursery is sown", "transplanting": "transplanting is done",
+               "direct_seeding": "the direct-seeded crop is sown", "sowing": "the crop is sown"}
+
+
+def place(fact: dict, names: dict, printed: dict | None = None) -> str:
+    """Schema v1.6: " in Tarai, Bhabhar & Plain", the places the fact's text names (as printed), or ""."""
+    where = (printed or {}).get("regions") or [names.get(r["id"], r["id"]) for r in fact.get("regions") or []
+                                                if r.get("origin") == "text"]
+    return " in %s" % " or ".join(where) if where else ""
+
+
+def window_text(fact: dict) -> str:
+    """"from 16 May to 7 June"; "on 15 March" for one day; a bound with no day names the month only."""
+    def day(m, d):
+        return "%s %s" % (d, MONTH_TEXT[m]) if d else MONTH_TEXT[m]
+    a, b = day(fact["start_month"], fact.get("start_day")), day(fact["end_month"], fact.get("end_day"))
+    return "on %s" % a if a == b else "from %s to %s" % (a, b)
 
 
 COMMODITY = {"paddy": "paddy", "raw_rice": "raw rice", "parboiled_rice": "parboiled rice"}
@@ -407,6 +436,12 @@ def _changed(fact: dict) -> dict | None:
     if f.get("limit_value") is not None:                            # schema v1.5 QualitySpec
         # always stricter than printed: a looser limit ("at most 27%" for 17%) is implied by the true one
         f["limit_value"] = f["limit_value"] / 2 if f["limit_type"] == "max" else f["limit_value"] * 2
+        return f
+    if f["subtype"] == "SowingWindow" and f.get("start_month"):    # schema v1.6: the window three months later
+        for m, d in (("start_month", "start_day"), ("end_month", "end_day")):
+            f[m] = (f[m] + 2) % 12 + 1
+            if f.get(d):
+                f[d] = min(f[d], MONTH_END[f[m]])
         return f
     return None
 
