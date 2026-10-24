@@ -59,4 +59,5 @@ status = "approved"                 # approved by the user 2026-10-24
 [extraction]
 ocr = "force"
 ocr_lang = ["en"]
+prompt_version = "v5"               # the prompt its paddy hand-runs used (2026-10-24); LATEST is v6 since then
 note = "Scanned; the embedded scanner OCR is not used (see notes)."

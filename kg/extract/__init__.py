@@ -27,7 +27,7 @@ from pydantic import ValidationError
 from kg.registry import ROOT
 from kg.schema.vocab import (CONDITION_VARIABLES, Anchor, CautionKind, CommodityForm, ConditionOp, ControlClass,
                              DoseBasis, DurationGroup, Grade, LimitType, OffsetUnit, OperationType,
-                             QualityParameter, Subtype, WeatherAdvice)
+                             QualityParameter, Subtype, WeatherAdvice, WindowFor)
 from kg.segment import UNITS_DIR
 from kg.tables import TABLES_DIR
 
@@ -151,14 +151,16 @@ def render_default_scope(entry, unit: dict) -> str:
 
 
 def render_vocabularies(version: str = PROMPT_VERSION) -> str:
-    """The fixed lists the prompt shows. v5 adds the QualitySpec lists; earlier versions render exactly as
-    they did, so their kept prompts stay byte-identical."""
+    """The fixed lists the prompt shows. v5 adds the QualitySpec lists and v6 the SowingWindow one; earlier
+    versions render exactly as they did, so their kept prompts stay byte-identical."""
     lists = [("operation", OperationType), ("anchor", Anchor), ("offset_unit", OffsetUnit),
              ("op", ConditionOp), ("duration_group", DurationGroup), ("dose_basis", DoseBasis),
              ("control_class", ControlClass), ("advice", WeatherAdvice), ("kind", CautionKind)]
     if int(version[1:]) >= 5:
         lists += [("commodity_form", CommodityForm), ("grade", Grade), ("limit_type", LimitType),
                   ("quality parameter", QualityParameter)]
+    if int(version[1:]) >= 6:
+        lists += [("window_for", WindowFor)]
     lines = ["- %s: %s" % (name, ", ".join(v.value for v in enum)) for name, enum in lists]
     lines.append("- condition variable (unit, value type):")
     for name, spec in CONDITION_VARIABLES.items():

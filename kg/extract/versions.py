@@ -37,22 +37,28 @@ V4_FLAGS = V3_FLAGS - {"operation_from_formulation"}
 # valid_for_season, which code takes from the registry
 V5_FIELDS = frozenset({"commodity_form", "grades", "parameter_raw", "limit_type", "limit_inclusive", "part_of"})
 V5_DROPPED = frozenset({"authority", "valid_for_season"})
+# fields prompt v6 adds for schema v1.6's SowingWindow; v1 to v5 answers never have them. v6 drops the window's
+# numbers: the model copies the calendar words and the program reads the dates
+V6_FIELDS = frozenset({"window_for", "start_raw", "end_raw"})
+V6_DROPPED = frozenset({"start_month", "start_day", "end_month", "end_day"})
 
 VERSIONS = {
-    "v1": Version("v1", "list", frozenset({"extraction_flags"}) | V3_FIELDS | V4_FIELDS | V5_FIELDS,
+    "v1": Version("v1", "list", frozenset({"extraction_flags"}) | V3_FIELDS | V4_FIELDS | V5_FIELDS | V6_FIELDS,
                   frozenset({"instruction_en"}), False),
-    "v2": Version("v2", "object", frozenset({"instruction_en"}) | V3_FIELDS | V4_FIELDS | V5_FIELDS, frozenset(),
-                  True, V2_FLAGS),
-    "v3": Version("v3", "object", frozenset({"instruction_en", "seedlings_per_hill"}) | V4_FIELDS | V5_FIELDS,
-                  frozenset(), True, V3_FLAGS),
-    "v4": Version("v4", "object", frozenset({"instruction_en", "seedlings_per_hill"}) | V5_FIELDS, frozenset(), True,
-                  V4_FLAGS),
-    "v5": Version("v5", "object", frozenset({"instruction_en", "seedlings_per_hill"}) | V5_DROPPED, frozenset(),
-                  True, V4_FLAGS),
+    "v2": Version("v2", "object", frozenset({"instruction_en"}) | V3_FIELDS | V4_FIELDS | V5_FIELDS | V6_FIELDS,
+                  frozenset(), True, V2_FLAGS),
+    "v3": Version("v3", "object", frozenset({"instruction_en", "seedlings_per_hill"}) | V4_FIELDS | V5_FIELDS
+                  | V6_FIELDS, frozenset(), True, V3_FLAGS),
+    "v4": Version("v4", "object", frozenset({"instruction_en", "seedlings_per_hill"}) | V5_FIELDS | V6_FIELDS,
+                  frozenset(), True, V4_FLAGS),
+    "v5": Version("v5", "object", frozenset({"instruction_en", "seedlings_per_hill"}) | V5_DROPPED | V6_FIELDS,
+                  frozenset(), True, V4_FLAGS),
+    "v6": Version("v6", "object", frozenset({"instruction_en", "seedlings_per_hill"}) | V5_DROPPED | V6_DROPPED,
+                  frozenset(), True, V4_FLAGS),
 }
 # the default for prepare/report, and for step 10 when a source pins none (registry [extraction] prompt_version).
-# v5 since 2026-10-23; TNAU pins v4, the prompt its four hand-runs used
-LATEST = "v5"
+# v6 since 2026-10-24 (v5 from 2026-10-23); TNAU pins v4 and DFPD v5, the prompts their hand-runs used
+LATEST = "v6"
 
 
 def source_version(entry) -> str:
@@ -84,6 +90,10 @@ def version_problems(item, version: str) -> list[str]:
             out.append("extraction_flags: %r is not a flag of prompt %s" % (flag, version))
     if version in ("v1", "v2", "v3") and item.get("subtype") == "ControlMeasure" and not item.get("targets"):
         out.append("targets: a ControlMeasure needs a target in prompt %s" % version)
+    if int(version[1:]) >= 6 and item.get("subtype") == "SowingWindow":
+        for name in ("window_for", "start_raw"):
+            if not item.get(name):
+                out.append("%s: a SowingWindow needs it in prompt %s" % (name, version))
     for i, step in enumerate(item.get("steps") or []):
         if not isinstance(step, dict):
             continue

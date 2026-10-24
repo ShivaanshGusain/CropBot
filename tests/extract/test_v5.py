@@ -26,6 +26,6 @@ def test_versions_keep_their_quality_fields_apart():
     assert any("valid_for_season: not part of prompt v5" in p for p in problems)
 
 
-def test_a_source_without_a_pin_uses_the_latest_prompt():
+def test_dfpd_pins_v5_so_its_runs_are_read():
     from kg.extract.versions import LATEST
-    assert source_version(read_entry("source:dfpd_uniform_spec_kms_2026_27")) == LATEST
+    assert source_version(read_entry("source:dfpd_uniform_spec_kms_2026_27")) == "v5" != LATEST   # pinned 2026-10-24

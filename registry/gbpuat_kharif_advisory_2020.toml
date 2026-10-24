@@ -33,5 +33,5 @@ chapters = [
 [extraction]
 ocr = "auto"
 ocr_lang = ["en"]
-prompt_version = "v5"               # schema v1.6 runs; pinned so a later LATEST does not move them
+prompt_version = "v6"               # schema v1.6 runs; pinned so a later LATEST does not move them
 note = "Native text; OCR only where a layout region has no text cells."

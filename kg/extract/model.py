@@ -250,10 +250,28 @@ class VarietyRecommendation(RawFact):
 class SowingWindow(RawFact):
     NUMERIC_FIELDS = ("start_month", "start_day", "end_month", "end_day")
     subtype: Literal["SowingWindow"]
-    start_month: int = Field(ge=1, le=12)
+    # prompts v1-v5: the model writes the dates as numbers
+    start_month: int | None = Field(default=None, ge=1, le=12)
     start_day: int | None = Field(default=None, ge=1, le=31)
-    end_month: int = Field(ge=1, le=12)
+    end_month: int | None = Field(default=None, ge=1, le=12)
     end_day: int | None = Field(default=None, ge=1, le=31)
+    # prompt v6 (schema v1.6): what the window is for, and its calendar words as printed; the program reads the
+    # dates from the fixed word table (kg.normalize.calendar)
+    window_for: str | None = None
+    start_raw: Text | None = None               # "2 nd fortnight May"
+    end_raw: Text | None = None                 # "1 st week of June"; none for a single period
+
+    @model_validator(mode="after")
+    def _window(self):
+        numbers = (self.start_month, self.start_day, self.end_month, self.end_day)
+        if self.start_raw is None:
+            if self.start_month is None or self.end_month is None:
+                raise ValueError("a sowing window needs start_month and end_month, or start_raw (prompt v6)")
+            if self.end_raw is not None:
+                raise ValueError("end_raw needs start_raw")
+        elif any(v is not None for v in numbers):
+            raise ValueError("a window given in calendar words has no numbers; the program reads them")
+        return self
 
 
 class SeedRate(RawFact):

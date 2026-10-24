@@ -190,6 +190,15 @@ class ExtractionMethod(StrEnum):
     MANUAL_TRANSCRIPTION = "manual_transcription"   # v1.5 candidate: an approved page transcription (kg.transcribe)
 
 
+class WindowFor(StrEnum):
+    """Schema v1.6: which operation a SowingWindow is for, so a transplanting window is never served as a
+    sowing window."""
+    NURSERY_SOWING = "nursery_sowing"
+    DIRECT_SEEDING = "direct_seeding"
+    TRANSPLANTING = "transplanting"
+    SOWING = "sowing"
+
+
 class AuthorityTier(IntEnum):
     """0 = regulatory (official procurement or quality specification; schema v1.5); 1 = state agricultural
     university package of practices; 2 = ICAR national guidance; 3 = other. Lower ranks first."""
