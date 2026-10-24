@@ -35,3 +35,6 @@ data/eval/
 # New book PDFs (books are recorded by URL and sha256 in the source registry)
 BooksData/*.pdf
 sources/pdfs/
+
+# Database dumps and data archives (KG phase close, 2026-10-24); never committed
+backups/
