@@ -10,12 +10,12 @@ their targets exist.
 import json
 from typing import ClassVar, Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, PositiveInt, field_validator, model_validator
 
 from .core import Model, SourceSpan, Text, check_range
 from .ids import (ActiveIngredientId, AIGroupId, CountryId, CropId, DiseaseId, DistrictId, FertilizerId,
                   InputId, LabelId, LocalSeasonId, NutrientId, OperationId, OrganicInputId, PestId,
-                  PurposeId, SeasonId, SoilId, StateId, SystemId, VarietyId, WeedId, ZoneId,
+                  PurposeId, SeasonId, SoilId, SourceId, StateId, SystemId, VarietyId, WeedId, ZoneId,
                   label_id)
 from .vocab import (CropGroup, DurationGroup, InputKind, LabelKind, OperationType as OperationVocab,
                     OrganicInputKind, PathogenType, PestContext, PestType,
@@ -269,13 +269,15 @@ class Crop(Concept):
 
 
 class Variety(Concept):
-    """A variety pivoted from a book's variety table (step 8).
+    """A variety pivoted from a book's variety table (step 8), or seeded by hand (schema v1.6).
 
-    The one sanctioned exception to "never create concepts automatically": the
-    pivot (kg/tables) always produces needs_review records, a reviewer may later
-    approve them, and facts linked to an unapproved Variety are needs_review too.
-    Every number keeps its raw text (schema v1.2), and every value keeps the
-    table cell it came from.
+    The pivot is the one sanctioned exception to "never create concepts automatically":
+    kg/tables always produces needs_review records, a reviewer may later approve them,
+    and facts linked to an unapproved Variety are needs_review too. Every number keeps
+    its raw text (schema v1.2), and every value keeps the table cell it came from.
+    A hand-seeded variety (named outside variety tables, concepts/varieties.csv) has no
+    table evidence; it records the printed text it was seeded from instead (`quote`,
+    `pdf_page`, `source_id`).
     """
     LABEL = "Variety"
     EDGES = {"crop_id": ("VARIETY_OF", "Crop")}
@@ -295,7 +297,11 @@ class Variety(Concept):
     traits: list[str] = []
     raw: dict[str, Text] = {}           # schema v1.2
     cells: dict[str, dict] = {}         # field or trait label -> table cell provenance
-    evidence: list[SourceSpan] = Field(min_length=1)
+    evidence: list[SourceSpan] = []     # a pivoted variety's table cells
+    # schema v1.6: a hand-seeded variety's printed text, page and source
+    quote: Text | None = None
+    pdf_page: PositiveInt | None = None
+    source_id: SourceId | None = None
 
     @model_validator(mode="after")
     def _variety_rules(self):
@@ -303,6 +309,11 @@ class Variety(Concept):
             if getattr(self, name) is not None and name not in self.raw:
                 raise ValueError("%s needs its raw source text in raw[%r]" % (name, name))
         check_range(self, "duration_days_min", "duration_days_max")
+        seeded = (self.quote, self.pdf_page, self.source_id)
+        if self.evidence and any(seeded):
+            raise ValueError("a variety has table evidence or a hand-seeded quote, not both")
+        if not self.evidence and not all(seeded):
+            raise ValueError("a variety needs table evidence, or a quote, pdf_page and source_id (hand-seeded)")
         return self
 
 
@@ -367,6 +378,9 @@ SEED_FILES: dict[str, type] = {
 
 # concept models whose rows are drafted in concepts/proposed/ and not loaded until approved
 PROPOSED_FILES: dict[str, type] = {
+    "states.csv": State,                     # schema v1.6: Uttarakhand and its zones
+    "zones.csv": AgroClimaticZone,
+    "varieties.csv": Variety,                # schema v1.6: hand-seeded varieties
     "pests.csv": Pest,
     "diseases.csv": Disease,
     "weeds.csv": Weed,

@@ -1,0 +1,4 @@
+id,name_en,scheme,state_id,review_status,source
+zone:uk_tarai_bhabhar_plain,"Tarai, Bhabhar & Plain",state_book,state:5,needs_review,"GBPUAT kharif advisory 2020, PDF p. 1, rice row, Area column: ""Tarai, Bhabhar & Plain"""
+zone:uk_mid_hills,Mid hills (900–1500 m),state_book,state:5,needs_review,"GBPUAT kharif advisory 2020, PDF p. 1, rice row ""Irrigated Hills"", Sowing time column: ""Mid hills (900 – 1500msl)"""
+zone:uk_high_hills,High hills (1500 m and above),state_book,state:5,needs_review,"GBPUAT kharif advisory 2020, PDF p. 1, rice row ""Irrigated Hills"", Sowing time column: ""High Hills (1500 msl and above)"""

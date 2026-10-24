@@ -4,9 +4,10 @@ still drafted in concepts/proposed/, which validate but are never loaded."""
 import csv
 
 import pytest
+from pydantic import ValidationError
 
 from kg.load.seed import CONCEPTS_DIR, read_seed
-from kg.schema.concepts import PROPOSED_FILES, ActiveIngredient, Label, Pest
+from kg.schema.concepts import PROPOSED_FILES, ActiveIngredient, Label, Pest, Variety
 
 PROPOSED = CONCEPTS_DIR / "proposed"
 
@@ -62,6 +63,20 @@ def test_fertilizers_with_unknown_percentages_load_with_blank_percentages(seed):
     assert {("ZnSO4", "fertilizer:znso4"), ("KNO3", "fertilizer:potassium_nitrate"), ("KCl", "fertilizer:mop"),
             ("rodent", "pest:rat")} <= labels
     assert not any(p.startswith(("fertilizers.csv", "labels.csv")) for p in seed.pending)
+
+
+def test_a_variety_has_table_evidence_or_a_hand_seeded_quote():
+    base = {"id": "variety:x_1", "name_en": "X 1", "name": "X 1", "review_status": "needs_review"}
+    seeded = {"quote": "X 1", "pdf_page": 1, "source_id": "source:test"}
+    assert Variety.model_validate(base | seeded).quote == "X 1"            # schema v1.6
+    with pytest.raises(ValidationError, match="table evidence, or a quote"):
+        Variety.model_validate(base)
+    with pytest.raises(ValidationError, match="table evidence, or a quote"):
+        Variety.model_validate(base | {"quote": "X 1", "pdf_page": 1})
+    span = {"id": "span:x", "source_id": "source:test", "pdf_page": 1, "section_path": "X", "quote": "X 1",
+            "extraction_method": "table_parse", "table_ref": "#/tables/0"}
+    with pytest.raises(ValidationError, match="not both"):
+        Variety.model_validate(base | seeded | {"evidence": [span]})
 
 
 def test_drafts_in_proposed_validate_but_are_not_loaded(seed):
