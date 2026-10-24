@@ -59,3 +59,6 @@ zone:uk_mid_hills,Irrigated Hills,en,Latn,alias,needs_review,"GBPUAT kharif advi
 zone:uk_high_hills,Irrigated Hills,en,Latn,alias,needs_review,"GBPUAT kharif advisory 2020, PDF p. 1, rice Area cell; covers the mid and high hills sowing rows (decided 2026-10-24: both hill zones plus system:irrigated)"
 zone:uk_mid_hills,Mid hills (900 – 1500msl),en,Latn,alias,needs_review,"GBPUAT kharif advisory 2020, PDF p. 1, rice Sowing time column, as printed"
 zone:uk_high_hills,High Hills (1500 msl and above),en,Latn,alias,needs_review,"GBPUAT kharif advisory 2020, PDF p. 1, rice Sowing time column, as printed"
+variety:pant_sugandha_dhan_15,"Pant Sugandha Dhan- 15,17 & 27",en,Latn,alias,needs_review,"GBPUAT kharif advisory 2020, PDF p. 1: the shared printed text as converted (line-break hyphen then a space; approved 2026-10-24)"
+variety:pant_sugandha_dhan_17,"Pant Sugandha Dhan- 15,17 & 27",en,Latn,alias,needs_review,"GBPUAT kharif advisory 2020, PDF p. 1: the shared printed text as converted (line-break hyphen then a space; approved 2026-10-24)"
+variety:pant_sugandha_dhan_27,"Pant Sugandha Dhan- 15,17 & 27",en,Latn,alias,needs_review,"GBPUAT kharif advisory 2020, PDF p. 1: the shared printed text as converted (line-break hyphen then a space; approved 2026-10-24)"
