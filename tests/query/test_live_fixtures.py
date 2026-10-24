@@ -32,7 +32,7 @@ def summarise(out: dict) -> dict:
                        "conflicts": [c.get("quote") or "" for c in f["conflicts"]],
                        "checks": (f.get("check") or {}).get("result"),          # schema v1.5 quality_check
                        "citations": {k: f["citation"].get(k) for k in ("pdf_page", "printed_page", "extraction_method",
-                                                                       "transcription")}} for f in facts],
+                                                                       "transcription", "status")}} for f in facts],
             "verdict": out.get("verdict"),
             "procurement": [{"quote": f["citation"]["quote"]} for f in out.get("procurement_moisture") or []]}
 
