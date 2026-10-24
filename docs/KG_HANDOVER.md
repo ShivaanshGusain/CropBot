@@ -68,7 +68,7 @@ The dump is `neo4j.dump` (345,278 bytes, sha256 `edd99b47c31d8c6127f48a137cc238f
 
 **Community edition.** The dump's store format is `block-block-1.1` (introduced in Neo4j 5.14.0; read with `neo4j-admin database info neo4j` on 2026-10-24). Whether Neo4j Community loads it is **untested**, so teammates use Neo4j Desktop (step 1). For a Community deployment later, test the load first (recorded in the CLAUDE.md backlog); there are two routes, neither tested here:
 - **migrate the store format:** on Enterprise, convert the database with `neo4j-admin database migrate` to a store format Community supports, dump it again, and load that dump into Community;
-- **rebuild from the repository:** on an empty Community database, run the loaders from the repo: `uv run python -m kg.load.seed` (constraints and concepts), then `uv run python -m kg.load.facts <source>` for each of the three sources (each applies the committed expert decisions). The snapshot hash will not match `13c96aef…`, because it covers every property and `created_at` records the time of the load; check instead the 842 nodes and 1,280 relationships and the fact counts by status (section 1). The loaders read the pipeline outputs in `data/tables/`, `data/normalized/`, `data/validated/` and `data/verified/`, which are gitignored; they must be backed up with the rest of `data/` first (on 2026-10-24 `backups/` holds only `data/extracted/`, `data/docling/` and `data/raw/`).
+- **rebuild from the repository:** on an empty Community database, run the loaders from the repo: `uv run python -m kg.load.seed` (constraints and concepts), then `uv run python -m kg.load.facts <source>` for each of the three sources (each applies the committed expert decisions). The snapshot hash will not match `13c96aef…`, because it covers every property and `created_at` records the time of the load; check instead the 842 nodes and 1,280 relationships and the fact counts by status (section 1). The loaders read the pipeline outputs in `data/tables/`, `data/normalized/`, `data/validated/` and `data/verified/`, which are gitignored; unzip them from `backups/` (section 3) into `data/` first.
 
 ## 3. Starting Neo4j and connecting
 
@@ -78,7 +78,25 @@ The dump is `neo4j.dump` (345,278 bytes, sha256 `edd99b47c31d8c6127f48a137cc238f
   - `NEO4J_URI`: the Bolt URL of the local server;
   - `NEO4J_USER`, `NEO4J_PASSWORD`;
   - `BEATAPI_API_KEY`: the Jev verifier, needed only to build the graph, never to query it.
-- **Backup** (2026-10-24, gitignored `backups/` on the development machine): `neo4j.dump` (restored into `cropbot-test` and checked: same snapshot hash) and zips of `data/extracted/` (the hand-run extraction answers), `data/docling/` (the conversions) and `data/raw/` (the PDFs), none of which are on GitHub.
+- **Backup** (2026-10-24, gitignored `backups/` on the development machine; none of it is on GitHub, so copy it elsewhere). Every zip's entry count was checked against its folder's file count.
+
+  | File | Bytes | Contents |
+  |---|---|---|
+  | `neo4j.dump` | 345,278 | the `neo4j` database (sha256 `edd99b47…`); restored into `cropbot-test` and checked: same snapshot hash |
+  | `data_raw_2026-10-24.zip` | 7,940,863 | `data/raw/`: the 3 source PDFs |
+  | `data_docling_2026-10-24.zip` | 4,900,891 | `data/docling/`: the conversions (110 files) |
+  | `data_review_2026-10-24.zip` | 4,721,869 | `data/review/`: review workbooks, hand-check pages, review CSVs and the decisions file (29 files) |
+  | `data_extracted_2026-10-24.zip` | 660,266 | `data/extracted/`: the hand-run prompts and answers, with history (74 files) |
+  | `data_units_2026-10-24.zip` | 339,616 | `data/units/`: segmentation units (6 files) |
+  | `data_tables_2026-10-24.zip` | 133,249 | `data/tables/`: stitched tables and pivoted varieties (9 files) |
+  | `data_verified_2026-10-24.zip` | 102,567 | `data/verified/`: Jev claims, answers and request logs (22 files) |
+  | `data_normalized_2026-10-24.zip` | 63,380 | `data/normalized/`: step 10 facts and held facts (9 files) |
+  | `data_validated_2026-10-24.zip` | 46,317 | `data/validated/`: step 11 facts (6 files) |
+  | `data_eval_2026-10-24.zip` | 5,449 | `data/eval/`: the step 15 report (1 file) |
+  | `data_loaded_2026-10-24.zip` | 2,325 | `data/loaded/`: step 13 load reports (3 files) |
+  | **total** | **19,262,070** | |
+
+  `data/gold/` is committed, so it needs no zip.
 
 ## 4. How the agent queries: pick a template, never write raw Cypher
 
