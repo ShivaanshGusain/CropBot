@@ -27,7 +27,9 @@ The GBPUAT advisory is dated 02.05.2020 (the date in its URL's file name and its
 
 ## 2. Getting the graph on your machine
 
-Dump shared at: <link>
+Dump shared at: https://drive.google.com/drive/folders/1JxrvL_QkruGKKS9QinPvpJGMPF_RY-6E?usp=sharing
+
+Download the files you need; don't delete or overwrite anything in this folder: it is the only shared copy of the backups. Ask Suryansh before changing it.
 
 The dump is `neo4j.dump` (345,278 bytes, sha256 `edd99b47c31d8c6127f48a137cc238ff2c263f008481c3193ae76f6a4ddaa9c9`), made on 2026-10-24 from the main database.
 
