@@ -6,7 +6,7 @@ import csv
 import pytest
 from pydantic import ValidationError
 
-from kg.load.seed import CONCEPTS_DIR, read_seed
+from kg.load.seed import CONCEPTS_DIR, is_primitive, read_seed
 from kg.schema.concepts import PROPOSED_FILES, ActiveIngredient, Label, Pest, Variety
 
 PROPOSED = CONCEPTS_DIR / "proposed"
@@ -63,6 +63,19 @@ def test_fertilizers_with_unknown_percentages_load_with_blank_percentages(seed):
     assert {("ZnSO4", "fertilizer:znso4"), ("KNO3", "fertilizer:potassium_nitrate"), ("KCl", "fertilizer:mop"),
             ("rodent", "pest:rat")} <= labels
     assert not any(p.startswith(("fertilizers.csv", "labels.csv")) for p in seed.pending)
+
+
+def test_uttarakhand_rows_approved_2026_10_24(seed):
+    nodes = by_id(seed)
+    assert nodes["state:5"].review_status.value == "approved" and "lgdirectory.gov.in" in nodes["state:5"].source
+    assert sorted(i for i in nodes if i.startswith("zone:uk_")) == [
+        "zone:uk_high_hills", "zone:uk_mid_hills", "zone:uk_tarai_bhabhar_plain"]
+    varieties = [n for n in nodes.values() if isinstance(n, Variety)]
+    assert len(varieties) == 22 and all(v.review_status.value == "needs_review" and v.crop_id == "crop:rice"
+                                        and v.source_id == "source:gbpuat_kharif_advisory_2020" for v in varieties)
+    assert all(is_primitive(x) for v in varieties for x in v.props().values())   # the seed loader's check
+    shared = {lb.concept_id for lb in seed.nodes if isinstance(lb, Label) and lb.text == "Pant Dhan- 10,12, 19, 24 & 26"}
+    assert shared == {"variety:pant_dhan_%d" % n for n in (10, 12, 19, 24, 26)}
 
 
 def test_a_variety_has_table_evidence_or_a_hand_seeded_quote():

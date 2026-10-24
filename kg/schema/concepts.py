@@ -316,6 +316,14 @@ class Variety(Concept):
             raise ValueError("a variety needs table evidence, or a quote, pdf_page and source_id (hand-seeded)")
         return self
 
+    def props(self) -> dict:
+        """As step 13 stores a pivoted variety (kg.load.facts.variety_rows): raw{} as raw_<field> and cells{}
+        as cells_json; table evidence becomes EVIDENCED_BY edges there, never a property."""
+        props = self.model_dump(mode="json", exclude={"id", "raw", "cells", "evidence", *self.EDGES})
+        props |= {"raw_%s" % k: v for k, v in self.raw.items()}
+        props["cells_json"] = json.dumps(self.cells, sort_keys=True, ensure_ascii=False)
+        return props
+
 
 # --- labels ----------------------------------------------------------------------------
 
@@ -366,6 +374,7 @@ SEED_FILES: dict[str, type] = {
     "nutrients.csv": Nutrient,
     "fertilizers.csv": Fertilizer,
     "crops.csv": Crop,
+    "varieties.csv": Variety,                # schema v1.6: hand-seeded; after crops (VARIETY_OF)
     "pests.csv": Pest,
     "diseases.csv": Disease,
     "weeds.csv": Weed,
