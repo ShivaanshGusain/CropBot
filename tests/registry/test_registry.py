@@ -36,7 +36,8 @@ def problems(directory):
 
 
 def test_committed_registry_validates():
-    assert sorted(e.id for e in read_registry()) == ["source:dfpd_uniform_spec_kms_2026_27", TNAU_ID]
+    assert sorted(e.id for e in read_registry()) == ["source:dfpd_uniform_spec_kms_2026_27",
+                                                     "source:gbpuat_kharif_advisory_2020", TNAU_ID]
     entry = read_entry(TNAU_ID)
     assert (entry.state_id, entry.region_scope, entry.authority_tier) == ("state:33", ["state:33"], 1)
     assert (entry.edition_year, entry.edition_label) == (2020, "2020")
