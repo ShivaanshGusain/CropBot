@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from kg.load import facts as lf
-from kg.query import FarmContext, answer
+from kg.query import FarmContext, answer, ask
 from kg.registry import read_entry
 from kg.validate import VALIDATED_DIR
 from tests.conftest import reset_and_seed
@@ -115,7 +115,8 @@ def loaded(neo4j_test_db):
 def test_fixture(loaded, path):
     driver, name = loaded
     fx = json.loads(path.read_text(encoding="utf-8"))
-    out = answer(driver, fx["template"], FarmContext.model_validate(fx["context"]), name)
+    out = ask(fx["template"], fx["context"], driver=driver, database=name)       # the agent's entry point
+    assert out == answer(driver, fx["template"], FarmContext.model_validate(fx["context"]), name)
     assert check(fx["expect"], summarise(out)) == []
     served = [f for s in out["slots"] for f in s["facts"]] + list(out.get("procurement_moisture") or [])
     for f in served:                                                # every served fact carries its citation
