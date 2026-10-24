@@ -20,6 +20,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 CropBot is a farm-advice bot. This branch builds its Neo4j knowledge graph: every agronomic fact becomes a `Recommendation` node with applicability edges, ordered Steps, runtime Conditions and a `SourceSpan` quote (see `docs/schema_v1.6.md`). The stages are defined in the schema's "Build pipeline" section: register → convert → segment → tables → extract → normalise → validate → verify (Jev) → load. Product context (post-harvest focus, pilot plans) is in `CropBot_Research_Brief.md`.
 
+## KG phase closed (2026-10-24)
+
+The KG-building phase is closed. Start with `docs/KG_HANDOVER.md` (what is in the graph, connecting, querying).
+- **Main database snapshot:** `13c96aefbc1ee99265369282f5f0746446ef6a86795e24d319337855ff5c681d` (842 nodes, 1280 relationships). Sources: TNAU 113 facts (12 extracted, 101 needs_review; 11 held), DFPD 18 QualitySpec approved, GBPUAT 8 approved (2 VarietyRecommendation, 6 SowingWindow; 4 held).
+- **Backups** (`backups/`, gitignored, on this machine only; copy them elsewhere):
+  - `neo4j.dump` (sha256 `edd99b47…`, 345,278 bytes), dumped with `neo4j-admin database dump neo4j` while the database was stopped with `STOP DATABASE neo4j WAIT`. The DBMS itself was not stopped: Neo4j Desktop runs it as a console process with no service, so `neo4j stop` doesn't apply, and killing it would be an unclean shutdown.
+  - Restore check: the dump loaded into `cropbot-test` (`neo4j-admin database load … --overwrite-destination=true`, the database stopped then started) gives the same snapshot hash as main. The live tests have since emptied and reloaded `cropbot-test`.
+  - `data_extracted_2026-10-24.zip` (74 files), `data_docling_2026-10-24.zip` (110), `data_raw_2026-10-24.zip` (3): the hand-runs, conversions and PDFs, none of which are on GitHub.
+- **The agent's entry point:** `kg.query.ask(template, farm_context)` (`kg/query/ask.py`): a template name and a FarmContext or a dict; it returns the dict `kg.query.answer` returns and raises `AskError` for an unknown template, a bad context or missing `.env` settings. The 18 live fixtures go through it. Pick a template, never write Cypher.
+
 ## Environments and commands
 
 There are two separate uv projects:
@@ -738,12 +748,13 @@ Step 13. Input: step 12's facts (status, verifier), step 11's (the fact, review 
 
 ## Query templates (`kg/query`, step 14)
 
-Approved 2026-10-20. `kg.query.answer(driver, template, FarmContext)` returns a structured answer: scope (local | fallback | none), the questions to ask, answer slots with their facts, hidden facts and steps with reasons, notes, and a message. Writing the farmer-facing text is a later step. The Cypher is fixed per template (`kg/query/templates.py`, no LIMIT); everything else is in `kg/query/answer.py`.
+Approved 2026-10-20. The agent calls `kg.query.ask(template, farm_context)` (2026-10-24), a thin wrapper over `kg.query.answer(driver, template, FarmContext)`, which returns a structured answer: scope (local | fallback | none), the questions to ask, answer slots with their facts, hidden facts and steps with reasons, notes, and a message. Writing the farmer-facing text is a later step. The Cypher is fixed per template (`kg/query/templates.py`, no LIMIT); everything else is in `kg/query/answer.py`.
 - **Templates:**
   - `drying_target`: DryingSpec (Q15, Q16).
   - `storage`: StorageRule, with Cautions on its ingredients (Q17).
   - `harvest_readiness`: HarvestRule (Q12, Q14).
   - `threshold`: PestThreshold for `context.pest` (Q8).
+  - `quality_check` (Q19, schema v1.5), `varieties_for` (Q1) and `sowing_window` (Q2, schema v1.6); see those builds.
 - **Applicability:** a missing optional edge matches anything. A value the farmer hasn't given (purpose, variety, season, system, soil type, stage, duration group, storage months) is UNKNOWN: the answer asks and branches on the facts' values.
   - Storage terms without months ("short term") are never mapped to months.
   - A storage period between the source's windows (10 months between 8–9 and 12–15) gets a question back, not a guess.
