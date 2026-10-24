@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project rules
 
-- docs/schema_v1.5.md is the source of truth (committed 2026-10-23; the build is in progress, see "Schema v1.5 build")
-  - Schema changes go in a new versioned file in this repo (`docs/schema_v1.6.md`, ...) and are committed.
-  - The Claude Doc is a superseded draft and is never exported again. `docs/schema_v1.1.md` to `docs/schema_v1.4.md` are kept for history.
+- docs/schema_v1.6.md is the source of truth (committed 2026-10-24; the build is in progress, see "Schema v1.6 build")
+  - Schema changes go in a new versioned file in this repo (`docs/schema_v1.7.md`, ...) and are committed.
+  - The Claude Doc is a superseded draft and is never exported again. `docs/schema_v1.1.md` to `docs/schema_v1.5.md` are kept for history.
 - use uv add for dependencies
 - always MERGE on id; nothing is auto-corrected
 - every number keeps its raw text; the LLM never converts units
@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-CropBot is a farm-advice bot. This branch builds its Neo4j knowledge graph: every agronomic fact becomes a `Recommendation` node with applicability edges, ordered Steps, runtime Conditions and a `SourceSpan` quote (see `docs/schema_v1.5.md`). The stages are defined in the schema's "Build pipeline" section: register → convert → segment → tables → extract → normalise → validate → verify (Jev) → load. Product context (post-harvest focus, pilot plans) is in `CropBot_Research_Brief.md`.
+CropBot is a farm-advice bot. This branch builds its Neo4j knowledge graph: every agronomic fact becomes a `Recommendation` node with applicability edges, ordered Steps, runtime Conditions and a `SourceSpan` quote (see `docs/schema_v1.6.md`). The stages are defined in the schema's "Build pipeline" section: register → convert → segment → tables → extract → normalise → validate → verify (Jev) → load. Product context (post-harvest focus, pilot plans) is in `CropBot_Research_Brief.md`.
 
 ## Environments and commands
 
@@ -1065,6 +1065,28 @@ Commits 081b1cf (models, vocab, registry model), 8878faa (DFPD registry), a701df
   - Main database: two reloads created nothing, decisions applied 18, stale 0; snapshot `3bc9a2c3…` (775 nodes, 1171 relationships) identical before and after both (the import changed it from `6a52090b…`). TNAU unchanged (12 extracted, 101 needs_review).
   - Checked on the main database (read only): 18 DFPD facts approved, `reviewed_by` set, none missing. The 18 % quality_check answers verdict fail on moisture, the limit approved with no "not yet verified" label, and it matches the fixture.
   - cropbot-test: the 14 fixtures and the live review test pass (15).
+
+## Schema v1.6 build
+
+`docs/schema_v1.6.md` (committed 2026-10-24) adds `SowingWindow.window_for` (`nursery_sowing | direct_seeding | transplanting | sowing`, default `sowing`), a calendar word table (1st fortnight 1–15; 2nd fortnight 16 to month end; 1st week 1–7; last week and "end" 25 to month end; "mid" 15) and hand-curated Variety seeds, for the first Uttarakhand source, the GBPUAT kharif advisory 2020 (rice rows only). Not built yet.
+
+Decisions taken with it (2026-10-24):
+- Variety records named outside variety tables are drafted by hand in `concepts/proposed/` (needs_review, page quote); a shared printed prefix ("Pant Dhan- 10,12, 19, 24 & 26") gives full names, with the printed text and the source's spelling "Bansmati" kept as labels.
+- Transplanting windows are extracted with `window_for = transplanting`.
+- Unreviewed VarietyRecommendation and SowingWindow stay hidden (not descriptive); they are served after a hand-check through the decisions file.
+- Q1 `varieties_for` and Q2 `sowing_window` are built for the Tarai fixture; neither falls back across states (schema: "Never").
+- Zones as printed on PDF p. 1, `scheme: state_book`: Tarai, Bhabhar & Plain (one zone), mid hills 900–1500 m, high hills 1500 m and above. "Irrigated Hills" is both hill zones plus `system:irrigated`, not a zone.
+- One chapter, crop rice; only the four rice rows are extracted, every other row is listed as not extracted.
+- Chetki Dhan (spring rice, rain-fed upland) and Jethi Rice (direct seeded, type unspecified) are held with their reasons.
+
+Open notes on the doc (2026-10-24, not blocking; the build follows the choice in brackets):
+- `window_for` is in no key [it joins `fact_key` and `conflict_key` for SowingWindow only, so a zone's nursery and transplanting windows neither collide nor conflict, and no other key changes];
+- which day a range word gives at the start and at the end of a window is not stated [first day of the word's range as a start, last day as an end: "June end to 1st week of July" = 25 June – 7 July];
+- a single printed period with no "to" ("1st Fortnight May") [both bounds from the word: 1–15 May];
+- word order varies on the page ("April 2nd fortnight", "2nd fortnight May") [both orders are read];
+- only the 1st and last week are in the table; "2nd"/"3rd week" (other crops' rows) stay unread;
+- "mid" is one day, so "Mid June to Mid July" is 15 June – 15 July;
+- the Q2 `sowing_window` row doesn't say which windows it returns [one answer slot per `window_for`].
 
 ### Items (decided 2026-10-22, now in v1.5)
 
