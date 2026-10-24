@@ -925,7 +925,7 @@ Approved 2026-10-21. Only a person approves or rejects a fact, through the workb
   - Import, then a re-import (no-op), then two loads: nothing created, snapshot `16a61bad…` unchanged (704 nodes, 1038 relationships; v4 data, 2026-10-22).
   - Emptied and reloaded, the database gets the 4 decisions back; a second load changes nothing.
   - The approved grain-drying fact is served without the unverified label.
-- **TNAU workbook:** `data/review/expert_review_tnau.xlsx`, regenerated from the main database on 2026-10-22 after the v1.4 reload: 113 rows, 4 orange Unmapped cells, the v1.4 notes. `import --check` on it: 113 not reviewed, 0 refused. The committed decisions file holds only its header row; no decision has been imported.
+- **TNAU workbook:** `data/review/expert_review_tnau.xlsx`, regenerated from the main database on 2026-10-22 after the v1.4 reload: 113 rows, 4 orange Unmapped cells, the v1.4 notes. `import --check` on it: 113 not reviewed, 0 refused. No TNAU decision has been imported; the committed decisions file holds only the 18 DFPD paddy approvals (see "Schema v1.5 build").
 
 ## Scope rules for extraction and normalisation
 
@@ -1058,8 +1058,13 @@ Commits 081b1cf (models, vocab, registry model), 8878faa (DFPD registry), a701df
   - Step 12: 16 new claims and 10 more controls in 2 requests. P(yes): the six absent substances 0.95-0.96, the L:B rules 0.98, the table limits lower (inorganic 0.78, organic 0.77, damaged/discoloured/sprouted/weevilled **0.51**, immature 0.76, admixture 0.72, moisture 0.66), the 4 % footnote 0.69, the N.B. 3 sub-limits 0.73-0.80. All 12 controls 0.02-0.05.
   - Step 13, main database: load 1 created 29 nodes (18 facts, 11 spans) and 65 relationships; load 2 created none, snapshot identical (`6a52090b…`, 775 nodes, 1171 relationships). No conflict detected; TNAU unchanged (12 extracted, 101 needs_review); every DFPD span is `manual_transcription` naming p006.md; no U+FFFD.
 - **Step 14 after the fixtures (2026-10-24):** a grade rule (`length_breadth_ratio`) decides the grade, not acceptance: it never asks the grade and stays out of the verdict, which lists it under `grade_rules`. `quality_check` asks for `grain_moisture_pct` when moisture is unknown; other refractions are listed as `not_checked`, not asked. Citations carry `extraction_method` and `transcription`.
-- **Fixtures** (cropbot-test, both sources loaded): `q19_paddy_18_moisture` (verdict fail on moisture, cited PDF p. 6, no printed page, transcription p006.md, labelled unverified), `q19_paddy_16_moisture` (moisture passes; the verdict stays unknown because the other refractions were not given), `q19_paddy_moisture_unknown` (asks `grain_moisture_pct`), `q15_grain_drying_selling` (TNAU's 12 % drying target with the 17.0 procurement limit). With the 10 TNAU fixtures: 14 pass.
+- **Fixtures** (cropbot-test, both sources loaded): `q19_paddy_18_moisture` (verdict fail on moisture, cited PDF p. 6, no printed page, transcription p006.md; status approved, no label since the approvals below), `q19_paddy_16_moisture` (moisture passes; the verdict stays unknown because the other refractions were not given), `q19_paddy_moisture_unknown` (asks `grain_moisture_pct`), `q15_grain_drying_selling` (TNAU's 12 % drying target with the 17.0 procurement limit). With the 10 TNAU fixtures: 14 pass. The fixture summary compares the citation's `status` too.
 - **Hand-check approvals** go through the expert decisions file (reviewer and note as the user names them), never by editing statuses.
+- **DFPD paddy approved** (2026-10-24, d0f61e7): all 18 facts hand-checked by Suryansh Bhatnagar against p006.md and the printed page, note "hand-checked against approved transcription p. 6", applies in Uttarakhand: yes; none rejected.
+  - Workbook `data/review/expert_review_dfpd.xlsx` (not committed; 18 rows), `import --check` 18 accepted, 0 refused, then imported: 18 rows appended to `data/review/expert_decisions.csv`.
+  - Main database: two reloads created nothing, decisions applied 18, stale 0; snapshot `3bc9a2c3…` (775 nodes, 1171 relationships) identical before and after both (the import changed it from `6a52090b…`). TNAU unchanged (12 extracted, 101 needs_review).
+  - Checked on the main database (read only): 18 DFPD facts approved, `reviewed_by` set, none missing. The 18 % quality_check answers verdict fail on moisture, the limit approved with no "not yet verified" label, and it matches the fixture.
+  - cropbot-test: the 14 fixtures and the live review test pass (15).
 
 ### Items (decided 2026-10-22, now in v1.5)
 
