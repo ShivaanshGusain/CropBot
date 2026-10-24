@@ -46,7 +46,7 @@ def cmd_sheet(a) -> int:
     except sheet.SheetError as e:
         raise SystemExit("no sheet written:\n  " + "\n  ".join(e.problems))
     out = Path(a.out) if a.out else ROOT / "data" / "review" / ("expert_review_%s.xlsx" % entry.id.split(":", 1)[1])
-    sheet.write_workbook(out, entry, rows, a.database)
+    sheet.write_workbook(out, entry, rows, a.database, names.get(entry.state_id))
     flagged = [r["fact_id"] for r in rows if r["scope_flag"]]
     print(json.dumps({"written": str(out), "rows": len(rows),
                       "by_subtype": {s: sum(r["subtype"] == s for r in rows) for s in sheet.ORDER},

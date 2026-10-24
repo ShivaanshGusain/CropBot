@@ -14,9 +14,11 @@ from collections import Counter
 
 from kg.load.facts import row_hash
 from kg.schema.vocab import SCOPE_IN_UNMAPPED_REASON
+from kg.verify.claims import window_text
 
-ORDER = ("DryingSpec", "StorageRule", "HarvestRule", "QualitySpec", "NutrientDose", "SeedRate", "Spacing",
-         "SeedTreatment", "IrrigationRule", "PestThreshold", "ControlMeasure", "Caution")
+ORDER = ("DryingSpec", "StorageRule", "HarvestRule", "QualitySpec", "VarietyRecommendation", "SowingWindow",
+         "NutrientDose", "SeedRate", "Spacing", "SeedTreatment", "IrrigationRule", "PestThreshold", "ControlMeasure",
+         "Caution")                                       # VarietyRecommendation, SowingWindow: schema v1.6
 FACTS, GUIDE, META = "Facts", "How to review", "meta"
 # (key, header, width); the reviewer columns are the only editable cells
 COLUMNS = (("review_no", "Review no.", 8), ("fact_id", "Fact id", 22), ("subtype", "Subtype", 15),
@@ -50,6 +52,20 @@ GUIDE_LINES = (
     "The AI pre-check column is a hint, not a decision: it was made by an AI reading the quote. Please check FIX "
     "and CHECK rows carefully, and don't rely on OK rows without reading them.",
 )
+UTTARAKHAND_LINE = GUIDE_LINES[4]
+
+
+def guide_lines(entry, state_name: str | None = None) -> tuple:
+    """The guide, with the Uttarakhand line naming where this source is from (2026-10-24; until then it said
+    Tamil Nadu for every source). The TNAU guide is unchanged."""
+    if entry.state_id == "state:33":
+        return GUIDE_LINES
+    where = "from %s" % state_name if entry.state_id else "national (all States/UTs)"
+    line = ("\"Applies in Uttarakhand?\" is separate: this source is %s. Say whether the advice holds for "
+            "Uttarakhand conditions." % where)
+    return tuple(line if x == UTTARAKHAND_LINE else x for x in GUIDE_LINES)
+
+
 SCOPE_FILL = "F4B183"            # orange: the Unmapped cell of a fact flagged "scope in unmapped"
 PRECHECK = ("OK", "CHECK", "FIX")
 PRECHECK_FILL = {"FIX": "F8696B", "CHECK": "FFEB84"}       # red, yellow; OK has no fill
@@ -98,6 +114,8 @@ def scope(fact: dict, names: dict) -> str:
                                             ": %s" % fact["grades_evidence"] if fact.get("grades_evidence") else ""))
         if fact.get("season_label"):
             parts.append("season: %s" % fact["season_label"])
+    if fact["subtype"] == "SowingWindow":                   # schema v1.6
+        parts.append("window for: %s" % (fact.get("window_for") or "sowing").replace("_", " "))
     for label, key in (("variety", "variety_ids"), ("season", "season_ids"), ("system", "system_ids"),
                        ("soil", "soil_ids"), ("purpose", "purpose_ids"), ("stage", "stage_ids")):
         if fact.get(key):
@@ -119,6 +137,10 @@ def values(fact: dict, names: dict) -> str:
     lines += ["%s: %s" % (k, "; ".join(fact[k]) if isinstance(fact[k], list) else fact[k])
               for k in TEXT_FIELDS if fact.get(k)]
     lines += ["if: %s" % c["raw"] for c in fact.get("conditions") or []]
+    if fact["subtype"] == "VarietyRecommendation":          # schema v1.6: the varieties the printed names link to
+        lines.append("recommends: %s" % ", ".join(_name(names, v) for v in fact["recommends"]))
+    if fact["subtype"] == "SowingWindow":                   # schema v1.6: the dates read from the printed words
+        lines.append("window: %s" % window_text(fact).replace("from ", "", 1))
     if fact["subtype"] == "QualitySpec":                    # schema v1.5: the limit as stored and as printed
         lines.append("%s (printed: %s): %s%s%s" % (
             fact["parameter"], fact["parameter_raw"], fact["limit_type"],
@@ -231,7 +253,7 @@ def current_from_db(driver, database=None) -> dict:
     return {r["id"]: r.data() for r in found}
 
 
-def write_workbook(path, entry, sheet_rows: list[dict], database: str | None) -> None:
+def write_workbook(path, entry, sheet_rows: list[dict], database: str | None, state_name: str | None = None) -> None:
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill, Protection
     from openpyxl.utils import get_column_letter
@@ -242,7 +264,7 @@ def write_workbook(path, entry, sheet_rows: list[dict], database: str | None) ->
     guide.title = GUIDE
     guide["A1"] = "How to review"
     guide["A1"].font = Font(bold=True, size=14)
-    for i, line in enumerate(GUIDE_LINES, 3):
+    for i, line in enumerate(guide_lines(entry, state_name), 3):
         guide.cell(i, 1, "• " + line).alignment = Alignment(wrap_text=True, vertical="top")
     guide.column_dimensions["A"].width = 120
 

@@ -26,6 +26,24 @@ def filled(fact_id, h, decision="approve", note="", utk="yes", who="TEST SAMPLE"
 
 # --- the workbook -------------------------------------------------------------------------------------
 
+def test_the_guide_names_where_the_source_is_from():
+    from kg.registry import read_entry
+    assert sheet.guide_lines(read_entry("source:tnau_agriculture_2020")) == sheet.GUIDE_LINES     # unchanged
+    gb = sheet.guide_lines(read_entry("source:gbpuat_kharif_advisory_2020"), "Uttarakhand")
+    assert "this source is from Uttarakhand." in gb[4] and "Tamil Nadu" not in " ".join(gb)
+    assert "national (all States/UTs)" in sheet.guide_lines(read_entry("source:dfpd_uniform_spec_kms_2026_27"))[4]
+
+
+def test_windows_and_variety_lists_have_a_review_order_scope_and_values():                # schema v1.6
+    assert {"VarietyRecommendation", "SowingWindow"} <= set(sheet.ORDER)
+    window = {"subtype": "SowingWindow", "window_for": "nursery_sowing", "start_month": 5, "start_day": 16,
+              "end_month": 6, "end_day": 7, "raw": {"start_month": "2 nd fortnight May"}, "steps": [],
+              "regions": [{"id": "zone:uk_tarai_bhabhar_plain", "origin": "text"}], "crop_ids": ["crop:rice"]}
+    assert "window for: nursery sowing" in sheet.scope(window, {})
+    assert "window: 16 May to 7 June" in sheet.values(window, {})
+    varieties = {"subtype": "VarietyRecommendation", "recommends": ["variety:govind"], "steps": [], "regions": []}
+    assert "recommends: Govind" in sheet.values(varieties, {"variety:govind": "Govind"})
+
 def test_a_claim_reads_as_a_plain_statement():
     assert sheet.statement("Does the passage state that, for the crop grown for grain, the produce is dried to "
                            "12% moisture?") == "For the crop grown for grain, the produce is dried to 12% moisture."
